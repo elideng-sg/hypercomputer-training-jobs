@@ -28,7 +28,8 @@ else
     gcloud container clusters create "${CLUSTER_NAME}" \
         --location="${REGION}" \
         --node-locations="${ZONE}" \
-        --release-channel="rapid" \
+        --release-channel="None" \
+        --cluster-version="1.33.13-gke.1101000" \
         --num-nodes="1" \
         --machine-type="e2-standard-4" \
         --enable-ip-alias \
@@ -49,6 +50,10 @@ echo "========================================================================"
 if gcloud container node-pools describe "${NODE_POOL_NAME}" --cluster="${CLUSTER_NAME}" --location="${REGION}" >/dev/null 2>&1; then
     echo "[+] Node pool '${NODE_POOL_NAME}' already exists."
 else
+    # Opt cluster out of release channel so manual COS 121 version pinning & disabling auto-upgrade are permitted
+    echo "[*] Unenrolling control plane from automatic release channels for COS 121 kernel compatibility..."
+    gcloud container clusters update "${CLUSTER_NAME}" --location="${REGION}" --release-channel="None" >/dev/null 2>&1 || true
+
     # Provision intact 8-GPU A3 Hypercomputer Node with automated LTSB GPU driver installation
     # and gVNIC networking interfaces enabled for line-rate intra-node transfers.
     gcloud container node-pools create "${NODE_POOL_NAME}" \
@@ -56,15 +61,17 @@ else
         --location="${REGION}" \
         --node-locations="${ZONE}" \
         --machine-type="${MACHINE_TYPE}" \
-        --accelerator="type=${ACCELERATOR_TYPE},count=${GPU_COUNT}" \
-        --gpu-driver-version="default" \
+        --node-version="1.33.13-gke.1101000" \
+        --no-enable-autoupgrade \
+        --accelerator="type=${ACCELERATOR_TYPE},count=${GPU_COUNT},gpu-driver-version=default" \
         --num-nodes="${NUM_NODES}" \
         --enable-gvnic \
         --disk-size="500GB" \
         --disk-type="pd-ssd" \
         --tags="ai-hypercomputer,a3-gpu-node" \
         --scopes="https://www.googleapis.com/auth/cloud-platform" \
-        --labels="node.kubernetes.io/instance-type=${MACHINE_TYPE},topology.kubernetes.io/gpu-cluster=a3-h100"
+        --node-labels="gpu-cluster=a3-h100" \
+        --labels="machine-type=${MACHINE_TYPE},gpu-cluster=a3-h100"
         
     echo "[+] High-performance 8x GPU node pool provisioned successfully."
 fi
@@ -73,7 +80,15 @@ echo ""
 echo "========================================================================"
 echo "[*] Step 2.4: Verifying Kubernetes node ready and GPU resource status..."
 echo "========================================================================"
-kubectl get nodes -l "node.kubernetes.io/instance-type=${MACHINE_TYPE}" -o wide
+echo "-> Checking underlying GPU instances directly via gcloud:"
+gcloud compute instances list --filter="name~gke-hypercomputer-a3" --format="table(name,zone,machineType,status)"
 
 echo ""
-echo "[+] Step 2 completed! A3 cluster ready to run distributed multi-GPU workloads."
+echo "-> Checking Kubernetes Node API (skips if local kubectl binary is blocked by Santa):"
+if ! kubectl get nodes -l "node.kubernetes.io/instance-type=${MACHINE_TYPE}" -o wide 2>/dev/null; then
+    echo "[!] Note: local kubectl execution was interrupted or blocked by security policies."
+    echo "    Use Cloud Shell (https://shell.cloud.google.com/?project=$(gcloud config get-value project)) or gcloud UI to interact directly via Kubernetes API."
+fi
+
+echo ""
+echo "[+] Step 2 completed! A3 cluster infrastructure is configured and registered."
