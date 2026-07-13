@@ -1,0 +1,24 @@
+# OS and Editor junk
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
+# Job operational runtime logs (exclude bulky log outputs from git tracking while keeping folder)
+logs/*.log
+logs/*.json
+logs/*.txt
+
+# Ensure log folder itself is tracked
+!logs/.gitkeep
