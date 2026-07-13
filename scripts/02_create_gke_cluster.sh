@@ -50,8 +50,17 @@ echo ""
 echo "========================================================================"
 echo "[*] Step 2.3: Provisioning A3 8x GPU Node Pool (${NODE_POOL_NAME})..."
 echo "========================================================================"
-if gcloud container node-pools describe "${NODE_POOL_NAME}" --cluster="${CLUSTER_NAME}" --location="${REGION}" >/dev/null 2>&1; then
-    echo "[+] Node pool '${NODE_POOL_NAME}' already exists."
+NP_STATUS=$(gcloud container node-pools describe "${NODE_POOL_NAME}" --cluster="${CLUSTER_NAME}" --location="${REGION}" --format="value(status)" 2>/dev/null || true)
+
+if [[ "${NP_STATUS}" == "ERROR" ]]; then
+    echo "[!] Existing node pool '${NODE_POOL_NAME}' is in ERROR status (typically from previous synchronous hardware stockouts)."
+    echo "[*] Deleting errored node pool '${NODE_POOL_NAME}' to re-provision cleanly with DWS Queued Provisioning..."
+    gcloud container node-pools delete "${NODE_POOL_NAME}" --cluster="${CLUSTER_NAME}" --location="${REGION}" --quiet
+    NP_STATUS=""
+fi
+
+if [[ -n "${NP_STATUS}" ]]; then
+    echo "[+] Node pool '${NODE_POOL_NAME}' already exists right now across ${REGION} in status: ${NP_STATUS}."
 else
     # Opt cluster out of release channel so manual COS 121 version pinning & disabling auto-upgrade are permitted
     echo "[*] Unenrolling control plane from automatic release channels for COS 121 kernel compatibility..."
@@ -87,17 +96,20 @@ fi
 
 echo ""
 echo "========================================================================"
-echo "[*] Step 2.4: Verifying Kubernetes node ready and GPU resource status..."
+echo "[*] Step 2.4: Verifying node pool & compute instance status using gcloud..."
 echo "========================================================================"
-echo "-> Checking underlying GPU instances directly via gcloud:"
-gcloud compute instances list --filter="name~gke-hypercomputer-a3" --format="table(name,zone,machineType,status)"
+echo "-> Checking GKE node pool status & Dynamic Workload Scheduler configuration via gcloud container:"
+gcloud container node-pools describe "${NODE_POOL_NAME}" \
+    --cluster="${CLUSTER_NAME}" \
+    --location="${REGION}" \
+    --format="table(name,status,initialNodeCount,autoscaling.enabled,queuedProvisioning.enabled)" || true
 
 echo ""
-echo "-> Checking Kubernetes Node API (skips if local kubectl binary is blocked by Santa):"
-if ! kubectl get nodes -l "node.kubernetes.io/instance-type=${MACHINE_TYPE}" -o wide 2>/dev/null; then
-    echo "[!] Note: local kubectl execution was interrupted or blocked by security policies."
-    echo "    Use Cloud Shell (https://shell.cloud.google.com/?project=$(gcloud config get-value project)) or gcloud UI to interact directly via Kubernetes API."
-fi
+echo "-> Checking active underlying compute instances across zones via gcloud compute:"
+gcloud compute instances list --filter="name~gke-${CLUSTER_NAME} OR tags.items~ai-hypercomputer" --format="table(name,zone,machineType,status)" || true
+
+echo ""
+echo "[+] Note: Pure gcloud verification complete (bypasses all local kubectl executions to completely eliminate corporate Santa blocks)."
 
 echo ""
 echo "[+] Step 2 completed! A3 cluster infrastructure is configured and registered."
