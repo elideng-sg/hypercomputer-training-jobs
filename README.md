@@ -19,6 +19,7 @@ hypercomputer-training-jobs/
 ├── src/
 │   └── train_benchmark_fp8.py          # Distributed PyTorch NCCL & Tensor Core DDP benchmark script
 ├── logs/                               # Output log folder for NCCL traces and runtime timing JSON files
+├── ARCHITECTURE.md                     # Comprehensive multi-diagram system configuration, hardware topologies, & REST sequence charts
 └── README.md                           # Comprehensive end-to-end execution runbook
 ```
 
@@ -26,7 +27,7 @@ hypercomputer-training-jobs/
 
 ## 🏛 Current Deployment Architecture & Detailed Specifications
 
-Our production architecture is designed explicitly around Google Cloud's AI Hypercomputer best practices, balancing high-bandwidth GPU interlocks, kernel stability, multi-zone availability resilience, and zero-binary corporate workstation execution.
+Our production architecture is designed explicitly around Google Cloud's AI Hypercomputer best practices, balancing high-bandwidth GPU interlocks, kernel stability, multi-zone availability resilience, and zero-binary corporate workstation execution. For detailed deep-dive hardware crossbar and Option 1 REST flow charts, refer directly to our comprehensive reference file: [ARCHITECTURE.md](file:///Users/elideng/hypercomputer-training-jobs/ARCHITECTURE.md).
 
 ```mermaid
 graph TD
