@@ -14,8 +14,8 @@ if [[ -z "${PROJECT_ID}" ]]; then
     exit 1
 fi
 
-TARGET_REGION="us-central1"
-TARGET_ZONE="us-central1-a"
+TARGET_REGION="us-east4"
+TARGET_ZONE="us-east4-a"
 
 echo "========================================================================"
 echo "[*] Step 1.1: Configuring active gcloud profile against Project: ${PROJECT_ID}"

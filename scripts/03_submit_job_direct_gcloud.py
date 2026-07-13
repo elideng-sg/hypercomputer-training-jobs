@@ -21,7 +21,7 @@ def log(msg):
 
 def main():
     cluster_name = os.environ.get("CLUSTER_NAME", "hypercomputer-a3-cluster")
-    region = os.environ.get("REGION", "us-central1")
+    region = os.environ.get("REGION", "us-east4")
     
     log(f"Retrieving active master endpoint for cluster: {cluster_name} ({region})...")
     endpoint = run_cmd(f"gcloud container clusters describe {cluster_name} --location={region} --format='value(endpoint)'")

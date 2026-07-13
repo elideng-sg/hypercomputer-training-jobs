@@ -5,8 +5,9 @@
 set -euo pipefail
 
 CLUSTER_NAME="${CLUSTER_NAME:-hypercomputer-a3-cluster}"
-REGION="${REGION:-us-central1}"
-ZONE="${ZONE:-us-central1-a}"
+REGION="${REGION:-us-east4}"
+ZONE="${ZONE:-us-east4-a}"
+NODE_ZONES="${NODE_ZONES:-us-east4-a,us-east4-b,us-east4-c}"
 
 # Target Machine configuration (Default: a3-highgpu-8g with 8x H100 80GB GPUs)
 # Alternative values for higher tiers:
@@ -59,7 +60,7 @@ else
     gcloud container node-pools create "${NODE_POOL_NAME}" \
         --cluster="${CLUSTER_NAME}" \
         --location="${REGION}" \
-        --node-locations="${ZONE}" \
+        --node-locations="${NODE_ZONES}" \
         --machine-type="${MACHINE_TYPE}" \
         --node-version="1.33.13-gke.1101000" \
         --no-enable-autoupgrade \

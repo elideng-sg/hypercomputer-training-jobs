@@ -35,7 +35,7 @@ graph TB
         API_Call["Developer Workstation / API Script"] -->|HTTPS REST Request| CP["GKE Control Plane (1.36 | Channel: None)"]
     end
 
-    subgraph ClusterMesh ["AI Hypercomputer High-Performance Network Fabric (us-central1-a/b/c)"]
+    subgraph ClusterMesh ["AI Hypercomputer High-Performance Network Fabric (us-east4-a/b/c)"]
         subgraph Node1 ["A3 High-GPU Compute Node 1 (a3-highgpu-8g | COS 121)"]
             subgraph Host1 ["Host Compute Sub-System"]
                 CPU1["64x vCPUs & 384GiB RAM"] --- SHM1["128GiB Shared IPC RAM (/dev/shm)"]
@@ -72,8 +72,8 @@ graph TB
    - To prevent newer GKE versions (`1.36` bundled with `COS 129`) from causing compatibility faults, our deployment explicitly decouples master and node versions: the control plane stays unenrolled from auto-upgrades (`--release-channel=None`), while the node pool initializes pinned at **GKE `1.33.13-gke.1101000` (`--no-enable-autoupgrade`)**, preserving the exact allowed `N-3` Kubernetes skew tolerance.
 
 2. **Regional Quota & Multi-Zone Resiliency**:
-   - Single-zone allocations (`us-central1-a`) can encounter transient hardware stockout peaks. Our setup secures a regional compute quota (`GPUS-PER-GPU-FAMILY-per-project-region`) of **16x NVIDIA H100 GPUs** across `us-central1`.
-   - The node pool is configured dynamically across three validated Hopper zones (`--node-locations="us-central1-a,us-central1-b,us-central1-c"`), ensuring GKE instantly seeks out available capacity across the entire region.
+   - Single-zone allocations (`us-east4-a`) can encounter transient hardware stockout peaks. Our setup secures a regional compute quota (`GPUS-PER-GPU-FAMILY-per-project-region`) of **32x NVIDIA H100 GPUs** across `us-east4`.
+   - The node pool is configured dynamically across three validated Hopper zones (`--node-locations="us-east4-a,us-east4-b,us-east4-c"`), ensuring GKE instantly seeks out available capacity across the entire region.
 
 3. **Option 1 Endpoint Security & Direct REST Execution**:
    - Corporate endpoint protection software (**Santa**) strictly blocks unauthorized binary executions (`Killed: 9` when calling command-line `kubectl`).
@@ -96,7 +96,7 @@ Configure your active profile against your target GCP Project and enable all req
 ---
 
 ### Step 2: Provision the A3/A4 AI Hypercomputer Cluster
-Launch the foundational control plane (`hypercomputer-a3-cluster`) and provision our **8x GPU A3 Node Pool (`a3-h100-pool-8g`)** spanning zones `us-central1-a/b/c` with pinned COS 121 kernels (`1.33.13-gke.1101000`).
+Launch the foundational control plane (`hypercomputer-a3-cluster`) and provision our **8x GPU A3 Node Pool (`a3-h100-pool-8g`)** spanning zones `us-east4-a/b/c` with pinned COS 121 kernels (`1.33.13-gke.1101000`).
 
 **Command to run:**
 ```bash

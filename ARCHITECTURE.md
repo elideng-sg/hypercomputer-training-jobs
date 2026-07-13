@@ -14,7 +14,7 @@ graph TB
         Client["Developer Workstation / API Script"] -->|HTTPS REST / OAuth Token| CP["GKE Master Control Plane (1.36 | Channel: None)"]
     end
 
-    subgraph ClusterMesh ["AI Hypercomputer High-Performance Network Fabric (us-central1-a/b/c)"]
+    subgraph ClusterMesh ["AI Hypercomputer High-Performance Network Fabric (us-east4-a/b/c)"]
         subgraph Node1 ["A3 High-GPU Compute Node 1 (a3-highgpu-8g | COS 121)"]
             subgraph Host1 ["Host Compute Sub-System"]
                 CPU1["64x vCPUs & 384GiB RAM"] --- SHM1["128GiB Shared IPC Mount (/dev/shm)"]
@@ -139,7 +139,7 @@ sequenceDiagram
 
     Dev->>API: POST ConfigMap verification-source-map (train_benchmark_fp8.py)
     Dev->>API: POST batch/v1 Job (gcp-ai-hypercomputer-verification)
-    API->>Pool: Instantiate Pod on available H100 node across us-central1-a/b/c
+    API->>Pool: Instantiate Pod on available H100 node across us-east4-a/b/c
     Pool->>Fabric: Mount /dev/shm (128Gi) & attach 8x H100 NVSwitches
     Fabric->>Fabric: Execute torchrun distributed training & ring all-reduce benchmarks
     Dev->>API: Stream diagnostics over HTTP HTTPS GET (/pods/name/log)

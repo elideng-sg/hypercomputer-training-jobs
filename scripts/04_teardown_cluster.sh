@@ -5,7 +5,7 @@
 set -euo pipefail
 
 CLUSTER_NAME="${CLUSTER_NAME:-hypercomputer-a3-cluster}"
-REGION="${REGION:-us-central1}"
+REGION="${REGION:-us-east4}"
 NODE_POOL_NAME="${NODE_POOL_NAME:-a3-h100-pool-8g}"
 
 echo "========================================================================"
