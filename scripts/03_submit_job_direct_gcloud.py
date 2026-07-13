@@ -100,7 +100,10 @@ def main():
                 },
                 "spec": {
                     "restartPolicy": "Never",
-                    "nodeSelector": {"node.kubernetes.io/instance-type": "a3-highgpu-8g"},
+                    "nodeSelector": {
+                        "node.kubernetes.io/instance-type": "a3-highgpu-8g",
+                        "cloud.google.com/gke-queued": "true"
+                    },
                     "containers": [
                         {
                             "name": "verify-ddp-allreduce",

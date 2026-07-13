@@ -71,9 +71,10 @@ graph TB
    - A3 instances (`a3-highgpu-8g`) demanding full multi-NIC networking requires stable driver attachments exclusively available on **COS 121** (or lower). 
    - To prevent newer GKE versions (`1.36` bundled with `COS 129`) from causing compatibility faults, our deployment explicitly decouples master and node versions: the control plane stays unenrolled from auto-upgrades (`--release-channel=None`), while the node pool initializes pinned at **GKE `1.33.13-gke.1101000` (`--no-enable-autoupgrade`)**, preserving the exact allowed `N-3` Kubernetes skew tolerance.
 
-2. **Regional Quota & Multi-Zone Resiliency**:
-   - Single-zone allocations (`us-east4-a`) can encounter transient hardware stockout peaks. Our setup secures a regional compute quota (`GPUS-PER-GPU-FAMILY-per-project-region`) of **32x NVIDIA H100 GPUs** across `us-east4`.
-   - The node pool is configured dynamically across three validated Hopper zones (`--node-locations="us-east4-a,us-east4-b,us-east4-c"`), ensuring GKE instantly seeks out available capacity across the entire region.
+2. **Dynamic Workload Scheduler (DWS) Queued Provisioning & Multi-Zone Resiliency**:
+   - Synchronous on-demand single-zone allocations for contiguous 8x H100 GPU blocks (`a3-highgpu-8g`) frequently encounter hardware stockout peaks (`[GCE_STOCKOUT]`). Our setup secures a regional compute quota (`NVIDIA_H100_GPUS`) of **32x GPUs** across `us-east4`.
+   - To completely eliminate synchronous 35-minute stockout timeouts during cluster creation, our node pool (`a3-h100-pool-8g`) is explicitly configured with **Dynamic Workload Scheduler (DWS) Queued Provisioning (`--enable-queued-provisioning`)** and initialized at **0 nodes** (`--num-nodes=0`).
+   - When a job targeting `cloud.google.com/gke-queued: "true"` (`a3_a4_verification_job.yaml` or via `configs/dws_provisioning_request.yaml`) is submitted, GKE dynamic multi-zone autoscaling (`--location-policy=ANY` across `us-east4-a,us-east4-b,us-east4-c`) instantly requests a slot from Google's physical scheduling queue right in whichever zone frees up capacity next.
 
 3. **Option 1 Endpoint Security & Direct REST Execution**:
    - Corporate endpoint protection software (**Santa**) strictly blocks unauthorized binary executions (`Killed: 9` when calling command-line `kubectl`).
@@ -95,15 +96,15 @@ Configure your active profile against your target GCP Project and enable all req
 
 ---
 
-### Step 2: Provision the A3/A4 AI Hypercomputer Cluster
-Launch the foundational control plane (`hypercomputer-a3-cluster`) and provision our **8x GPU A3 Node Pool (`a3-h100-pool-8g`)** spanning zones `us-east4-a/b/c` with pinned COS 121 kernels (`1.33.13-gke.1101000`).
+### Step 2: Provision the A3/A4 AI Hypercomputer Cluster with DWS Queued Provisioning
+Launch the foundational control plane (`hypercomputer-a3-cluster`) and provision our **8x GPU A3 Node Pool (`a3-h100-pool-8g`)** spanning zones `us-east4-a/b/c` using **Dynamic Workload Scheduler (DWS) Queued Provisioning (`--enable-queued-provisioning`)**. The node pool initializes cleanly in seconds at `0 nodes` without crashing on synchronous stockouts.
 
 **Command to run:**
 ```bash
 ./scripts/02_create_gke_cluster.sh
 ```
 > [!NOTE]
-> To verify status across local corporate systems safely without encountering binary blocks, run `gcloud compute instances list --filter="name~gke-hypercomputer-a3" --format="table(name,zone,machineType,status)"`.
+> Because DWS Queued Provisioning starts at `0 nodes`, compute charges do not accrue until you launch a workload pod with `cloud.google.com/gke-queued: "true"` in Step 3. To inspect node provisioning events during training runs, run `gcloud compute instances list --filter="name~gke-hypercomputer-a3" --format="table(name,zone,machineType,status)"`.
 
 ---
 

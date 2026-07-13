@@ -14,8 +14,9 @@ spec:
     spec:
       restartPolicy: Never
       nodeSelector:
-        # Route job directly to our high-performance 8x H100 or H200 A3 series node pool
+        # Route job directly to our high-performance DWS Queued Provisioning A3 series node pool
         node.kubernetes.io/instance-type: a3-highgpu-8g
+        cloud.google.com/gke-queued: "true" # Match Dynamic Workload Scheduler (DWS) queued pool
       containers:
       - name: verify-ddp-allreduce
         # Official NVIDIA PyTorch container equipped with Hopper optimizations & CUDA 12.x

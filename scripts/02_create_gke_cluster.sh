@@ -17,7 +17,9 @@ NODE_POOL_NAME="a3-h100-pool-8g"
 MACHINE_TYPE="a3-highgpu-8g"
 ACCELERATOR_TYPE="nvidia-h100-80gb"
 GPU_COUNT="8"
-NUM_NODES="1" # Start with 1 full intact 8-GPU node for verification test
+NUM_NODES="0" # Start at 0 nodes for Dynamic Workload Scheduler (DWS) Queued Provisioning
+MIN_NODES="0"
+MAX_NODES="4" # Max autoscale target across zones across us-east4-a/b/c
 
 echo "========================================================================"
 echo "[*] Step 2.1: Creating foundational GKE control plane: ${CLUSTER_NAME}..."
@@ -55,8 +57,9 @@ else
     echo "[*] Unenrolling control plane from automatic release channels for COS 121 kernel compatibility..."
     gcloud container clusters update "${CLUSTER_NAME}" --location="${REGION}" --release-channel="None" >/dev/null 2>&1 || true
 
-    # Provision intact 8-GPU A3 Hypercomputer Node with automated LTSB GPU driver installation
-    # and gVNIC networking interfaces enabled for line-rate intra-node transfers.
+    # Provision intact 8-GPU A3 Hypercomputer Node Pool using Dynamic Workload Scheduler (DWS)
+    # Queued Provisioning (--enable-queued-provisioning) + zero-to-N autoscaling across available zones
+    # to eliminate synchronous [GCE_STOCKOUT] initialization timeouts.
     gcloud container node-pools create "${NODE_POOL_NAME}" \
         --cluster="${CLUSTER_NAME}" \
         --location="${REGION}" \
@@ -65,16 +68,21 @@ else
         --node-version="1.33.13-gke.1101000" \
         --no-enable-autoupgrade \
         --accelerator="type=${ACCELERATOR_TYPE},count=${GPU_COUNT},gpu-driver-version=default" \
+        --enable-queued-provisioning \
+        --enable-autoscaling \
+        --min-nodes="${MIN_NODES}" \
+        --max-nodes="${MAX_NODES}" \
+        --location-policy="ANY" \
         --num-nodes="${NUM_NODES}" \
         --enable-gvnic \
         --disk-size="500GB" \
         --disk-type="pd-ssd" \
         --tags="ai-hypercomputer,a3-gpu-node" \
         --scopes="https://www.googleapis.com/auth/cloud-platform" \
-        --node-labels="gpu-cluster=a3-h100" \
-        --labels="machine-type=${MACHINE_TYPE},gpu-cluster=a3-h100"
+        --node-labels="gpu-cluster=a3-h100,cloud.google.com/gke-queued=true" \
+        --labels="machine-type=${MACHINE_TYPE},gpu-cluster=a3-h100,dws=queued-provisioning"
         
-    echo "[+] High-performance 8x GPU node pool provisioned successfully."
+    echo "[+] High-performance 8x GPU node pool configured successfully with DWS Queued Provisioning."
 fi
 
 echo ""
