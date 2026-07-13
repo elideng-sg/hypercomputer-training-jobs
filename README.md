@@ -73,7 +73,7 @@ graph TB
 
 2. **Dynamic Workload Scheduler (DWS) Queued Provisioning & Multi-Zone Resiliency**:
    - Synchronous on-demand single-zone allocations for contiguous 8x H100 GPU blocks (`a3-highgpu-8g`) frequently encounter hardware stockout peaks (`[GCE_STOCKOUT]`). Our setup secures a regional compute quota (`NVIDIA_H100_GPUS`) of **32x GPUs** across `us-east4`.
-   - To completely eliminate synchronous 35-minute stockout timeouts during cluster creation, our node pool (`a3-h100-pool-8g`) is explicitly configured with **Dynamic Workload Scheduler (DWS) Queued Provisioning (`--enable-queued-provisioning`)** and initialized at **0 nodes** (`--num-nodes=0`).
+   - To completely eliminate synchronous 35-minute stockout timeouts during cluster creation, our node pool (`a3-h100-pool-8g`) is explicitly configured with **Dynamic Workload Scheduler (DWS) Queued Provisioning (`--enable-queued-provisioning --reservation-affinity="none"`)** and initialized at **0 nodes** (`--num-nodes=0`).
    - When a job targeting `cloud.google.com/gke-queued: "true"` (`a3_a4_verification_job.yaml` or via `configs/dws_provisioning_request.yaml`) is submitted, GKE dynamic multi-zone autoscaling (`--location-policy=ANY` across `us-east4-a,us-east4-b,us-east4-c`) instantly requests a slot from Google's physical scheduling queue right in whichever zone frees up capacity next.
 
 3. **Option 1 Endpoint Security & Direct REST Execution**:

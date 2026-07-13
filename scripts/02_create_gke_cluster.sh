@@ -78,6 +78,7 @@ else
         --no-enable-autoupgrade \
         --accelerator="type=${ACCELERATOR_TYPE},count=${GPU_COUNT},gpu-driver-version=default" \
         --enable-queued-provisioning \
+        --reservation-affinity="none" \
         --enable-autoscaling \
         --min-nodes="${MIN_NODES}" \
         --max-nodes="${MAX_NODES}" \
