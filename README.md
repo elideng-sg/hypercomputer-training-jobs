@@ -30,46 +30,39 @@ hypercomputer-training-jobs/
 Our production architecture is designed explicitly around Google Cloud's AI Hypercomputer best practices, balancing high-bandwidth GPU interlocks, kernel stability, multi-zone availability resilience, and zero-binary corporate workstation execution. For detailed deep-dive hardware crossbar and Option 1 REST flow charts, refer directly to our comprehensive reference file: [ARCHITECTURE.md](file:///Users/elideng/hypercomputer-training-jobs/ARCHITECTURE.md).
 
 ```mermaid
-graph TD
-    subgraph Client ["Developer Workstation / Corporate Endpoint"]
-        Terminal["Command Line Scripts (01-04)"]
-        Santa["Santa Security Guard"]
-        DirectEngine["Option 1 REST Engine<br>(03_submit_job_direct_gcloud.py)"]
-        CloudShell["Google Cloud Shell<br>(Web & SSH Linux Sandbox)"]
-        
-        Terminal -->|If local binary restricted| DirectEngine
-        DirectEngine -->|gcloud auth access token| REST_Req["Direct HTTPS API Request"]
+graph TB
+    subgraph Client ["Simplified User & Control Access"]
+        API_Call["Developer Workstation / API Script"] -->|HTTPS REST Request| CP["GKE Control Plane (1.36 | Channel: None)"]
     end
 
-    subgraph GCP ["GCP Project: hdlab-elideng (us-central1)"]
-        subgraph Master ["GKE Master Control Plane"]
-            KubeMaster["hypercomputer-a3-cluster<br>(Version: 1.36.x | Channel: None)"]
-            WIP["Workload Identity Pool<br>(hdlab-elideng.svc.id.goog)"]
-        end
-
-        subgraph Quota ["Regional Quota Assurance"]
-            H100_Quota["GPUS-PER-GPU-FAMILY-per-project-region<br>(Limit: 16x NVIDIA H100 80GB GPUs)"]
-        end
-
-        subgraph NodePool ["A3 High-Performance GPU Node Pool (a3-h100-pool-8g)"]
-            subgraph Node ["a3-highgpu-8g Node (COS 121 / 1.33.13-gke.1101000)"]
-                Host["64 vCPUs | 384GiB RAM | 500GB NVMe SSD"]
-                SHM["128GiB Shared RAM Mount (/dev/shm)"]
-                gVNIC["Google Virtual NIC (gVNIC Line-Rate Networking)"]
-                GPUs["8x NVIDIA H100 80GB GPUs<br>(Intra-Node NVLink Gen 5 NVSwitch Topology)"]
-                
-                Host --- SHM --- gVNIC --- GPUs
+    subgraph ClusterMesh ["AI Hypercomputer High-Performance Network Fabric (us-central1-a/b/c)"]
+        subgraph Node1 ["A3 High-GPU Compute Node 1 (a3-highgpu-8g | COS 121)"]
+            subgraph Host1 ["Host Compute Sub-System"]
+                CPU1["64x vCPUs & 384GiB RAM"] --- SHM1["128GiB Shared IPC RAM (/dev/shm)"]
             end
             
-            MultiZone["Dynamic Multi-Zone Allocation<br>(us-central1-a / us-central1-b / us-central1-c)"]
-            Node -.-> MultiZone
+            subgraph NVLink_Mesh1 ["Intra-Node NVLink Fabric & NVSwitch Array (900 GB/s Bidirectional per GPU)"]
+                G0_1["GPU 0: H100"] & G1_1["GPU 1: H100"] & G2_1["GPU 2: H100"] & G3_1["GPU 3: H100"] <==>|NVLink Gen 5| NVS1["Dual NVSwitch Switchboard Crossbar"]
+                G4_1["GPU 4: H100"] & G5_1["GPU 5: H100"] & G6_1["GPU 6: H100"] & G7_1["GPU 7: H100"] <==>|NVLink Gen 5| NVS1
+            end
+
+            NIC1["Multi-NIC gVNIC Hardware Network Interfaces (Line-Rate Capacity)"]
+            Host1 ---|PCIe Gen 5 Bus| NVLink_Mesh1
+            NVLink_Mesh1 <==>|GPUDirect / NCCL_NET_GDR_LEVEL=5| NIC1
         end
+
+        subgraph Node2 ["A3 High-GPU Compute Node 2 (Peer Distributed Training Node)"]
+            subgraph NVLink_Mesh2 ["Intra-Node NVLink Fabric & NVSwitch Array"]
+                G_Array2["8x NVIDIA H100 80GB GPUs"] <==>|NVLink Gen 5| NVS2["Dual NVSwitch Switchboard Crossbar"]
+            end
+            NIC2["Multi-NIC gVNIC Hardware Network Interfaces"]
+            NVLink_Mesh2 <==>|GPUDirect / NCCL_NET_GDR_LEVEL=5| NIC2
+        end
+
+        NIC1 <==>|High-Throughput GCP Spine-and-Leaf Inter-Node Optical Mesh| NIC2
     end
 
-    REST_Req ==>|Secure HTTPS REST POST/GET| KubeMaster
-    CloudShell ==>|Unrestricted Linux kubectl| KubeMaster
-    KubeMaster ==>|Schedules PyTorch Verification Job| Node
-    H100_Quota -.->|Unlocks Pool Provisioning| NodePool
+    CP ==>|Schedules verification-source-map & PyTorch Spec| Node1 & Node2
 ```
 
 ### Key Technical Configurations
