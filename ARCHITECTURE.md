@@ -71,15 +71,15 @@ graph LR
         GPU7["GPU 7 (H100 80GB)"]
     end
 
-    GPU0 <==>|18x NVLink Lanes (900 GB/s)| DualNVSwitch
-    GPU1 <==>|18x NVLink Lanes (900 GB/s)| DualNVSwitch
-    GPU2 <==>|18x NVLink Lanes (900 GB/s)| DualNVSwitch
-    GPU3 <==>|18x NVLink Lanes (900 GB/s)| DualNVSwitch
+    GPU0 <==>|18x NVLink Lanes - 900 GB/s| Switch1 & Switch2
+    GPU1 <==>|18x NVLink Lanes - 900 GB/s| Switch1 & Switch2
+    GPU2 <==>|18x NVLink Lanes - 900 GB/s| Switch1 & Switch2
+    GPU3 <==>|18x NVLink Lanes - 900 GB/s| Switch1 & Switch2
 
-    GPU4 <==>|18x NVLink Lanes (900 GB/s)| DualNVSwitch
-    GPU5 <==>|18x NVLink Lanes (900 GB/s)| DualNVSwitch
-    GPU6 <==>|18x NVLink Lanes (900 GB/s)| DualNVSwitch
-    GPU7 <==>|18x NVLink Lanes (900 GB/s)| DualNVSwitch
+    GPU4 <==>|18x NVLink Lanes - 900 GB/s| Switch1 & Switch2
+    GPU5 <==>|18x NVLink Lanes - 900 GB/s| Switch1 & Switch2
+    GPU6 <==>|18x NVLink Lanes - 900 GB/s| Switch1 & Switch2
+    GPU7 <==>|18x NVLink Lanes - 900 GB/s| Switch1 & Switch2
 ```
 
 ### Technical Highlights:
@@ -114,7 +114,7 @@ graph TD
         PCIe_B <==>|Direct Zero-Copy DMA Pathway| H100_B
     end
 
-    gVNIC_A <==>|Google Hypercomputer Optical Inter-Node Fabric (Line-Rate Speed)| gVNIC_B
+    gVNIC_A <==>|Google Hypercomputer Optical Inter-Node Fabric - Line-Rate Speed| gVNIC_B
 ```
 
 ### Why GPUDirect (`NCCL_NET_GDR_LEVEL=5`) & gVNIC are Critical:
