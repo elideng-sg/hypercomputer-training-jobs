@@ -40,16 +40,23 @@ def main():
     
     api_base = f"https://{endpoint}"
     
-    def k8s_request(path, method="GET", body=None):
+    def k8s_request(path, method="GET", body=None, retry_auth=True, return_raw=False):
         url = f"{api_base}{path}"
         data = json.dumps(body).encode("utf-8") if body else None
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
             with urllib.request.urlopen(req, context=ctx) as resp:
-                raw = resp.read().decode("utf-8")
+                raw = resp.read().decode("utf-8", errors="replace")
+                if return_raw:
+                    return raw
                 return json.loads(raw) if raw else {}
         except urllib.error.HTTPError as e:
             err_body = e.read().decode()
+            if e.code == 401 and retry_auth:
+                log(" -> OAuth access token expired during long DWS wait cycle. Refreshing token via gcloud automatically...")
+                new_token = run_cmd("gcloud auth print-access-token")
+                headers["Authorization"] = f"Bearer {new_token}"
+                return k8s_request(path, method=method, body=body, retry_auth=False, return_raw=return_raw)
             if e.code == 404 and method == "DELETE":
                 return {}
             if e.code == 409 and method == "POST":
@@ -202,10 +209,7 @@ def main():
     # Fetch log stream over secure HTTPS directly without kubectl logs
     log(f" -> Downloading container diagnostics directly via REST endpoint `/api/v1/namespaces/default/pods/{pod_name}/log`...")
     try:
-        log_url = f"{api_base}/api/v1/namespaces/default/pods/{pod_name}/log?container=verify-ddp-allreduce"
-        req = urllib.request.Request(log_url, headers={"Authorization": f"Bearer {token}"})
-        with urllib.request.urlopen(req, context=ctx) as resp:
-            output_log = resp.read().decode("utf-8", errors="replace")
+        output_log = k8s_request(f"/api/v1/namespaces/default/pods/{pod_name}/log?container=verify-ddp-allreduce", return_raw=True)
         with open("logs/job_runtime_diagnostics.log", "w") as out:
             out.write(output_log)
         print(output_log)
