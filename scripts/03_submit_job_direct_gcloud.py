@@ -66,12 +66,19 @@ def main():
     with open(source_file, "r") as f:
         code_content = f.read()
         
-    # Delete existing if present
+    # Delete existing ConfigMap, Job, and orphaned pods if present
     try:
         k8s_request("/api/v1/namespaces/default/configmaps/verification-source-map", method="DELETE")
-        k8s_request("/apis/batch/v1/namespaces/default/jobs/gcp-ai-hypercomputer-verification", method="DELETE")
-    except RuntimeError:
+        k8s_request("/apis/batch/v1/namespaces/default/jobs/gcp-ai-hypercomputer-verification", method="DELETE", body={"kind": "DeleteOptions", "apiVersion": "v1", "propagationPolicy": "Background"})
+        # Clean up any lingering or stuck pods from earlier attempts
+        existing_pods = k8s_request("/api/v1/namespaces/default/pods?labelSelector=app%3Dgpu-nccl-test")
+        for pod in existing_pods.get("items", []):
+            p_name = pod.get("metadata", {}).get("name")
+            if p_name:
+                k8s_request(f"/api/v1/namespaces/default/pods/{p_name}", method="DELETE", body={"kind": "DeleteOptions", "apiVersion": "v1"})
+    except Exception:
         pass
+    time.sleep(2)  # Allow API server reconciliation
         
     cm_payload = {
         "apiVersion": "v1",
@@ -142,8 +149,8 @@ def main():
                                 {"name": "OMP_NUM_THREADS", "value": "8"}
                             ],
                             "resources": {
-                                "limits": {"nvidia.com/gpu": 8, "memory": "384Gi"},
-                                "requests": {"nvidia.com/gpu": 8, "cpu": "64", "memory": "384Gi"}
+                                "limits": {"nvidia.com/gpu": "8", "cpu": "64", "memory": "384Gi"},
+                                "requests": {"nvidia.com/gpu": "8", "cpu": "64", "memory": "384Gi"}
                             },
                             "volumeMounts": [
                                 {"name": "shm", "mountPath": "/dev/shm"},

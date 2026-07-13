@@ -63,12 +63,13 @@ spec:
           value: "8"
         resources:
           limits:
-            nvidia.com/gpu: 8
-            memory: 384Gi
+            nvidia.com/gpu: "8"
+            cpu: "64"
+            memory: "384Gi"
           requests:
-            nvidia.com/gpu: 8
-            cpu: 64
-            memory: 384Gi
+            nvidia.com/gpu: "8"
+            cpu: "64"
+            memory: "384Gi"
         volumeMounts:
         - name: shm
           mountPath: /dev/shm

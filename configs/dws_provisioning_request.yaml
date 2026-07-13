@@ -43,9 +43,10 @@ template:
       image: nvcr.io/nvidia/pytorch:24.03-py3
       resources:
         limits:
-          nvidia.com/gpu: 8
-          memory: 384Gi
+          nvidia.com/gpu: "8"
+          cpu: "64"
+          memory: "384Gi"
         requests:
-          nvidia.com/gpu: 8
-          cpu: 64
-          memory: 384Gi
+          nvidia.com/gpu: "8"
+          cpu: "64"
+          memory: "384Gi"
