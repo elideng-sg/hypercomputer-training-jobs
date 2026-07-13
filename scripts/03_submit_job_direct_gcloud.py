@@ -96,8 +96,59 @@ def main():
     k8s_request("/api/v1/namespaces/default/configmaps", method="POST", body=cm_payload)
     log("[+] ConfigMap 'verification-source-map' generated directly inside GKE cluster API.")
 
-    # 2. Submit multi-GPU verification training job
-    log("Step 3.2: Submitting distributed 8x GPU PyTorch verification Job over GKE REST API...")
+    # 2. Setup DWS Queued ProvisioningRequest and submit multi-GPU verification training job
+    log("Step 3.2: Submitting distributed 8x GPU PyTorch verification Job & DWS ProvisioningRequest over GKE REST API...")
+    
+    # 2a. Post required PodTemplate & ProvisioningRequest for Dynamic Workload Scheduler (DWS)
+    pt_payload = {
+        "apiVersion": "v1",
+        "kind": "PodTemplate",
+        "metadata": {"name": "a3-h100-verification-pod-template", "namespace": "default"},
+        "template": {
+            "metadata": {"labels": {"app": "gpu-nccl-test", "dws-queued": "true"}},
+            "spec": {
+                "restartPolicy": "Never",
+                "nodeSelector": {
+                    "node.kubernetes.io/instance-type": "a3-highgpu-8g",
+                    "cloud.google.com/gke-queued": "true"
+                },
+                "tolerations": [
+                    {"key": "nvidia.com/gpu", "operator": "Exists", "effect": "NoSchedule"}
+                ],
+                "containers": [
+                    {
+                        "name": "verify-ddp-allreduce",
+                        "image": "nvcr.io/nvidia/pytorch:24.03-py3",
+                        "resources": {
+                            "limits": {"nvidia.com/gpu": "8", "cpu": "64", "memory": "384Gi"},
+                            "requests": {"nvidia.com/gpu": "8", "cpu": "64", "memory": "384Gi"}
+                        }
+                    }
+                ]
+            }
+        }
+    }
+    try: k8s_request("/api/v1/namespaces/default/podtemplates/a3-h100-verification-pod-template", method="DELETE")
+    except Exception: pass
+    try: k8s_request("/apis/autoscaling.x-k8s.io/v1/namespaces/default/provisioningrequests/a3-h100-verification-req", method="DELETE")
+    except Exception: pass
+    
+    k8s_request("/api/v1/namespaces/default/podtemplates", method="POST", body=pt_payload)
+    
+    pr_payload = {
+        "apiVersion": "autoscaling.x-k8s.io/v1",
+        "kind": "ProvisioningRequest",
+        "metadata": {"name": "a3-h100-verification-req", "namespace": "default"},
+        "spec": {
+            "provisioningClassName": "queued-provisioning.gke.io",
+            "parameters": {"maxRunDurationSeconds": "86400"},
+            "podSets": [{"count": 1, "podTemplateRef": {"name": "a3-h100-verification-pod-template"}}]
+        }
+    }
+    k8s_request("/apis/autoscaling.x-k8s.io/v1/namespaces/default/provisioningrequests", method="POST", body=pr_payload)
+    log("[+] DWS ProvisioningRequest 'a3-h100-verification-req' created. Hardware ticket entered into regional queue.")
+
+    # 2b. Submit verification Job bound explicitly to the DWS Queued ProvisioningRequest ticket
     job_payload = {
         "apiVersion": "batch/v1",
         "kind": "Job",
@@ -110,7 +161,8 @@ def main():
             "backoffLimit": 0,
             "template": {
                 "metadata": {
-                    "labels": {"job-group": "ai-cluster-verify", "app": "gpu-nccl-test"}
+                    "labels": {"job-group": "ai-cluster-verify", "app": "gpu-nccl-test", "dws-queued": "true"},
+                    "annotations": {"autoscaling.gke.io/provisioning-request": "a3-h100-verification-req"}
                 },
                 "spec": {
                     "restartPolicy": "Never",
@@ -118,6 +170,9 @@ def main():
                         "node.kubernetes.io/instance-type": "a3-highgpu-8g",
                         "cloud.google.com/gke-queued": "true"
                     },
+                    "tolerations": [
+                        {"key": "nvidia.com/gpu", "operator": "Exists", "effect": "NoSchedule"}
+                    ],
                     "containers": [
                         {
                             "name": "verify-ddp-allreduce",
@@ -197,14 +252,27 @@ def main():
     
     os.makedirs("logs", exist_ok=True)
     
-    # Check status loop
+    # Check status loop with active DWS queue feedback
     while True:
         p_info = k8s_request(f"/api/v1/namespaces/default/pods/{pod_name}")
         phase = p_info.get("status", {}).get("phase", "Unknown")
-        log(f"    Current Pod phase: {phase}")
+        
+        # Check specific DWS conditions during Pending phase
+        dws_msg = ""
+        if phase == "Pending":
+            try:
+                pr_info = k8s_request("/apis/autoscaling.x-k8s.io/v1/namespaces/default/provisioningrequests/a3-h100-verification-req")
+                conds = pr_info.get("status", {}).get("conditions", [])
+                for c in conds:
+                    if c.get("type") in ["Accepted", "Provisioned"]:
+                        dws_msg += f" [{c.get('type')}: {c.get('reason')} -> {c.get('message')}]"
+            except Exception:
+                pass
+                
+        log(f"    Current Pod phase: {phase}{dws_msg}")
         if phase in ["Running", "Succeeded", "Failed"]:
             break
-        time.sleep(10)
+        time.sleep(15)
 
     # Fetch log stream over secure HTTPS directly without kubectl logs
     log(f" -> Downloading container diagnostics directly via REST endpoint `/api/v1/namespaces/default/pods/{pod_name}/log`...")

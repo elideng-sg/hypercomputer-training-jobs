@@ -11,12 +11,19 @@ spec:
       labels:
         job-group: ai-cluster-verify
         app: gpu-nccl-test
+        dws-queued: "true"
+      annotations:
+        autoscaling.gke.io/provisioning-request: "a3-h100-verification-req"
     spec:
       restartPolicy: Never
       nodeSelector:
         # Route job directly to our high-performance DWS Queued Provisioning A3 series node pool
         node.kubernetes.io/instance-type: a3-highgpu-8g
         cloud.google.com/gke-queued: "true" # Match Dynamic Workload Scheduler (DWS) queued pool
+      tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"
       containers:
       - name: verify-ddp-allreduce
         # Official NVIDIA PyTorch container equipped with Hopper optimizations & CUDA 12.x

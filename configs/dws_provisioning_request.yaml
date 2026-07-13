@@ -9,12 +9,13 @@
 # distributed workloads or let GKE automatically handle queuing when a workload pod
 # specifying `cloud.google.com/gke-queued: "true"` arrives.
 # ==============================================================================
-apiVersion: autoscaling.gke.io/v1
+apiVersion: autoscaling.x-k8s.io/v1
 kind: ProvisioningRequest
 metadata:
-  name: a3-h100-dws-request
+  name: a3-h100-verification-req
   namespace: default
 spec:
+  provisioningClassName: queued-provisioning.gke.io
   parameters:
     maxRunDurationSeconds: 86400  # 24 hours max consecutive run allocation
   podSets:
@@ -38,6 +39,10 @@ template:
     nodeSelector:
       node.kubernetes.io/instance-type: a3-highgpu-8g
       cloud.google.com/gke-queued: "true"
+    tolerations:
+    - key: "nvidia.com/gpu"
+      operator: "Exists"
+      effect: "NoSchedule"
     containers:
     - name: dws-placeholder
       image: nvcr.io/nvidia/pytorch:24.03-py3
