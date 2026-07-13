@@ -28,32 +28,47 @@ hypercomputer-training-jobs/
 
 Our production architecture is designed explicitly around Google Cloud's AI Hypercomputer best practices, balancing high-bandwidth GPU interlocks, kernel stability, multi-zone availability resilience, and zero-binary corporate workstation execution.
 
-```text
-               [ Workstation / Corporate Terminal (Santa Security Monitored) ]
-                                            │
-               Option 1: Direct OAuth HTTPS REST Requests & gcloud CLI
-             (Bypasses unwhitelisted local `kubectl` binaries cleanly)
-                                            ▼
-┌───────────────────────────────────────────────────────────────────────────────────────┐
-│ GKE Control Plane (`hypercomputer-a3-cluster` in `us-central1`)                       │
-│ • Kubernetes Version: 1.36.x (Enrolled with explicit release-channel=None overrides) │
-│ • Workload Identity Binding: `hdlab-elideng.svc.id.goog`                              │
-└───────────────────────────────────────────┬───────────────────────────────────────────┘
-                                            │
-               Multi-Zone Auto-Allocation across Regional Quota (16x H100s)
-                      (`us-central1-a`, `us-central1-b`, `us-central1-c`)
-                                            ▼
-┌───────────────────────────────────────────────────────────────────────────────────────┐
-│ A3 High-Performance GPU Node Pool (`a3-h100-pool-8g`)                                 │
-│                                                                                       │
-│ ┌───────────────────────────────────────────────────────────────────────────────────┐ │
-│ │ Compute Node Instance (`a3-highgpu-8g` | 64 vCPUs | 384Gi RAM | 500GB SSD)        │ │
-│ │ • OS Kernel Versioning: Container-Optimized OS 121 (`1.33.13-gke.1101000`)       │ │
-│ │ • Accelerators: 8x NVIDIA H100 80GB (`nvidia-h100-80gb`) + Automated LTSB Drivers │ │
-│ │ • Networking: gVNIC hardware-accelerated interfaces for line-rate intra-node transfers │
-│ │ • Shared RAM Disk: 128Gi POSIX memory mount (`/dev/shm`) preventing IPC copy hangs│ │
-│ └───────────────────────────────────────────────────────────────────────────────────┘ │
-└───────────────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph Client ["Developer Workstation / Corporate Endpoint"]
+        Terminal["Command Line Scripts (01-04)"]
+        Santa["Santa Security Guard"]
+        DirectEngine["Option 1 REST Engine<br>(03_submit_job_direct_gcloud.py)"]
+        CloudShell["Google Cloud Shell<br>(Web & SSH Linux Sandbox)"]
+        
+        Terminal -->|If local binary restricted| DirectEngine
+        DirectEngine -->|gcloud auth access token| REST_Req["Direct HTTPS API Request"]
+    end
+
+    subgraph GCP ["GCP Project: hdlab-elideng (us-central1)"]
+        subgraph Master ["GKE Master Control Plane"]
+            KubeMaster["hypercomputer-a3-cluster<br>(Version: 1.36.x | Channel: None)"]
+            WIP["Workload Identity Pool<br>(hdlab-elideng.svc.id.goog)"]
+        end
+
+        subgraph Quota ["Regional Quota Assurance"]
+            H100_Quota["GPUS-PER-GPU-FAMILY-per-project-region<br>(Limit: 16x NVIDIA H100 80GB GPUs)"]
+        end
+
+        subgraph NodePool ["A3 High-Performance GPU Node Pool (a3-h100-pool-8g)"]
+            subgraph Node ["a3-highgpu-8g Node (COS 121 / 1.33.13-gke.1101000)"]
+                Host["64 vCPUs | 384GiB RAM | 500GB NVMe SSD"]
+                SHM["128GiB Shared RAM Mount (/dev/shm)"]
+                gVNIC["Google Virtual NIC (gVNIC Line-Rate Networking)"]
+                GPUs["8x NVIDIA H100 80GB GPUs<br>(Intra-Node NVLink Gen 5 NVSwitch Topology)"]
+                
+                Host --- SHM --- gVNIC --- GPUs
+            end
+            
+            MultiZone["Dynamic Multi-Zone Allocation<br>(us-central1-a / us-central1-b / us-central1-c)"]
+            Node -.-> MultiZone
+        end
+    end
+
+    REST_Req ==>|Secure HTTPS REST POST/GET| KubeMaster
+    CloudShell ==>|Unrestricted Linux kubectl| KubeMaster
+    KubeMaster ==>|Schedules PyTorch Verification Job| Node
+    H100_Quota -.->|Unlocks Pool Provisioning| NodePool
 ```
 
 ### Key Technical Configurations
