@@ -64,8 +64,8 @@ else
     echo "[*] Unenrolling control plane from automatic release channels for COS 121 kernel compatibility..."
     gcloud container clusters update "${CLUSTER_NAME}" --location="${REGION}" --release-channel="None" >/dev/null 2>&1 || true
 
-    # Provision intact 8x L4 Ada Lovelace GPU Node Pool (`g2-standard-96`) across us-east4
-    # for immediate distributed PyTorch NCCL benchmarking and line-rate networking verification.
+    # Provision intact 8x L4 Ada Lovelace Spot GPU Node Pool (`g2-standard-96`) across us-east4
+    # for immediate distributed PyTorch NCCL benchmarking and zero-queue line-rate networking verification.
     gcloud container node-pools create "${NODE_POOL_NAME}" \
         --cluster="${CLUSTER_NAME}" \
         --location="${REGION}" \
@@ -74,6 +74,7 @@ else
         --node-version="1.33.13-gke.1101000" \
         --no-enable-autoupgrade \
         --accelerator="type=${ACCELERATOR_TYPE},count=${GPU_COUNT},gpu-driver-version=default" \
+        --spot \
         --enable-autoscaling \
         --min-nodes="${MIN_NODES}" \
         --max-nodes="${MAX_NODES}" \
@@ -85,9 +86,9 @@ else
         --tags="ai-hypercomputer,g2-gpu-node" \
         --scopes="https://www.googleapis.com/auth/cloud-platform" \
         --node-labels="gpu-cluster=g2-l4" \
-        --labels="machine-type=${MACHINE_TYPE},gpu-cluster=g2-l4"
+        --labels="machine-type=${MACHINE_TYPE},gpu-cluster=g2-l4,provisioning=spot"
         
-    echo "[+] High-performance 8x L4 GPU node pool ('${NODE_POOL_NAME}') configured successfully for instantaneous verification."
+    echo "[+] High-performance 8x L4 Spot GPU node pool ('${NODE_POOL_NAME}') provisioned successfully right across ${NODE_ZONES}."
 fi
 
 echo ""
