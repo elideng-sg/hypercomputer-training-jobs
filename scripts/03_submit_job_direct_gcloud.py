@@ -96,8 +96,8 @@ def main():
     k8s_request("/api/v1/namespaces/default/configmaps", method="POST", body=cm_payload)
     log("[+] ConfigMap 'verification-source-map' generated directly inside GKE cluster API.")
 
-    # 2. Submit multi-GPU instantaneous verification training job targeting g2-standard-96 (`8x L4`)
-    log("Step 3.2: Submitting distributed 8x L4 GPU PyTorch verification Job over GKE REST API...")
+    # 2. Submit multi-GPU high-availability verification training job targeting g2-standard-48 (`4x L4`)
+    log("Step 3.2: Submitting distributed 4x L4 GPU PyTorch verification Job over GKE REST API...")
     job_payload = {
         "apiVersion": "batch/v1",
         "kind": "Job",
@@ -115,7 +115,7 @@ def main():
                 "spec": {
                     "restartPolicy": "Never",
                     "nodeSelector": {
-                        "node.kubernetes.io/instance-type": "g2-standard-96"
+                        "node.kubernetes.io/instance-type": "g2-standard-48"
                     },
                     "tolerations": [
                         {"key": "nvidia.com/gpu", "operator": "Exists", "effect": "NoSchedule"}
@@ -133,7 +133,7 @@ def main():
                               
                               echo ""
                               echo "================================================================="
-                              echo " -> Initializing PyTorch Distributed 8x GPU Run with torchrun..."
+                              echo " -> Initializing PyTorch Distributed 4x GPU Run with torchrun..."
                               echo "================================================================="
                               mkdir -p /workspace/src /workspace/logs
                               if [ -f "/mounted_src/train_benchmark_fp8.py" ]; then
@@ -142,7 +142,7 @@ def main():
                               
                               cd /workspace && \
                               torchrun \
-                                --nproc_per_node=8 \
+                                --nproc_per_node=4 \
                                 --nnodes=1 \
                                 --master_addr="127.0.0.1" \
                                 --master_port=29500 \
@@ -158,8 +158,8 @@ def main():
                                 {"name": "OMP_NUM_THREADS", "value": "8"}
                             ],
                             "resources": {
-                                "limits": {"nvidia.com/gpu": "8", "cpu": "64", "memory": "300Gi"},
-                                "requests": {"nvidia.com/gpu": "8", "cpu": "64", "memory": "300Gi"}
+                                "limits": {"nvidia.com/gpu": "4", "cpu": "36", "memory": "160Gi"},
+                                "requests": {"nvidia.com/gpu": "4", "cpu": "36", "memory": "160Gi"}
                             },
                             "volumeMounts": [
                                 {"name": "shm", "mountPath": "/dev/shm"},
@@ -168,7 +168,7 @@ def main():
                         }
                     ],
                     "volumes": [
-                        {"name": "shm", "emptyDir": {"medium": "Memory", "sizeLimit": "64Gi"}},
+                        {"name": "shm", "emptyDir": {"medium": "Memory", "sizeLimit": "32Gi"}},
                         {"name": "benchmark-code", "configMap": {"name": "verification-source-map"}}
                     ]
                 }
@@ -176,7 +176,7 @@ def main():
         }
     }
     k8s_request("/apis/batch/v1/namespaces/default/jobs", method="POST", body=job_payload)
-    log("[+] Job 'gcp-ai-hypercomputer-verification' scheduled successfully targeting instantaneous 8x L4 node pool!")
+    log("[+] Job 'gcp-ai-hypercomputer-verification' scheduled successfully targeting high-availability 4x L4 node pool!")
 
     # 3. Monitor pod schedule & stream diagnostics
     log("Step 3.3: Monitoring node scale-up and container pod status...")
