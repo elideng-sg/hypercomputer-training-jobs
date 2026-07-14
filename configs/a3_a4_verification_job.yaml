@@ -14,8 +14,8 @@ spec:
     spec:
       restartPolicy: Never
       nodeSelector:
-        # Route job directly to high-availability 4x L4 Ada Lovelace node pool (g2-standard-48)
-        node.kubernetes.io/instance-type: g2-standard-48
+        # Route job directly to high-capacity 8x L4 Ada Lovelace Option 2 Iowa hub (g2-standard-96)
+        node.kubernetes.io/instance-type: g2-standard-96
       tolerations:
       - key: "nvidia.com/gpu"
         operator: "Exists"
@@ -46,7 +46,7 @@ spec:
           
           cd /workspace && \
           torchrun \
-            --nproc_per_node=4 \
+            --nproc_per_node=8 \
             --nnodes=1 \
             --master_addr="127.0.0.1" \
             --master_port=29500 \
@@ -66,13 +66,13 @@ spec:
           value: "8"
         resources:
           limits:
-            nvidia.com/gpu: "4"
-            cpu: "36"
-            memory: "160Gi"
+            nvidia.com/gpu: "8"
+            cpu: "64"
+            memory: "300Gi"
           requests:
-            nvidia.com/gpu: "4"
-            cpu: "36"
-            memory: "160Gi"
+            nvidia.com/gpu: "8"
+            cpu: "64"
+            memory: "300Gi"
         volumeMounts:
         - name: shm
           mountPath: /dev/shm

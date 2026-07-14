@@ -5,19 +5,19 @@
 set -euo pipefail
 
 CLUSTER_NAME="${CLUSTER_NAME:-hypercomputer-a3-cluster}"
-REGION="${REGION:-us-east4}"
-ZONE="${ZONE:-us-east4-a}"
-# Specifically span us-east4-a and us-east4-c where NVIDIA L4 hardware (`g2-standard-48`) is fully deployed
-NODE_ZONES="${NODE_ZONES:-us-east4-a,us-east4-c}"
+REGION="${REGION:-us-central1}"
+ZONE="${ZONE:-us-central1-a}"
+# Spans all three primary Iowa zones across us-central1 where multi-GPU NVIDIA L4 hardware (`g2-standard-96`) is deployed
+NODE_ZONES="${NODE_ZONES:-us-central1-a,us-central1-b,us-central1-c}"
 
-# Target Machine configuration (Option 1 High-Availability: g2-standard-48 with 4x NVIDIA L4 24GB GPUs for instant verification)
-NODE_POOL_NAME="g2-l4-pool-4g"
-MACHINE_TYPE="g2-standard-48"
+# Target Machine configuration (Option 2 High-Capacity Iowa Hub: g2-standard-96 with 8x NVIDIA L4 24GB GPUs)
+NODE_POOL_NAME="g2-l4-pool-8g"
+MACHINE_TYPE="g2-standard-96"
 ACCELERATOR_TYPE="nvidia-l4"
-GPU_COUNT="4"
-NUM_NODES="0" # Initialize cleanly right with instantaneous autoscaling across us-east4-a/c
+GPU_COUNT="8"
+NUM_NODES="0" # Initialize cleanly right with dynamic autoscaling across us-central1-a/b/c
 MIN_NODES="0"
-MAX_NODES="2" # Autoscale up right as jobs submit
+MAX_NODES="2" # Autoscale right up right as verification jobs submit
 
 echo "========================================================================"
 echo "[*] Step 2.1: Creating foundational GKE control plane: ${CLUSTER_NAME}..."
@@ -45,8 +45,7 @@ echo "========================================================================"
 gcloud container clusters get-credentials "${CLUSTER_NAME}" --location="${REGION}"
 
 echo ""
-echo "========================================================================"
-echo "[*] Step 2.3: Provisioning High-Availability 4x L4 GPU Node Pool (${NODE_POOL_NAME}) across active L4 zones (${NODE_ZONES})..."
+echo "[*] Step 2.3: Provisioning Option 2 High-Capacity 8x L4 GPU Node Pool (${NODE_POOL_NAME}) right across Iowa zones (${NODE_ZONES})..."
 echo "========================================================================"
 NP_STATUS=$(gcloud container node-pools describe "${NODE_POOL_NAME}" --cluster="${CLUSTER_NAME}" --location="${REGION}" --format="value(status)" 2>/dev/null || true)
 
@@ -64,8 +63,8 @@ else
     echo "[*] Unenrolling control plane from automatic release channels for COS 121 kernel compatibility..."
     gcloud container clusters update "${CLUSTER_NAME}" --location="${REGION}" --release-channel="None" >/dev/null 2>&1 || true
 
-    # Provision intact 4x L4 Ada Lovelace Spot GPU Node Pool (`g2-standard-48`) across us-east4
-    # for immediate high-availability distributed PyTorch NCCL benchmarking and zero-queue line-rate networking verification.
+    # Provision intact 8x L4 Ada Lovelace Spot GPU Node Pool (`g2-standard-96`) across us-central1 (Iowa)
+    # for immediate high-capacity distributed PyTorch NCCL benchmarking and zero-queue line-rate networking verification.
     gcloud container node-pools create "${NODE_POOL_NAME}" \
         --cluster="${CLUSTER_NAME}" \
         --location="${REGION}" \
@@ -88,7 +87,7 @@ else
         --node-labels="gpu-cluster=g2-l4" \
         --labels="machine-type=${MACHINE_TYPE},gpu-cluster=g2-l4,provisioning=spot"
         
-    echo "[+] High-performance 4x L4 Spot GPU node pool ('${NODE_POOL_NAME}') provisioned successfully right across ${NODE_ZONES}."
+    echo "[+] High-performance Option 2 8x L4 Spot GPU node pool ('${NODE_POOL_NAME}') provisioned successfully across ${NODE_ZONES}."
 fi
 
 echo ""

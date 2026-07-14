@@ -5,8 +5,8 @@
 set -euo pipefail
 
 CLUSTER_NAME="${CLUSTER_NAME:-hypercomputer-a3-cluster}"
-REGION="${REGION:-us-east4}"
-NODE_POOL_NAME="${NODE_POOL_NAME:-a3-h100-pool-8g}"
+REGION="${REGION:-us-central1}"
+NODE_POOL_NAME="${NODE_POOL_NAME:-g2-l4-pool-8g}"
 
 echo "========================================================================"
 echo "[*] Step 4: Cost Protection & Resource Teardown Options"
