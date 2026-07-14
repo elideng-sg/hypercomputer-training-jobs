@@ -7,18 +7,17 @@ set -euo pipefail
 CLUSTER_NAME="${CLUSTER_NAME:-hypercomputer-a3-cluster}"
 REGION="${REGION:-us-east4}"
 ZONE="${ZONE:-us-east4-a}"
-NODE_ZONES="${NODE_ZONES:-us-east4-a,us-east4-b,us-east4-c}"
+# Specifically span us-east4-a and us-east4-c where NVIDIA L4 hardware (`g2-standard-96`) is fully deployed
+NODE_ZONES="${NODE_ZONES:-us-east4-a,us-east4-c}"
 
 # Target Machine configuration (Option 1: g2-standard-96 with 8x NVIDIA L4 24GB GPUs for instant verification)
-# Alternative high-end H100 DWS targets:
-#   A3 High H100:  --machine-type=a3-highgpu-8g --accelerator=type=nvidia-h100-80gb,count=8 (--enable-queued-provisioning)
 NODE_POOL_NAME="g2-l4-pool-8g"
 MACHINE_TYPE="g2-standard-96"
 ACCELERATOR_TYPE="nvidia-l4"
 GPU_COUNT="8"
-NUM_NODES="0" # Initialize cleanly with dynamic multi-zone autoscaling across us-east4-a/b/c
+NUM_NODES="0" # Initialize cleanly with dynamic multi-zone autoscaling across us-east4-a/c
 MIN_NODES="0"
-MAX_NODES="2" # Autoscale up to required verification test slots right away when jobs submit
+MAX_NODES="2" # Autoscale up right as jobs submit
 
 echo "========================================================================"
 echo "[*] Step 2.1: Creating foundational GKE control plane: ${CLUSTER_NAME}..."
@@ -47,13 +46,13 @@ gcloud container clusters get-credentials "${CLUSTER_NAME}" --location="${REGION
 
 echo ""
 echo "========================================================================"
-echo "[*] Step 2.3: Provisioning A3 8x GPU Node Pool (${NODE_POOL_NAME})..."
+echo "[*] Step 2.3: Provisioning 8x L4 GPU Node Pool (${NODE_POOL_NAME}) across active L4 zones (${NODE_ZONES})..."
 echo "========================================================================"
 NP_STATUS=$(gcloud container node-pools describe "${NODE_POOL_NAME}" --cluster="${CLUSTER_NAME}" --location="${REGION}" --format="value(status)" 2>/dev/null || true)
 
 if [[ "${NP_STATUS}" == "ERROR" ]]; then
-    echo "[!] Existing node pool '${NODE_POOL_NAME}' is in ERROR status (typically from previous synchronous hardware stockouts)."
-    echo "[*] Deleting errored node pool '${NODE_POOL_NAME}' to re-provision cleanly with DWS Queued Provisioning..."
+    echo "[!] Existing node pool '${NODE_POOL_NAME}' is right now in ERROR status."
+    echo "[*] Deleting errored node pool '${NODE_POOL_NAME}' to re-provision cleanly..."
     gcloud container node-pools delete "${NODE_POOL_NAME}" --cluster="${CLUSTER_NAME}" --location="${REGION}" --quiet
     NP_STATUS=""
 fi
