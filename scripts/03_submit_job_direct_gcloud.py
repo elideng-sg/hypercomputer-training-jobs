@@ -195,28 +195,31 @@ def main():
         sys.exit(1)
         
     log(f"[+] Target verification Pod registered: {pod_name}")
-    log(" -> Checking status via GKE API while container downloads and initializes on A3 hardware...")
+    log(" -> Checking status via GKE API while multi-GPU compute node scales up and downloads NVIDIA container...")
     
     os.makedirs("logs", exist_ok=True)
     
-    # Check status loop with active DWS queue feedback
+    # Check status loop with real-time autoscaler and DWS queue diagnostic feedback
     while True:
         p_info = k8s_request(f"/api/v1/namespaces/default/pods/{pod_name}")
         phase = p_info.get("status", {}).get("phase", "Unknown")
         
-        # Check specific DWS conditions during Pending phase
-        dws_msg = ""
+        # Check specific autoscaling conditions & events during Pending phase
+        diag_msg = ""
         if phase == "Pending":
             try:
-                pr_info = k8s_request("/apis/autoscaling.x-k8s.io/v1/namespaces/default/provisioningrequests/a3-h100-verification-req")
-                conds = pr_info.get("status", {}).get("conditions", [])
-                for c in conds:
-                    if c.get("type") in ["Accepted", "Provisioned"]:
-                        dws_msg += f" [{c.get('type')}: {c.get('reason')} -> {c.get('message')}]"
+                events_info = k8s_request("/api/v1/namespaces/default/events")
+                for e in sorted(events_info.get("items", []), key=lambda x: x.get("lastTimestamp", x.get("eventTime", "")), reverse=True):
+                    if pod_name in str(e.get("involvedObject", {})):
+                        reason = e.get("reason", "")
+                        msg = e.get("message", "")
+                        if reason in ["TriggeredScaleUp", "FailedScaleUp", "NotTriggerScaleUp", "FailedScheduling"]:
+                            diag_msg = f" [{reason}: {msg}]"
+                            break
             except Exception:
                 pass
                 
-        log(f"    Current Pod phase: {phase}{dws_msg}")
+        log(f"    Current Pod phase: {phase}{diag_msg}")
         if phase in ["Running", "Succeeded", "Failed"]:
             break
         time.sleep(15)
