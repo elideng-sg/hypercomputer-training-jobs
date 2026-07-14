@@ -96,59 +96,8 @@ def main():
     k8s_request("/api/v1/namespaces/default/configmaps", method="POST", body=cm_payload)
     log("[+] ConfigMap 'verification-source-map' generated directly inside GKE cluster API.")
 
-    # 2. Setup DWS Queued ProvisioningRequest and submit multi-GPU verification training job
-    log("Step 3.2: Submitting distributed 8x GPU PyTorch verification Job & DWS ProvisioningRequest over GKE REST API...")
-    
-    # 2a. Post required PodTemplate & ProvisioningRequest for Dynamic Workload Scheduler (DWS)
-    pt_payload = {
-        "apiVersion": "v1",
-        "kind": "PodTemplate",
-        "metadata": {"name": "a3-h100-verification-pod-template", "namespace": "default"},
-        "template": {
-            "metadata": {"labels": {"app": "gpu-nccl-test", "dws-queued": "true"}},
-            "spec": {
-                "restartPolicy": "Never",
-                "nodeSelector": {
-                    "node.kubernetes.io/instance-type": "a3-highgpu-8g",
-                    "cloud.google.com/gke-queued": "true"
-                },
-                "tolerations": [
-                    {"key": "nvidia.com/gpu", "operator": "Exists", "effect": "NoSchedule"}
-                ],
-                "containers": [
-                    {
-                        "name": "verify-ddp-allreduce",
-                        "image": "nvcr.io/nvidia/pytorch:24.03-py3",
-                        "resources": {
-                            "limits": {"nvidia.com/gpu": "8", "cpu": "64", "memory": "384Gi"},
-                            "requests": {"nvidia.com/gpu": "8", "cpu": "64", "memory": "384Gi"}
-                        }
-                    }
-                ]
-            }
-        }
-    }
-    try: k8s_request("/api/v1/namespaces/default/podtemplates/a3-h100-verification-pod-template", method="DELETE")
-    except Exception: pass
-    try: k8s_request("/apis/autoscaling.x-k8s.io/v1/namespaces/default/provisioningrequests/a3-h100-verification-req", method="DELETE")
-    except Exception: pass
-    
-    k8s_request("/api/v1/namespaces/default/podtemplates", method="POST", body=pt_payload)
-    
-    pr_payload = {
-        "apiVersion": "autoscaling.x-k8s.io/v1",
-        "kind": "ProvisioningRequest",
-        "metadata": {"name": "a3-h100-verification-req", "namespace": "default"},
-        "spec": {
-            "provisioningClassName": "queued-provisioning.gke.io",
-            "parameters": {"maxRunDurationSeconds": "86400"},
-            "podSets": [{"count": 1, "podTemplateRef": {"name": "a3-h100-verification-pod-template"}}]
-        }
-    }
-    k8s_request("/apis/autoscaling.x-k8s.io/v1/namespaces/default/provisioningrequests", method="POST", body=pr_payload)
-    log("[+] DWS ProvisioningRequest 'a3-h100-verification-req' created. Hardware ticket entered into regional queue.")
-
-    # 2b. Submit verification Job bound explicitly to the DWS Queued ProvisioningRequest ticket
+    # 2. Submit multi-GPU instantaneous verification training job targeting g2-standard-96 (`8x L4`)
+    log("Step 3.2: Submitting distributed 8x L4 GPU PyTorch verification Job over GKE REST API...")
     job_payload = {
         "apiVersion": "batch/v1",
         "kind": "Job",
@@ -161,14 +110,12 @@ def main():
             "backoffLimit": 0,
             "template": {
                 "metadata": {
-                    "labels": {"job-group": "ai-cluster-verify", "app": "gpu-nccl-test", "dws-queued": "true"},
-                    "annotations": {"autoscaling.gke.io/provisioning-request": "a3-h100-verification-req"}
+                    "labels": {"job-group": "ai-cluster-verify", "app": "gpu-nccl-test"}
                 },
                 "spec": {
                     "restartPolicy": "Never",
                     "nodeSelector": {
-                        "node.kubernetes.io/instance-type": "a3-highgpu-8g",
-                        "cloud.google.com/gke-queued": "true"
+                        "node.kubernetes.io/instance-type": "g2-standard-96"
                     },
                     "tolerations": [
                         {"key": "nvidia.com/gpu", "operator": "Exists", "effect": "NoSchedule"}
@@ -211,8 +158,8 @@ def main():
                                 {"name": "OMP_NUM_THREADS", "value": "8"}
                             ],
                             "resources": {
-                                "limits": {"nvidia.com/gpu": "8", "cpu": "64", "memory": "384Gi"},
-                                "requests": {"nvidia.com/gpu": "8", "cpu": "64", "memory": "384Gi"}
+                                "limits": {"nvidia.com/gpu": "8", "cpu": "64", "memory": "300Gi"},
+                                "requests": {"nvidia.com/gpu": "8", "cpu": "64", "memory": "300Gi"}
                             },
                             "volumeMounts": [
                                 {"name": "shm", "mountPath": "/dev/shm"},
@@ -221,7 +168,7 @@ def main():
                         }
                     ],
                     "volumes": [
-                        {"name": "shm", "emptyDir": {"medium": "Memory", "sizeLimit": "128Gi"}},
+                        {"name": "shm", "emptyDir": {"medium": "Memory", "sizeLimit": "64Gi"}},
                         {"name": "benchmark-code", "configMap": {"name": "verification-source-map"}}
                     ]
                 }
@@ -229,7 +176,7 @@ def main():
         }
     }
     k8s_request("/apis/batch/v1/namespaces/default/jobs", method="POST", body=job_payload)
-    log("[+] Job 'gcp-ai-hypercomputer-verification' scheduled successfully!")
+    log("[+] Job 'gcp-ai-hypercomputer-verification' scheduled successfully targeting instantaneous 8x L4 node pool!")
 
     # 3. Monitor pod schedule & stream diagnostics
     log("Step 3.3: Monitoring node scale-up and container pod status...")

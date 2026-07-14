@@ -9,17 +9,16 @@ REGION="${REGION:-us-east4}"
 ZONE="${ZONE:-us-east4-a}"
 NODE_ZONES="${NODE_ZONES:-us-east4-a,us-east4-b,us-east4-c}"
 
-# Target Machine configuration (Default: a3-highgpu-8g with 8x H100 80GB GPUs)
-# Alternative values for higher tiers:
-#   A3 Ultra H200: --machine-type=a3-ultragpu-8g --accelerator=type=nvidia-h200-141gb,count=8
-#   A4 Blackwell:  --machine-type=a4-highgpu-8g --accelerator=type=nvidia-b200,count=8
-NODE_POOL_NAME="a3-h100-pool-8g"
-MACHINE_TYPE="a3-highgpu-8g"
-ACCELERATOR_TYPE="nvidia-h100-80gb"
+# Target Machine configuration (Option 1: g2-standard-96 with 8x NVIDIA L4 24GB GPUs for instant verification)
+# Alternative high-end H100 DWS targets:
+#   A3 High H100:  --machine-type=a3-highgpu-8g --accelerator=type=nvidia-h100-80gb,count=8 (--enable-queued-provisioning)
+NODE_POOL_NAME="g2-l4-pool-8g"
+MACHINE_TYPE="g2-standard-96"
+ACCELERATOR_TYPE="nvidia-l4"
 GPU_COUNT="8"
-NUM_NODES="0" # Start at 0 nodes for Dynamic Workload Scheduler (DWS) Queued Provisioning
+NUM_NODES="0" # Initialize cleanly with dynamic multi-zone autoscaling across us-east4-a/b/c
 MIN_NODES="0"
-MAX_NODES="4" # Max autoscale target across zones across us-east4-a/b/c
+MAX_NODES="2" # Autoscale up to required verification test slots right away when jobs submit
 
 echo "========================================================================"
 echo "[*] Step 2.1: Creating foundational GKE control plane: ${CLUSTER_NAME}..."
@@ -66,9 +65,8 @@ else
     echo "[*] Unenrolling control plane from automatic release channels for COS 121 kernel compatibility..."
     gcloud container clusters update "${CLUSTER_NAME}" --location="${REGION}" --release-channel="None" >/dev/null 2>&1 || true
 
-    # Provision intact 8-GPU A3 Hypercomputer Node Pool using Dynamic Workload Scheduler (DWS)
-    # Queued Provisioning (--enable-queued-provisioning) + zero-to-N autoscaling across available zones
-    # to eliminate synchronous [GCE_STOCKOUT] initialization timeouts.
+    # Provision intact 8x L4 Ada Lovelace GPU Node Pool (`g2-standard-96`) across us-east4
+    # for immediate distributed PyTorch NCCL benchmarking and line-rate networking verification.
     gcloud container node-pools create "${NODE_POOL_NAME}" \
         --cluster="${CLUSTER_NAME}" \
         --location="${REGION}" \
@@ -77,8 +75,6 @@ else
         --node-version="1.33.13-gke.1101000" \
         --no-enable-autoupgrade \
         --accelerator="type=${ACCELERATOR_TYPE},count=${GPU_COUNT},gpu-driver-version=default" \
-        --enable-queued-provisioning \
-        --reservation-affinity="none" \
         --enable-autoscaling \
         --min-nodes="${MIN_NODES}" \
         --max-nodes="${MAX_NODES}" \
@@ -87,12 +83,12 @@ else
         --enable-gvnic \
         --disk-size="500GB" \
         --disk-type="pd-ssd" \
-        --tags="ai-hypercomputer,a3-gpu-node" \
+        --tags="ai-hypercomputer,g2-gpu-node" \
         --scopes="https://www.googleapis.com/auth/cloud-platform" \
-        --node-labels="gpu-cluster=a3-h100,cloud.google.com/gke-queued=true" \
-        --labels="machine-type=${MACHINE_TYPE},gpu-cluster=a3-h100,dws=queued-provisioning"
+        --node-labels="gpu-cluster=g2-l4" \
+        --labels="machine-type=${MACHINE_TYPE},gpu-cluster=g2-l4"
         
-    echo "[+] High-performance 8x GPU node pool configured successfully with DWS Queued Provisioning."
+    echo "[+] High-performance 8x L4 GPU node pool ('${NODE_POOL_NAME}') configured successfully for instantaneous verification."
 fi
 
 echo ""

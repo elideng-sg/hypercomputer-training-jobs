@@ -11,15 +11,11 @@ spec:
       labels:
         job-group: ai-cluster-verify
         app: gpu-nccl-test
-        dws-queued: "true"
-      annotations:
-        autoscaling.gke.io/provisioning-request: "a3-h100-verification-req"
     spec:
       restartPolicy: Never
       nodeSelector:
-        # Route job directly to our high-performance DWS Queued Provisioning A3 series node pool
-        node.kubernetes.io/instance-type: a3-highgpu-8g
-        cloud.google.com/gke-queued: "true" # Match Dynamic Workload Scheduler (DWS) queued pool
+        # Route job directly to our instantaneous 8x L4 Ada Lovelace node pool (g2-standard-96)
+        node.kubernetes.io/instance-type: g2-standard-96
       tolerations:
       - key: "nvidia.com/gpu"
         operator: "Exists"
@@ -72,11 +68,11 @@ spec:
           limits:
             nvidia.com/gpu: "8"
             cpu: "64"
-            memory: "384Gi"
+            memory: "300Gi"
           requests:
             nvidia.com/gpu: "8"
             cpu: "64"
-            memory: "384Gi"
+            memory: "300Gi"
         volumeMounts:
         - name: shm
           mountPath: /dev/shm
@@ -87,7 +83,7 @@ spec:
       - name: shm
         emptyDir:
           medium: Memory
-          sizeLimit: 128Gi
+          sizeLimit: 64Gi
       - name: benchmark-code
         configMap:
           name: verification-source-map
