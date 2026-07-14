@@ -12,23 +12,23 @@ To build, monitor, and scale distributed machine learning runs on GKE successful
 
 ```mermaid
 flowchart TB
-    subgraph Client ["Developer macOS Workstation (Zero Local 'kubectl' required)"]
-        CLI [03_submit_job_direct_gcloud.py] -->|1. Transmit OAuth Bearer Token over HTTPS| Master
+    subgraph Client ["Developer macOS Workstation - Zero Local kubectl Required"]
+        CLI["03_submit_job_direct_gcloud.py"] -->|1. Transmit OAuth Bearer Token over HTTPS| Master
     end
 
-    subgraph ControlPlane ["GKE Control Plane (us-central1 Regional Master API - $0.10/hr)"]
-        Master [Kube-APIServer (34.135.25.101)] -->|2. Register verification Job & ConfigMap| Sched [Kubernetes Scheduler]
-        Sched -->|3. Emit TriggeredScaleUp signal via Location Policy ANY| Autoscaler [GKE Cluster Autoscaler]
+    subgraph ControlPlane ["GKE Control Plane - us-central1 Regional Master API"]
+        Master["Kube-APIServer (34.135.25.101)"] -->|2. Register verification Job and ConfigMap| Sched["Kubernetes Scheduler"]
+        Sched -->|3. Emit TriggeredScaleUp signal via Location Policy ANY| Autoscaler["GKE Cluster Autoscaler"]
     end
 
-    subgraph ComputePools ["us-central1 Multi-Zone Managed Instance Group (g2-l4-pool-8g)"]
-        Autoscaler -->|4. Request Spot 8x GPU Slice in lowest-cost available zone| ZoneB [us-central1-b: g2-standard-96 (Active Spot Host)]
-        ZoneA [us-central1-a: 0 instances ($0 idle)]
-        ZoneC [us-central1-c: 0 instances ($0 idle)]
+    subgraph ComputePools ["us-central1 Multi-Zone Managed Instance Group - g2-l4-pool-8g"]
+        Autoscaler -->|4. Request Spot 8x GPU Slice right inside lowest-cost zone| ZoneB["us-central1-b: g2-standard-96 (Active Spot Host)"]
+        ZoneA["us-central1-a: 0 instances ($0 idle)"]
+        ZoneC["us-central1-c: 0 instances ($0 idle)"]
     end
 
-    subgraph Container ["NVIDIA Hopper/Lovelace PyTorch Container (verify-ddp-allreduce)"]
-        ZoneB -->|5. Attach 8x L4 GPUs, mount /dev/shm & launch torchrun| JobExecution [Distributed PyTorch NCCL Ring All-Reduce Across Ranks 0-7]
+    subgraph Container ["NVIDIA Hopper and Lovelace PyTorch Container"]
+        ZoneB -->|5. Attach 8x L4 GPUs, mount /dev/shm, and launch torchrun| JobExecution["Distributed PyTorch NCCL Ring All-Reduce Across Ranks 0 through 7"]
     end
 ```
 
