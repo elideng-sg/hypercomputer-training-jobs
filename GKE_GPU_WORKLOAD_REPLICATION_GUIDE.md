@@ -28,7 +28,7 @@ gcloud services enable container.googleapis.com \
                        autoscaling.googleapis.com \
                        logging.googleapis.com \
                        monitoring.googleapis.com \
-                       --project="hdlab-elideng"
+                       --project="<YOUR_GCP_PROJECT_ID>"
 ```
 
 ### 3. Securing Mandatory Hardware Quota Allocations (`NVIDIA_L4_GPUS & NVIDIA_H100_GPUS`)
@@ -43,7 +43,7 @@ To replicate our successful distributed multi-GPU training workload (`8x GPUs + 
   - **`CPUS`**: Minimum regional vCPU quota >= **`96 vCPUs`**.
   - **`IN_USE_ADDRESSES`**: Minimum regional static/dynamic IPv4 count >= **`8`**.
 - **For Option 1 / High-End H100 Queued Arrays (`us-east4` Northern Virginia):**
-  - **`NVIDIA_H100_GPUS`**: Minimum required target quota >= **`8 GPUs`** (*Our verified target project `hdlab-elideng` explicitly holds an active quota ceiling of **`32x H100 GPUs`** across `us-east4`*).
+  - **`NVIDIA_H100_GPUS`**: Minimum required target quota >= **`8 GPUs`** (*Our verified target workspace explicitly secured an active quota ceiling of **`32x H100 GPUs`** across `us-east4`*).
 
 #### How to Query Real-Time Active GPU Quota Allocations via CLI:
 Run our pre-flight quota diagnostic check directly right out of your terminal workspace right before initial cluster setup:
@@ -132,7 +132,7 @@ Ensure your trusted local `gcloud` command set is securely authenticated and poi
 gcloud auth login
 
 # 2. Assign active target project parameters inside your gcloud session
-gcloud config set project hdlab-elideng
+gcloud config set project <YOUR_GCP_PROJECT_ID>
 
 # 3. Confirm target API endpoints right right now right across us-central1 (Iowa)
 gcloud compute regions describe us-central1
@@ -241,7 +241,7 @@ Whenever colleagues encounter unfamiliar exceptions across active scaling runs o
 ### 2. Synchronous Single-Zone Creation Timeouts & `[GCE_STOCKOUT]` Failures
 - **Exact Symptom & Error Output:** Attempting synchronous node pool creation right right right with `--num-nodes=1` across single availability zones right upon early cluster setup routinely stalled out across 35-minute creation loops right before returning fatal compute failures:
   ```
-  [GCE_STOCKOUT]: Instance creation failed: The zone 'projects/hdlab-elideng/zones/us-east4-a' 
+  [GCE_STOCKOUT]: Instance creation failed: The zone 'projects/<YOUR_GCP_PROJECT_ID>/zones/us-east4-a' 
   does not have enough resources available to fulfill the request right now. (state:STOCKOUT)
   ```
 - **Underlying Architectural Cause & Exact Solution (`Zero-Initial Pool + Multi-Zone Autoscaling`):** High-end 8x GPU server instances (`a3-highgpu-8g` H100s and `g2-standard-96` L4s) represent complete bare-metal server chasses (`100% of all motherboards right right at 8x GPUs + 96 vCPUs`). To completely eliminate creation stockout stalls, every node pool across our setup initializes strictly right right at **`num-nodes=0` ($0 initial cost)** while enabling multi-zone dynamic autoscaling (`--enable-autoscaling --min-nodes=0 --max-nodes=2 --location-policy=ANY`). When jobs are posted across GKE, Cluster Autoscaler dynamically checks out physical capacity across whichever zone turns up available first across the state!

@@ -139,5 +139,5 @@ Because 8x H100/B200 nodes accrue rapid on-demand usage costs, always scale your
 ---
 
 ## 🛠 Driver Diagnostics & Cloud Sandbox Execution
-* **Cloud Terminal Sandbox:** You can interact natively with your Kubernetes API directly across Google's high-speed web sandbox (where zero endpoint security blocks exist) by opening [https://shell.cloud.google.com/?project=hdlab-elideng](https://shell.cloud.google.com/?project=hdlab-elideng) or running `gcloud cloud-shell ssh`.
+* **Cloud Terminal Sandbox:** You can interact natively with your Kubernetes API directly across Google's high-speed web sandbox (where zero endpoint security blocks exist) by opening `https://shell.cloud.google.com/?project=<YOUR_GCP_PROJECT_ID>` or running `gcloud cloud-shell ssh`.
 * **Santa Whitelisting:** If you wish to enable native command-line `kubectl` across your corporate Mac workstation, access your Santa diagnostic URL (`https://upvote.googleplex.com/blockables/4408c85c83...`) in a web browser to grant explicit developer authorization for `/bin/kubectl.1.36`.
