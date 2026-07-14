@@ -20,17 +20,17 @@ hypercomputer-training-jobs/
 │   └── train_benchmark_fp8.py          # Distributed PyTorch NCCL & Tensor Core DDP benchmark script
 ├── logs/                               # Output log folder for NCCL traces and runtime timing JSON files
 ├── ARCHITECTURE.md                     # Comprehensive multi-diagram system configuration, hardware topologies, & REST sequence charts
-├── GKE_GPU_WORKLOAD_REPLICATION_GUIDE.md # Complete step-by-step colleagues operational replication handbook & GKE architectural deep dive
+├── GKE_GPU_WORKLOAD_INIT_TEST_GUIDE.md # Complete step-by-step colleagues operational initialization & testing handbook alongside GKE architectural deep dive
 ├── ai_hypercomputer_verification_report.md # Full diagnostic execution run report and hardware performance metric breakdown
 └── README.md                           # Comprehensive end-to-end execution runbook
 ```
 
 ---
 
-## 🏛 Core Documentation & Replication Handbooks
+## 🏛 Core Documentation & Initialization Handbooks
 
-To assist engineering and data science colleagues in replicating our completely verified, high-availability multi-GPU deployment right out of the box, refer directly to our primary reference handbooks right in the project root:
-1. **[GKE_GPU_WORKLOAD_REPLICATION_GUIDE.md](file:///Users/elideng/hypercomputer-training-jobs/GKE_GPU_WORKLOAD_REPLICATION_GUIDE.md)** — **The primary Colleagues Replication Handbook.** Explains exact GKE internal architectures for GPU training (`Container-Optimized OS`, `/dev/shm` IPC volumes, GPU device tolerations), details how we eliminated corporate macOS endpoint blocks (`Option 1 REST API Automation without kubectl`), and provides step-by-step terminal replication protocols utilizing multi-zone Spot scheduling (`--spot` across `us-central1` Iowa).
+To assist engineering and data science colleagues right across replicating and testing our completely verified, high-availability multi-GPU deployment right out of the box, refer directly across our primary reference handbooks in the project root:
+1. **[GKE_GPU_WORKLOAD_INIT_TEST_GUIDE.md](file:///Users/elideng/hypercomputer-training-jobs/GKE_GPU_WORKLOAD_INIT_TEST_GUIDE.md)** — **The primary Colleagues Initialization & Testing Handbook.** Explains exact GKE internal architectures for GPU training (`Container-Optimized OS`, `/dev/shm` IPC volumes, GPU device tolerations), details how we eliminated corporate macOS endpoint blocks (`Option 1 REST API Automation without kubectl`), and provides step-by-step terminal initialization protocols utilizing multi-zone Spot scheduling (`--spot` across `us-central1` Iowa).
 2. **[ai_hypercomputer_verification_report.md](file:///Users/elideng/hypercomputer-training-jobs/ai_hypercomputer_verification_report.md)** — Comprehensive runtime diagnostic assessment documenting our verified multi-GPU benchmark run (`g2-standard-96` | 8x NVIDIA L4 Ada Lovelace GPUs + 96 vCPUs), presenting exact worker synchronizations (`torchrun --nproc_per_node=8`), native Fourth-Gen Tensor Core `torch.bfloat16` timings (`3.474s over 25 DDP iterations`), and aggregate 4.81 GB/s ring `All-Reduce` crossbar throughput.
 3. **[ARCHITECTURE.md](file:///Users/elideng/hypercomputer-training-jobs/ARCHITECTURE.md)** — Detailed multi-diagram system topographies, NVLink/NVSwitch structural diagrams, and pure HTTPS REST sequence charts.
 
