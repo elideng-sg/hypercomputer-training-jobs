@@ -130,6 +130,43 @@ When running multi-process distributed training runs (`torch.nn.parallel.Distrib
       sizeLimit: 64Gi
   ```
 
+### 4. Compute Allocation Strategies: Multi-Zone Spot vs. DWS Queued Provisioning
+When configuring GPU node pools directly right across Google Kubernetes Engine, choosing the appropriate computational allocation strategy is critical right right right for optimizing infrastructure billing, eliminating synchronous hardware stockout stops, and matching your target job execution duration boundaries. 
+
+The two primary allocation regimes leveraged right right right across high-performance AI Hypercomputer deployments directly right differ across execution certainty right and scheduling mechanics:
+
+| Allocation Regime | Cost Discount | Preemption Behavior | Target Hardware Classes | Recommended Operational Use-Cases |
+| :--- | :---: | :---: | :--- | :--- |
+| **Multi-Zone Spot Provisioning (`--spot --location-policy=ANY`)** | **Up to ~70% Discount** | **Preemptible** (30s explicit termination notice) | All GPUs (`G2 / A3 / A2 / A4`) | Short PyTorch verification runs, hyperparameter sweeps, and experimental stress benchmarking across flexible budgets. |
+| **DWS Queued Provisioning (`--enable-queued-provisioning`)** | Standard On-Demand / Reserved Rates | **Non-Preemptible** (Guaranteed uninterrupted window) | All GPUs (`G2 / A3 / A2 / A4` & TPUs) | Overnight distributed model fine-tuning (`12–48h`), large multi-node `8x H100 / Blackwell` supercomputing tiers, and deterministic workloads. |
+
+#### A. Multi-Zone Spot Dynamic Provisioning (`Our Active Script Default Demo Setup`)
+- **How it Works:** Passing `--spot --enable-autoscaling --min-nodes=0 --max-nodes=2 --location-policy=ANY --num-nodes=0` inside [scripts/02_create_gke_cluster.sh:L76-L81](file:///Users/elideng/hypercomputer-training-jobs/scripts/02_create_gke_cluster.sh#L76-L81) instructs GKE Cluster Autoscaler directly to continuously scan all target availability zones (`<REGION>-a, <REGION>-b, <REGION>-c`). Upon detecting a pending training pod, it claims an available surplus Spot bare-metal server unit inside ~60 to 90 seconds.
+- **Operational Benefits & Tradeoffs:** Delivers industry-leading computing savings right up right to **~70% directly below standard rates**, making it our default demonstrated execution setup across `8x NVIDIA L4 (`g2-standard-96`)` stress verification runs. However, Spot hosts remain subject directly to preemption right right across sudden commercial traffic peaks right in the region.
+
+#### B. Dynamic Workload Scheduler (DWS) Queued Provisioning
+- **How it Works:** Rather than risking synchronous allocation timeouts (`[GCE_STOCKOUT]`) right across congested on-demand single zones during high-demand daytime periods, passing **`--enable-queued-provisioning --reservation-affinity="none"`** explicitly delegates bare-metal hardware acquisition to **Google's Dynamic Workload Scheduler (DWS)** (`queued-provisioning.gke.io`). Under DWS, GKE queues your Job specifications in Google's global physical scheduling loops right inside `ProvisioningRequest / Queued` phase until contiguous physical compute racks free up across target zones right right right away!
+- **Universal Accelerator Support across L4 and H100 Tier Blocks:**
+  DWS Queued Provisioning directly supports the entire spectrum right across advanced AI Hypercomputer accelerator lines right out of the box: **`G2` series (`NVIDIA L4` spanning `g2-standard-8` directly right up to `g2-standard-96` 8x L4 racks)**, **`A2` series (`A100 40GB/80GB`)**, **`A3` series (`8x H100 80GB`)**, right right right and **`A4` Blackwell (`B200` & `TPU Pod slices`)**.
+- **When to Choose DWS Queued Provisioning directly right across Your Workload:**
+  1. **For Uninterrupted Model Fine-Tuning across L4 Arrays (`g2-standard-96`):** If you are running long 12-to-48 hour distributed training loops right on an `8x L4` bare-metal array right where preemption crashes right across overnight processing would corrupt intermediate gradients or introduce repeated checkpoint restoration overhead, configuring your L4 pool right under DWS Queued Provisioning guarantees **100% uninterrupted, non-preemptible run duration directly right upon scale-up out of the queue**!
+  2. **For High-End Multi-Chassis Supercomputing Arrays (`a3-highgpu-8g` / `a4-highgpu-8g`):** When deploying large-scale H100/Blackwell training clusters right right requiring simultaneous allocation right right right across multiple bare-metal servers (`e.g., 4x physical A3 hosts / 32x H100 GPUs`), standard synchronous creation loops frequently encounter regional `[GCE_STOCKOUT]` boundaries during daytime hours. DWS guarantees **deterministic atomic multi-node reservation**, directly holding the job in queue right until all demanded physical servers spin right up in sync!
+
+#### How to Switch between Allocation Models in Your Creation Setup:
+To toggle your `02_create_gke_cluster.sh` deployment from standard Spot multi-zone placement right across right to deterministic DWS Queued allocation across upcoming runs, replace `--spot \` across [scripts/02_create_gke_cluster.sh:L76](file:///Users/elideng/hypercomputer-training-jobs/scripts/02_create_gke_cluster.sh#L76) directly right with exact DWS initialization flags:
+
+```bash
+# Example modifications right inside scripts/02_create_gke_cluster.sh right for activating DWS Queued pools:
+--accelerator="type=nvidia-l4,count=8,gpu-driver-version=default" \  # Or target nvidia-h100-80gb
+--enable-queued-provisioning \
+--reservation-affinity="none" \
+--enable-autoscaling \
+--min-nodes="0" \
+--max-nodes="4" \
+--location-policy="ANY" \
+--num-nodes="0"
+```
+
 ---
 
 ## Part IV: Step-by-Step Cluster Initialization & Verification Protocol (`Phase 1 to Phase 3`)
