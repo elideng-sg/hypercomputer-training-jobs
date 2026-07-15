@@ -63,29 +63,7 @@ If your regional quota query returns a limit below `8`, submit an automated high
 
 ## Part II: Core Architectural Foundations — How GKE Hosts Distributed GPU Workloads
 
-Once regional GPU hardware quotas are confirmed active, engineering colleagues must master exactly what occurs directly between the Kubernetes control plane and underlying physical bare-metal hardware chasses:
-
-```mermaid
-flowchart TB
-    subgraph Client ["Developer macOS Workstation - Zero Local kubectl Required"]
-        CLI["03_submit_job_direct_gcloud.py"] -->|1. Transmit OAuth Bearer Token over HTTPS| Master
-    end
-
-    subgraph ControlPlane ["GKE Control Plane - us-central1 Regional Master API - ~$0.10 per hr"]
-        Master["Kube-APIServer (34.135.25.101)"] -->|2. Register verification Job and ConfigMap| Sched["Kubernetes Scheduler"]
-        Sched -->|3. Emit TriggeredScaleUp signal via Location Policy ANY| Autoscaler["GKE Cluster Autoscaler"]
-    end
-
-    subgraph ComputePools ["us-central1 Multi-Zone Managed Instance Group - g2-l4-pool-8g"]
-        Autoscaler -->|4. Request Spot 8x GPU Slice right inside lowest-cost available zone| ZoneB["us-central1-b: g2-standard-96 (Active Spot Host)"]
-        ZoneA["us-central1-a: 0 instances ($0 idle)"]
-        ZoneC["us-central1-c: 0 instances ($0 idle)"]
-    end
-
-    subgraph Container ["NVIDIA Hopper and Lovelace PyTorch Container"]
-        ZoneB -->|5. Attach 8x L4 GPUs, mount /dev/shm, and launch torchrun| JobExecution["Distributed PyTorch NCCL Ring All-Reduce Across Ranks 0 through 7"]
-    end
-```
+Once regional GPU hardware quotas are confirmed active, engineering colleagues must master exactly what foundational architectural building blocks coordinate directly across the Kubernetes control plane and underlying physical bare-metal hardware chasses:
 
 ### 1. Control Plane vs. Compute Node Pools (`The Zero-Idle Dollar Breakdown`)
 When deploying high-performance GPU clusters across GCP, separation of responsibilities guarantees both resiliency and exact cost protection:
@@ -123,7 +101,31 @@ When running distributed training loops (`torch.nn.parallel.DistributedDataParal
 
 ## Part III: Step-by-Step Colleagues Replication Protocol (`Phase 1 to Phase 3`)
 
-Follow these exact specific technical stages right in precise chronological order directly right out of your local terminal workspace to deploy, run, and complete your multi-GPU distributed PyTorch training run across `us-central1`:
+Follow these exact specific technical stages right across precise chronological sequence straight directly right out of your local terminal workspace right right to deploy, run, and complete your multi-GPU distributed PyTorch run across `us-central1`. 
+
+The execution progression below maps out exactly how your local commands propagate completely across the system right from script triggering right to multi-GPU container completion:
+
+```mermaid
+flowchart TB
+    subgraph Client ["Developer macOS Workstation - Zero Local kubectl Required"]
+        CLI["03_submit_job_direct_gcloud.py"] -->|1. Transmit OAuth Bearer Token over HTTPS| Master
+    end
+
+    subgraph ControlPlane ["GKE Control Plane - us-central1 Regional Master API - ~$0.10 per hr"]
+        Master["Kube-APIServer (34.135.25.101)"] -->|2. Register verification Job and ConfigMap| Sched["Kubernetes Scheduler"]
+        Sched -->|3. Emit TriggeredScaleUp signal via Location Policy ANY| Autoscaler["GKE Cluster Autoscaler"]
+    end
+
+    subgraph ComputePools ["us-central1 Multi-Zone Managed Instance Group - g2-l4-pool-8g"]
+        Autoscaler -->|4. Request Spot 8x GPU Slice right inside lowest-cost available zone| ZoneB["us-central1-b: g2-standard-96 (Active Spot Host)"]
+        ZoneA["us-central1-a: 0 instances ($0 idle)"]
+        ZoneC["us-central1-c: 0 instances ($0 idle)"]
+    end
+
+    subgraph Container ["NVIDIA Hopper and Lovelace PyTorch Container"]
+        ZoneB -->|5. Attach 8x L4 GPUs, mount /dev/shm, and launch torchrun| JobExecution["Distributed PyTorch NCCL Ring All-Reduce Across Ranks 0 through 7"]
+    end
+```
 
 ### Phase 1: Initialize Local Project Authentication & Setup
 Ensure your trusted local `gcloud` command set is securely authenticated and pointed directly right across our designated Google Cloud workspace:

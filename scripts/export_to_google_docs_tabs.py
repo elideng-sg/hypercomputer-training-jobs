@@ -23,7 +23,7 @@ def format_mermaid_as_native_table(raw_lines):
     html_out = [
         "<div style='margin: 20px 0; border: 2px solid #1a73e8; border-radius: 8px; overflow: hidden; background: #f8fafe; font-family: Arial, sans-serif;'>",
         "    <div style='background: #1a73e8; color: #ffffff; padding: 12px 18px; font-weight: bold; font-size: 12pt;'>",
-        "        🏛 System Architectural Execution Flowchart (Google Docs Native Format)",
+        "        🚀 System Workload & Job Execution Flow (Google Docs Native Format)",
         "    </div>",
         "    <table style='width: 100%; border-collapse: collapse; margin: 0; border: none;'>",
         "        <tbody>",
