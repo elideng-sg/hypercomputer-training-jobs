@@ -35,6 +35,16 @@ Rejected: growing the bash scripts (non-reproducible, drift-prone — already bi
 twice) and fully-managed kits like XPK (abstract away the exact driver/NCCL/topology
 knobs we need to debug).
 
+## Delivery convention (all sub-projects)
+
+Every sub-project (SP-0 through SP-6) must deliver, in addition to its features:
+1. **Automated tests** — GPU-free static/CI checks plus on-demand smoke tests.
+2. **A user-facing verification / acceptance checklist** — concrete, copy-pasteable
+   steps the user runs and observes to *confirm the phase works*, each with an
+   expected result / pass criterion. A phase is not "done" until the user has run
+   this checklist and confirmed. This is distinct from automated tests: it is the
+   human sign-off gate.
+
 ## Decomposition (7 sub-projects)
 
 They stack; everything sits on SP-0.

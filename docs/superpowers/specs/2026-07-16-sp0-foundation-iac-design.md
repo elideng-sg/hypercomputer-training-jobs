@@ -142,6 +142,34 @@ or region (re-deploy module with different tfvars); upgrade notes.
 **Success criteria:** as in §1 — reproducible `make up` → DWS-provision any enabled GPU
 type through Kueue, fabric-ready, smoke passes, `make down` to ~zero GPU cost.
 
+## 8. User acceptance / verification steps
+
+Delivered as a `lab/VERIFY-SP0.md` checklist (and summarized in the README). The user
+runs these after the build to confirm SP-0 works; SP-0 is not "done" until every step
+passes and the user confirms. Each step lists the command and its pass criterion.
+
+1. **Cluster is up** — `gcloud container clusters describe <name> --region <r>` → `RUNNING`;
+   `kubectl get nodes` shows the system pool `Ready`.
+2. **GPU pools exist and are zero-scaled** — `gcloud container node-pools list` shows every
+   enabled pool; each GPU pool reports current size **0** (no idle GPU cost at rest).
+3. **Kueue is healthy** — `kubectl get clusterqueues,localqueues,resourceflavors` shows the
+   per-GPU-type flavors/queues; Kueue pods `Ready`.
+4. **DWS provisioning works via Kueue** — submit the smoke job for a GPU type; observe the
+   Kueue-created ProvisioningRequest reach `Provisioned=True`, the pod schedule, and — the
+   guard against `bugfixes/0002` — the node is **not** reclaimed while the job runs.
+5. **Node comes up fabric-ready** — on the provisioned node: `dcgmi diag -r 1` passes;
+   the GPUDirect/RDMA plugin daemonset pods are `Running`; expected NICs present
+   (4 for `h100-high`, 8 for `h100-mega`, RDMA/`mrdma` for `h200-ultra`/`b200`).
+6. **NCCL sanity** — the smoke job's 2-GPU and 8-GPU all-reduce complete without error
+   (non-zero busbw); for fabric types, the light 2-node all-reduce completes.
+7. **Observability hooks present** — DCGM metrics are being scraped (target/metric visible),
+   confirming SP-4 can build on them.
+8. **Teardown & cost invariant** — `make down` (and `DESTROY=1` variant) leaves **zero GPU
+   nodes** and **zero live ProvisioningRequests**; `gcloud compute instances list` shows no
+   GPU VMs. Re-running `make up` (idempotency) is a no-op plan.
+
+Per-GPU-type steps are only expected for pools enabled in the target region.
+
 ## Open items / prerequisites to confirm at implementation time
 - Target region(s) for first deployment and which pools each enables (capacity/quota).
 - Per-GPU quota availability in the chosen project.
