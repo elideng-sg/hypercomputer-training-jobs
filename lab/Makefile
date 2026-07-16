@@ -2,7 +2,7 @@ PROJECT ?= $(shell gcloud config get-value project 2>/dev/null)
 REGION  ?= us-central1
 ENABLED_POOLS ?= l4,a100,h100-high,h100-mega
 
-.PHONY: bootstrap render compose plan up
+.PHONY: bootstrap render compose plan up down verify-cost
 bootstrap:
 	PROJECT=$(PROJECT) REGION=$(REGION) bash scripts/bootstrap.sh
 	python3 scripts/preflight.py --project $(PROJECT) --region $(REGION) --pools $(ENABLED_POOLS)
@@ -28,3 +28,15 @@ plan: render
 
 up: plan
 	cd build/hpc-lab/primary && terraform apply -auto-approve -var-file=../../../env/$(REGION).tfvars
+
+down:
+	@if [ "$(DESTROY)" = "1" ]; then \
+	  cd build/hpc-lab/primary && terraform destroy -auto-approve -var-file=../../../env/$(REGION).tfvars; \
+	else \
+	  kubectl delete provisioningrequests --all -A --ignore-not-found; \
+	  for p in $$(echo $(ENABLED_POOLS) | tr ',' ' '); do \
+	    gcloud container clusters resize hpc-lab --node-pool $$p --region $(REGION) --num-nodes 0 --quiet || true; done; \
+	fi
+
+verify-cost:
+	python3 scripts/assert_zero_gpu.py $(PROJECT)
