@@ -64,7 +64,9 @@ else
     gcloud container clusters update "${CLUSTER_NAME}" --location="${REGION}" --release-channel="None" >/dev/null 2>&1 || true
 
     # Provision intact ONE unified 8x H100 A3 DWS GPU Node Pool spanning all three availability zones (`us-central1-a,b,c`).
-    # Utilizing --location-policy=BALANCED strictly ensures incoming queue requests split across all three zones evenly (`0 -> 1` per zone).
+    # --location-policy=ANY lets the autoscaler place nodes in whichever zone has capacity first (best for
+    # capacity-constrained H100 hunting). Even spread is instead enforced per-request via the hard
+    # `topology.kubernetes.io/zone` nodeSelector in each configs/dws_provisioning_request_zone_*.yaml.
     gcloud container node-pools create "${NODE_POOL_NAME}" \
         --cluster="${CLUSTER_NAME}" \
         --location="${REGION}" \
@@ -88,7 +90,7 @@ else
         --node-labels="gpu-cluster=a3-h100" \
         --labels="machine-type=${MACHINE_TYPE},gpu-cluster=a3-h100,provisioning=dws-queued"
         
-    echo "[+] High-performance ONE unified A3 DWS node pool ('${NODE_POOL_NAME}') provisioned successfully spanning across ${NODE_ZONES} with BALANCED policy."
+    echo "[+] High-performance ONE unified A3 DWS node pool ('${NODE_POOL_NAME}') provisioned successfully spanning across ${NODE_ZONES} with ANY location policy."
 fi
 
 echo ""
@@ -122,11 +124,21 @@ fi
 
 echo ""
 echo "[*] Submitting fresh independent 7-day DWS A3 8x H100 hardware queue requests across all three Iowa availability zones ASAP..."
-for zone_cfg in configs/dws_provisioning_request_zone_*.yaml; do
-    if [ -f "${zone_cfg}" ]; then
-        kubectl apply -f "${zone_cfg}"
-    fi
-done
+echo "[!] WARNING: each zone request is now hard-pinned (topology.kubernetes.io/zone) and asks for 1 node."
+echo "[!]          Applying all three => up to 3x a3-highgpu-8g (24x H100) can provision, one per zone."
+echo "[!]          If you only need ONE machine, submit a single zone file, or as soon as one request"
+echo "[!]          reaches Provisioned=True, cancel the others to avoid paying for extra nodes, e.g.:"
+echo "[!]            kubectl delete provisioningrequest a3-h100-req-zone-b a3-h100-req-zone-c -n default"
+# To provision a single node in only one zone instead of hunting all three, set e.g. ONLY_ZONE=a
+if [ -n "${ONLY_ZONE:-}" ]; then
+    kubectl apply -f "configs/dws_provisioning_request_zone_${ONLY_ZONE}.yaml"
+else
+    for zone_cfg in configs/dws_provisioning_request_zone_*.yaml; do
+        if [ -f "${zone_cfg}" ]; then
+            kubectl apply -f "${zone_cfg}"
+        fi
+    done
+fi
 
 echo ""
 echo "-> Checking active multi-zone DWS ProvisioningRequests and 8-GPU Holder deployment right away:"
