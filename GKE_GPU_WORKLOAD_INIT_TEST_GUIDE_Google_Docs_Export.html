@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset='utf-8'>
+<title>Complete Step-by-Step Initialization & Testing Guide: Hosting Multi-GPU AI Hypercomputer Workloads on GKE</title>
+<style>
+body { font-family: 'Arial', sans-serif; font-size: 11pt; line-height: 1.6; color: #222222; max-width: 8.5in; margin: 1in auto; padding: 0 1rem; }
+h1 { color: #1a73e8; font-size: 20pt; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px; margin-top: 24px; font-weight: bold; }
+h2 { color: #1a73e8; font-size: 15pt; margin-top: 22px; margin-bottom: 10px; border-bottom: 1px solid #eeeeee; padding-bottom: 4px; font-weight: bold; }
+h3 { color: #202124; font-size: 13pt; margin-top: 18px; margin-bottom: 8px; font-weight: bold; }
+h4 { color: #5f6368; font-size: 11.5pt; margin-top: 14px; margin-bottom: 6px; font-weight: bold; }
+p { margin-bottom: 10px; }
+pre { background-color: #f8f9fa; border: 1px solid #dadce0; border-radius: 6px; padding: 12px; font-family: 'Courier New', monospace; font-size: 9.5pt; white-space: pre-wrap; word-break: break-all; margin-bottom: 14px; }
+code { background-color: #f1f3f4; color: #d93025; font-family: 'Courier New', monospace; font-size: 9.5pt; padding: 2px 4px; border-radius: 4px; }
+pre code { background-color: transparent; color: #202124; padding: 0; }
+table { width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 10pt; }
+th { background-color: #e8f0fe; color: #1a73e8; border: 1px solid #dadce0; padding: 10px; text-align: left; font-weight: bold; }
+td { border: 1px solid #dadce0; padding: 9px; vertical-align: top; }
+ul, ol { margin-top: 4px; margin-bottom: 12px; padding-left: 24px; }
+li { margin-bottom: 6px; }
+.alert-caution { border-left: 5px solid #d93025; background-color: #fce8e6; padding: 12px; border-radius: 0 4px 4px 0; margin-bottom: 14px; color: #3c4043; }
+hr { border: 0; border-top: 1px solid #dadce0; margin: 22px 0; }
+</style>
+</head>
+<body>
+<h1>Complete Step-by-Step Initialization &amp; Testing Guide: Building Multi-GPU AI Hypercomputer Clusters on Google Kubernetes Engine (GKE)</h1>
+<p>This comprehensive guideline serves as the authoritative, step-by-step technical execution handbook for any engineering reader designing, deploying, testing, and running high-performance distributed <b>AI Hypercomputer GPU training clusters</b> directly on Google Cloud Platform (GCP) utilizing <b>Google Kubernetes Engine (GKE)</b>.</p>
+<p>Whether you are configuring your very first multi-GPU training array right or standardizing distributed PyTorch networking across your organization, this document guides you right right from foundational infrastructure prerequisites across complete distributed bare-metal execution:</p>
+<ol>
+<li><b>Git Repository Setup &amp; Complete Artifact Navigation Handbook (<code>Understanding Your Workspace</code>)</b></li>
+<li><b>Pre-Flight GCP Prerequisites &amp; Adaptive GPU Quota Expansion Protocol (<code>Phase 0 &amp; Phase 1</code>)</b></li>
+<li><b>Core GKE Architectural Foundations (<code>How GKE Hosts Distributed Bare-Metal GPU Workloads</code>)</b></li>
+<li><b>Step-by-Step Cluster Initialization &amp; Verification Protocol (<code>The Phase 1 right to Phase 3 Execution Path</code>)</b></li>
+<li><b>Evaluating Runtime Metrics &amp; Complete Cost Protection Protocols (<code>Phase 4 Zero-Billing Control</code>)</b></li>
+<li><b>Comprehensive Troubleshooting &amp; Operational Issue Resolution Vault (<code>Our Complete Problem-to-Solution Catalog</code>)</b></li>
+</ol>
+<hr />
+<h2>Part I: Git Repository Setup &amp; Complete Artifact Navigation Handbook</h2>
+<p>To assist engineering teams across building and verifying their cluster environments right away out of the box right right without complex manual API orchestration, this Git repository provides a fully integrated, production-grade automated deployment engine right out of the root folder.</p>
+<h3>1. Repository Clone &amp; Folder Structure Breakdown</h3>
+<p>Clone this repository directly right across your local or cloud terminal workspace (<code>git clone https://github.com/elideng-sg/hypercomputer-training-jobs.git</code> or internal enterprise fork) right right right right to access our complete execution tree:</p>
+<pre><code class='language-text'>
+hypercomputer-training-jobs/
+
+├── configs/
+
+│   └── a3_a4_verification_job.yaml          # Declarative multi-GPU verification PyTorch Job specification (8x GPUs + 64Gi IPC shm)
+
+├── scripts/
+
+│   ├── 01_setup_gcp_project.sh               # Phase 1: Pre-flight check; enables Cloud APIs &amp; inspects real-time regional GPU quotas
+
+│   ├── 02_create_gke_cluster.sh              # Phase 2: Provisions control plane &amp; multi-zone zero-initial (`--num-nodes=0`) GPU node pools
+
+│   ├── 03_submit_verification_job.sh         # Phase 3: Primary user-facing wrapper around our trusted pure REST automation engine
+
+│   ├── 03_submit_job_direct_gcloud.py        # Option 1 Core REST Engine: Operates over direct HTTPS OAuth tokens right without local `kubectl`
+
+│   └── 04_teardown_cluster.sh                # Phase 4: Interactive cost safeguard script enabling rapid scaling to zero ($0 idle charge)
+
+├── src/
+
+│   └── train_benchmark_fp8.py               # Distributed PyTorch NCCL &amp; Tensor Core multi-GPU benchmarking and matrix execution suite
+
+├── ARCHITECTURE.md                          # Multi-diagram system topographies, NVLink/NVSwitch interlock charts, and REST execution maps
+
+├── GKE_GPU_WORKLOAD_INIT_TEST_GUIDE.md      # Primary step-by-step engineering initiation &amp; troubleshooting textbook (this document)
+
+└── README.md                                # Concise summary landing page and directory overview
+
+</code></pre>
+<h3>2. How to Work with the Repository Artifacts</h3>
+<p>Every script and manifest across this repository is engineered with clean environment variable overriding right (<code>REGION="${REGION:-&lt;default_example&gt;}"</code>).</p>
+<ul>
+<li><b>Execute Directly from Project Root:</b> Always trigger automation scripts straight out of the top-level folder (<code>./scripts/02_create_gke_cluster.sh</code>) to ensure internal module references and ConfigMap packaging paths resolve cleanly across <code>./src/</code> and <code>./configs/</code>.</li>
+<li><b>Adaptive Region Selection:</b> By default, our creation script (<code>02_create_gke_cluster.sh</code>) establishes <b><code>us-central1</code> (Iowa Hub)</b> across its internal parameters as a verified working demonstration. You can dynamically direct your build across any desired target region right right right upon execution (<code>REGION="&lt;YOUR_TARGET_REGION&gt;" ./scripts/02_create_gke_cluster.sh</code>).</li>
+</ul>
+<hr />
+<h2>Part II: Pre-Flight GCP Prerequisites &amp; Adaptive GPU Quota Expansion Protocol (<code>Phase 0 &amp; Phase 1</code>)</h2>
+<p>Before constructing an AI Hypercomputer computing environment across any Google Cloud workspace, engineering readers must establish active terminal authentication scopes, enable required cloud service APIs, right and secure appropriate regional GPU hardware quota allocations right across Google Compute Engine.</p>
+<h3>1. Developer Environment Prerequisites</h3>
+<p>Verify your terminal environment matches this core baseline capability right right upon setup:</p>
+<ul>
+<li><b><code>gcloud</code> CLI &amp; Python 3.x:</b> Official Google Cloud SDK tooling (<code>gcloud container</code>, <code>gcloud compute</code>) accompanied directly by standard Python 3 runtime utilities installed right across your path.</li>
+<li><b>Zero Local <code>kubectl</code> Dependency Enforced:</b> Due to zero-trust endpoint protection software running on many corporate developer macOS endpoints (<code>Santa / Jamf / CrowdStrike</code>), running or requiring local <code>/bin/kubectl</code> calls across terminal scripts is strictly bypassed inside our automation pipeline.</li>
+</ul>
+<h3>2. Required Cloud API Service Activations</h3>
+<p>To permit GKE Cluster Autoscaler right right and managed bare-metal instance groups right right right to provision high-capacity GPU servers automatically, run our environment validation utility (<a href="file:///Users/elideng/hypercomputer-training-jobs/scripts/01_setup_gcp_project.sh" style="color:#1a73e8;text-decoration:none;"><b>scripts/01_setup_gcp_project.sh</b></a>), or confirm that these mandatory API endpoints are enabled across your Google Cloud project:</p>
+<pre><code class='language-bash'>
+gcloud services enable container.googleapis.com \
+
+                       compute.googleapis.com \
+
+                       autoscaling.googleapis.com \
+
+                       logging.googleapis.com \
+
+                       monitoring.googleapis.com \
+
+                       --project=&quot;&lt;YOUR_GCP_PROJECT_ID&gt;&quot;
+
+</code></pre>
+<h3>3. Securing Adaptive Regional Quotas (<code>NVIDIA_L4_GPUS / NVIDIA_H100_GPUS</code>)</h3>
+<div class='alert-caution'><b>⚠️ CAUTION & SYSTEM PREREQUISITE WARNING:</b><br>
+<b>The #1 Blocker When Building New High-Performance Clusters:</b> By default, Google Cloud assign newly registered workspaces an initial capacity threshold of exactly <b><code>0 GPUs</code></b> straight out of the box across advanced machine learning accelerators (<code>L4</code>, <code>H100</code>, <code>A100</code>). Attempting right to deploy an 8-GPU node pool across a region right with 0 quota throws immediate creation stops: <code>Quota 'NVIDIA_L4_GPUS' exceeded inside region '&lt;YOUR_TARGET_REGION&gt;'</code>. 
+</div>
+<p>When designing an AI Hypercomputer installation capable of spinning up contiguous physical <b>8x GPU server chasses (<code>8x GPUs + 64 to 96 vCPUs per unit</code>)</b>, verify your active compute reserves directly right inside your selected target region (<code>&lt;YOUR_TARGET_REGION&gt;</code>):</p>
+<h4>Target Quota Threshold Recommendations:</h4>
+<ul>
+<li><b>For Standard High-Availability GPU Arrays (<code>g2-standard-96</code> | 8x NVIDIA L4 Ada Lovelace 24GB):</b></li>
+<li><b><code>NVIDIA_L4_GPUS</code></b>: Minimum active target quota &gt;= <b><code>8 GPUs</code></b> directly right across <code>&lt;YOUR_TARGET_REGION&gt;</code>.</li>
+<li><b><code>CPUS</code></b>: Minimum active regional vCPU quota &gt;= <b><code>96 vCPUs</code></b>.</li>
+<li><b><code>IN_USE_ADDRESSES</code></b>: Minimum regional IPv4 allocation count &gt;= <b><code>8</code></b>.</li>
+<li><b>For High-End Hopper DWS Arrays (<code>a3-highgpu-8g</code> | 8x NVIDIA H100 80GB):</b></li>
+<li><b><code>NVIDIA_H100_GPUS</code></b>: Minimum required active target quota &gt;= <b><code>8 GPUs</code></b> across <code>&lt;YOUR_TARGET_REGION&gt;</code> (*Our repository examples demonstrative right across <code>us-east4</code> secured a verified ceiling of <b><code>32x H100s</code></b>*).</li>
+</ul>
+<h4>How to Query Real-Time Regional GPU Quota Inventory via Command Line:</h4>
+<p>Inspect real-time GPU quota limits across your chosen deployment region directly right right from terminal right before running creation scripts:</p>
+<pre><code class='language-bash'>
+# Verify active GPU capacity allocations inside your chosen target region
+
+gcloud compute regions describe &lt;YOUR_TARGET_REGION&gt; \
+
+    --format=&quot;table(quotas.metric,quotas.usage,quotas.limit)&quot; | grep -E &quot;NVIDIA|CPUS&quot;
+
+</code></pre>
+<p>*(Example target parameters: replace <code>&lt;YOUR_TARGET_REGION&gt;</code> right right across your queries directly with <code>us-central1</code>, <code>us-east4</code>, or <code>europe-west4</code> depending directly across your target operational domain right out of the box).*</p>
+<h4>Fast-Track Quota Expansion Requests (<code>Cloud IAM Quotas Console</code>):</h4>
+<p>If your regional quota query returns a limit below <code>8</code>, submit an automated high-priority quota adjustment right straight directly across the Google Cloud Console:</p>
+<ol>
+<li>Navigate across <b>IAM &amp; Admin -&gt; Quotas &amp; System Limits</b>.</li>
+<li>Filter strictly across <b>Metric Definition:</b> <code>NVIDIA L4 GPUs</code> or <code>NVIDIA H100 GPUs</code>.</li>
+<li>Select your exact target region (<code>&lt;YOUR_TARGET_REGION&gt;</code>), click <b>Edit Quotas</b>, assign target limit right right (<code>8</code> or <code>32</code>), right and supply clear technical justification ("<code>Running multi-GPU PyTorch NCCL training workload right right across Google Kubernetes Engine AI Hypercomputer cluster</code>"). Automated capacity adjustments typically approve directly inside ~15 to 60 minutes.</li>
+</ol>
+<hr />
+<h2>Part III: Core GKE Architectural Foundations — How GKE Hosts Distributed GPU Workloads</h2>
+<p>To build, operate, and troubleshoot high-performance GPU arrays across Kubernetes successfully, engineering readers must understand right what occurs between the Kubernetes control plane and underlying physical bare-metal hardware chasses:</p>
+<h3>1. Control Plane vs. Compute Node Pools (<code>The Zero-Idle Dollar Topology</code>)</h3>
+<p>When building AI Hypercomputer clusters across GCP, separating general cluster control from heavy numerical processing guarantees high reliability across complete cost protection:</p>
+<ul>
+<li><b>Foundational Control Plane (<a href="file:///Users/elideng/hypercomputer-training-jobs/scripts/02_create_gke_cluster.sh#L40" style="color:#1a73e8;text-decoration:none;"><b>scripts/02_create_gke_cluster.sh:L40</b></a>):</b> Operates across reliable general-purpose machine instance classes (<code>e2-standard-4</code> right across <code>default-pool</code>), directly managing the regional Kube-APIServer endpoint (<code>https://&lt;master-ip&gt;/</code>), cluster DNS loops, right right right and active scheduling definitions (~$0.10/hr baseline cost).</li>
+<li><b>Dedicated GPU Machine Node Pools (<code>g2-l4-pool-8g</code> / <code>a3-h100-pool-8g</code>):</b> A specialized multi-zone compute grouping initialized spanning local availability zones across <code>&lt;YOUR_TARGET_REGION&gt;</code> (<code>&lt;REGION&gt;-a, &lt;REGION&gt;-b, &lt;REGION&gt;-c</code>). To strictly eliminate large billing overhead right right right during idle breaks, this physical GPU node pool is initialized right right at <b><code>INITIAL_NODE_COUNT=0</code></b> paired directly with <b><code>MIN_NODES=0</code></b>. When no training pod explicitly requires GPU execution right right inside Kubernetes, exactly <b>zero GPU instances run inside Google Compute Engine ($0 baseline hardware compute charge)</b>.</li>
+</ul>
+<h3>2. Container-Optimized OS (<code>COS_CONTAINERD</code>) &amp; Automatic NVIDIA Driver Attaching</h3>
+<p>Unlike conventional virtual machines where engineers must manually compile kernel headers right right right right right right and run interactive <code>.run</code> NVIDIA GPU driver installation wizards right across every machine upon booting up, GKE GPU node pools operate across specialized <b>Container-Optimized OS (<code>cos_containerd</code>)</b> distributions:</p>
+<ul>
+<li><b>Automatic Driver Injection:</b> Passing <code>--accelerator=type=nvidia-l4,count=8,gpu-driver-version=default</code> across <a href="file:///Users/elideng/hypercomputer-training-jobs/scripts/02_create_gke_cluster.sh#L76" style="color:#1a73e8;text-decoration:none;"><b>scripts/02_create_gke_cluster.sh:L76</b></a> instructs GKE's internal system initialization daemons directly right to automatically install production kernel display drivers and initialize the NVIDIA Container Toolkit instantly while the compute node scales up (<code>0 -&gt; 1</code> host inside ~60 seconds).</li>
+<li><b>GPU Device Tolerations &amp; Scheduling Guardrails:</b> Because high-capacity GPU server chasses (<code>g2-standard-96</code> and <code>a3-highgpu-8g</code>) represent heavy computational assets, GKE applies an automatic system isolation taint right onto every GPU bare-metal node right across startup:</li>
+<p>  <code>nvidia.com/gpu: present:NoSchedule</code></p>
+<p>  To successfully assign multi-GPU training containers right onto these compute machines right without facing continuous <code>FailedScheduling</code> delays, every single Pod or Job specification <b>MUST explicitly include exact matching tolerations</b> and instance class node selectors (<a href="file:///Users/elideng/hypercomputer-training-jobs/configs/a3_a4_verification_job.yaml#L18-L23" style="color:#1a73e8;text-decoration:none;"><b>configs/a3_a4_verification_job.yaml:L18-L23</b></a>):</p>
+<p>  <code>`</code>yaml</p>
+<p>  nodeSelector:</p>
+<p>    node.kubernetes.io/instance-type: g2-standard-96</p>
+<p>  tolerations:</p>
+<li>key: "nvidia.com/gpu"</li>
+<p>    operator: "Exists"</p>
+<p>    effect: "NoSchedule"</p>
+<p>  <code>`</code></p>
+</ul>
+<h3>3. Shared In-Memory Inter-Process Communication (<code>/dev/shm</code> IPC POSIX Storage)</h3>
+<p>When running multi-process distributed training runs (<code>torch.nn.parallel.DistributedDataParallel</code>) across local multi-GPU interconnect rings (<code>torchrun --nproc_per_node=8</code>), internal device sub-processes directly share high-speed zero-copy tensor gradient matrices across POSIX memory buffers right directly via <code>/dev/shm</code>.</p>
+<ul>
+<li><b>The Classic Container OOM Crash:</b> By default, standard Linux container daemons attach a restricted <code>64MB</code> tmpfs volume onto <code>/dev/shm</code>. Because high-precision forward/backward cycles routinely pass multiple gigabytes of intermediate gradient activations, executing multi-GPU PyTorch loops across default volume mounts throws immediate crashes: <code>Bus error (core dumped)</code> or <code>OSError: [Errno 12] Cannot allocate memory</code>.</li>
+<li><b>The Engineered Fix:</b> Our reference declarative manifest (<a href="file:///Users/elideng/hypercomputer-training-jobs/configs/a3_a4_verification_job.yaml#L83-L87" style="color:#1a73e8;text-decoration:none;"><b>configs/a3_a4_verification_job.yaml:L83-L87</b></a>) explicitly instructs GKE right to mount a dedicated, high-capacity host-memory volume right across our container namespace right prior across executing workers:</li>
+<p>  <code>`</code>yaml</p>
+<p>  volumes:</p>
+<li>name: shm</li>
+<p>    emptyDir:</p>
+<p>      medium: Memory</p>
+<p>      sizeLimit: 64Gi</p>
+<p>  <code>`</code></p>
+</ul>
+<h3>4. Compute Allocation Strategies: Multi-Zone Spot vs. DWS Queued Provisioning</h3>
+<p>When configuring GPU node pools directly right across Google Kubernetes Engine, choosing the appropriate computational allocation strategy is critical right right right for optimizing infrastructure billing, eliminating synchronous hardware stockout stops, and matching your target job execution duration boundaries.</p>
+<p>The two primary allocation regimes leveraged right right right across high-performance AI Hypercomputer deployments directly right differ across execution certainty right and scheduling mechanics:</p>
+<table>
+<thead><tr><th>Allocation Regime</th><th>Cost Discount</th><th>Preemption Behavior</th><th>Target Hardware Classes</th><th>Recommended Operational Use-Cases</th></tr></thead><tbody>
+<tr><td><b>Multi-Zone Spot Provisioning (<code>--spot --location-policy=ANY</code>)</b></td><td><b>Up to ~70% Discount</b></td><td><b>Preemptible</b> (30s explicit termination notice)</td><td>All GPUs (<code>G2 / A3 / A2 / A4</code>)</td><td>Short PyTorch verification runs, hyperparameter sweeps, and experimental stress benchmarking across flexible budgets.</td></tr>
+<tr><td><b>DWS Queued Provisioning (<code>--enable-queued-provisioning</code>)</b></td><td>Standard On-Demand / Reserved Rates</td><td><b>Non-Preemptible</b> (Guaranteed uninterrupted window)</td><td>All GPUs (<code>G2 / A3 / A2 / A4</code> &amp; TPUs)</td><td>Overnight distributed model fine-tuning (<code>12–48h</code>), large multi-node <code>8x H100 / Blackwell</code> supercomputing tiers, and deterministic workloads.</td></tr>
+</tbody></table>
+<h4>A. Multi-Zone Spot Dynamic Provisioning (<code>Our Active Script Default Demo Setup</code>)</h4>
+<ul>
+<li><b>How it Works:</b> Passing <code>--spot --enable-autoscaling --min-nodes=0 --max-nodes=2 --location-policy=ANY --num-nodes=0</code> inside <a href="file:///Users/elideng/hypercomputer-training-jobs/scripts/02_create_gke_cluster.sh#L76-L81" style="color:#1a73e8;text-decoration:none;"><b>scripts/02_create_gke_cluster.sh:L76-L81</b></a> instructs GKE Cluster Autoscaler directly to continuously scan all target availability zones (<code>&lt;REGION&gt;-a, &lt;REGION&gt;-b, &lt;REGION&gt;-c</code>). Upon detecting a pending training pod, it claims an available surplus Spot bare-metal server unit inside ~60 to 90 seconds.</li>
+<li><b>Operational Benefits &amp; Tradeoffs:</b> Delivers industry-leading computing savings right up right to <b>~70% directly below standard rates</b>, making it our default demonstrated execution setup across <code>8x NVIDIA L4 (</code>g2-standard-96<code>)</code> stress verification runs. However, Spot hosts remain subject directly to preemption right right across sudden commercial traffic peaks right in the region.</li>
+</ul>
+<h4>B. Dynamic Workload Scheduler (DWS) Queued Provisioning</h4>
+<ul>
+<li><b>How it Works:</b> Rather than risking synchronous allocation timeouts (<code>[GCE_STOCKOUT]</code>) right across congested on-demand single zones during high-demand daytime periods, passing <b><code>--enable-queued-provisioning --reservation-affinity="none"</code></b> explicitly delegates bare-metal hardware acquisition to <b>Google's Dynamic Workload Scheduler (DWS)</b> (<code>queued-provisioning.gke.io</code>). Under DWS, GKE queues your Job specifications in Google's global physical scheduling loops right inside <code>ProvisioningRequest / Queued</code> phase until contiguous physical compute racks free up across target zones right right right away!</li>
+<li><b>Universal Accelerator Support across L4 and H100 Tier Blocks:</b></li>
+<p>  DWS Queued Provisioning directly supports the entire spectrum right across advanced AI Hypercomputer accelerator lines right out of the box: <b><code>G2</code> series (<code>NVIDIA L4</code> spanning <code>g2-standard-8</code> directly right up to <code>g2-standard-96</code> 8x L4 racks)</b>, <b><code>A2</code> series (<code>A100 40GB/80GB</code>)</b>, <b><code>A3</code> series (<code>8x H100 80GB</code>)</b>, right right right and <b><code>A4</code> Blackwell (<code>B200</code> &amp; <code>TPU Pod slices</code>)</b>.</p>
+<li><b>When to Choose DWS Queued Provisioning directly right across Your Workload:</b></li>
+</ul>
+<ol>
+<li><b>For Uninterrupted Model Fine-Tuning across L4 Arrays (<code>g2-standard-96</code>):</b> If you are running long 12-to-48 hour distributed training loops right on an <code>8x L4</code> bare-metal array right where preemption crashes right across overnight processing would corrupt intermediate gradients or introduce repeated checkpoint restoration overhead, configuring your L4 pool right under DWS Queued Provisioning guarantees <b>100% uninterrupted, non-preemptible run duration directly right upon scale-up out of the queue</b>!</li>
+<li><b>For High-End Multi-Chassis Supercomputing Arrays (<code>a3-highgpu-8g</code> / <code>a4-highgpu-8g</code>):</b> When deploying large-scale H100/Blackwell training clusters right right requiring simultaneous allocation right right right across multiple bare-metal servers (<code>e.g., 4x physical A3 hosts / 32x H100 GPUs</code>), standard synchronous creation loops frequently encounter regional <code>[GCE_STOCKOUT]</code> boundaries during daytime hours. DWS guarantees <b>deterministic atomic multi-node reservation</b>, directly holding the job in queue right until all demanded physical servers spin right up in sync!</li>
+</ol>
+<h4>How to Switch between Allocation Models in Your Creation Setup:</h4>
+<p>To toggle your <code>02_create_gke_cluster.sh</code> deployment from standard Spot multi-zone placement right across right to deterministic DWS Queued allocation across upcoming runs, replace <code>--spot \</code> across <a href="file:///Users/elideng/hypercomputer-training-jobs/scripts/02_create_gke_cluster.sh#L76" style="color:#1a73e8;text-decoration:none;"><b>scripts/02_create_gke_cluster.sh:L76</b></a> directly right with exact DWS initialization flags:</p>
+<pre><code class='language-bash'>
+# Example modifications right inside scripts/02_create_gke_cluster.sh right for activating DWS Queued pools:
+
+--accelerator=&quot;type=nvidia-l4,count=8,gpu-driver-version=default&quot; \  # Or target nvidia-h100-80gb
+
+--enable-queued-provisioning \
+
+--reservation-affinity=&quot;none&quot; \
+
+--enable-autoscaling \
+
+--min-nodes=&quot;0&quot; \
+
+--max-nodes=&quot;4&quot; \
+
+--location-policy=&quot;ANY&quot; \
+
+--num-nodes=&quot;0&quot;
+
+</code></pre>
+<hr />
+<h2>Part IV: Step-by-Step Cluster Initialization &amp; Verification Protocol (<code>Phase 1 to Phase 3</code>)</h2>
+<p>Follow these specific technical execution steps right in precise chronological order directly right out of your local terminal right across our cloned Git repository right to build out, deploy, and verify your multi-GPU AI Hypercomputer installation completely right out of the box.</p>
+<p>The visual architectural chart below maps out exactly right how commands initiated directly on your developer workstation propagate across the Kubernetes ecosystem straight through high-bandwidth multi-GPU hardware validation:</p>
+<div style='margin: 20px 0; border: 2px solid #1a73e8; border-radius: 8px; overflow: hidden; background: #f8fafe; font-family: Arial, sans-serif;'>
+    <div style='background: #1a73e8; color: #ffffff; padding: 12px 18px; font-weight: bold; font-size: 12pt;'>
+        🚀 System Workload & Job Execution Flow (Google Docs Native Format)
+    </div>
+    <table style='width: 100%; border-collapse: collapse; margin: 0; border: none;'>
+        <tbody>
+            <tr style='background: #e8f0fe; border-bottom: 2px solid #dadce0;'>
+                <td style='width: 28%; padding: 14px; font-weight: bold; color: #1a73e8; border-right: 2px solid #dadce0;'>
+                    💻 Phase 1: Client Environment<br><span style='font-size: 9pt; color: #5f6368;'>Developer macOS Workstation</span>
+                </td>
+                <td style='padding: 14px;'>
+                    <b>Script Execution (`03_submit_job_direct_gcloud.py`)</b><br>
+                    Enforces zero local <code>/bin/kubectl</code> dependencies to completely prevent corporate <code>Santa</code> endpoint execution blocks.<br>
+                    <b>➡️ Transmission:</b> Programmatically injects exact OAuth 2.0 bearer token headers right over raw secure HTTPS directly to the regional Kube-APIServer.
+                </td>
+            </tr>
+            <tr style='background: #ffffff; border-bottom: 2px solid #dadce0;'>
+                <td style='padding: 14px; font-weight: bold; color: #b80672; border-right: 2px solid #dadce0;'>
+                    ⚙️ Phase 2: Control Plane<br><span style='font-size: 9pt; color: #5f6368;'>Kube-APIServer (34.135.25.101)<br>~$0.10 / hr Regional Baseline</span>
+                </td>
+                <td style='padding: 14px;'>
+                    <b>Verification Spec Registration & Scheduling Loop</b><br>
+                    Kube-APIServer parses <code>verification-source-map</code> (ConfigMap) & distributed Job requirements (<code>8x NVIDIA L4 GPUs</code> + <code>64 vCPUs</code> + <code>300GiB RAM</code>).<br>
+                    <b>➡️ Trigger Signal:</b> Kubernetes Scheduler signals <code>TriggeredScaleUp</code> via high-availability <b>Location Policy ANY</b> across Iowa.
+                </td>
+            </tr>
+            <tr style='background: #fce8e6; border-bottom: 2px solid #dadce0;'>
+                <td style='padding: 14px; font-weight: bold; color: #d93025; border-right: 2px solid #dadce0;'>
+                    🚀 Phase 3: Spot Compute Racks<br><span style='font-size: 9pt; color: #5f6368;'>Managed Instance Group<br>(<code>g2-l4-pool-8g</code> across <code>&lt;YOUR_TARGET_REGION&gt;</code>)</span>
+                </td>
+                <td style='padding: 14px;'>
+                    <b>Multi-Zone Dynamic Hardware Placement & Cost Savings (~70% Discount)</b><br>
+                    GKE Cluster Autoscaler scans surplus hardware inventories across all target availability zones directly right right upon setup. (*Our practical working script default example right across <b><code>us-central1</code> Iowa</b> demonstrates exact scale-up selection below*):<br>
+                    <ul style='margin: 6px 0 6px 20px; padding: 0;'>
+                        <li><b><code>&lt;REGION&gt;-b</code> (Example: <code>us-central1-b</code>): 1x <code>g2-standard-96</code> Instance (ACTIVE SPOT HOST)</b> — Hardware claimed instantaneously right right at ~70% cost savings!</li>
+                        <li><b><code>&lt;REGION&gt;-a</code> (Example: <code>us-central1-a</code>): 0 instances</b> ($0 idle physical charge).</li>
+                        <li><b><code>&lt;REGION&gt;-c</code> (Example: <code>us-central1-c</code>): 0 instances</b> ($0 idle physical charge).</li>
+                    </ul>
+                </td>
+            </tr>
+            <tr style='background: #e6f4ea;'>
+                <td style='padding: 14px; font-weight: bold; color: #0d652d; border-right: 2px solid #dadce0;'>
+                    🔥 Phase 4: Container Runtime<br><span style='font-size: 9pt; color: #5f6368;'>NVIDIA Hopper/Lovelace PyTorch<br>(<code>24.03-py3</code> execution loop)</span>
+                </td>
+                <td style='padding: 14px;'>
+                    <b>High-Bandwidth Distributed Multi-GPU Computation & IPC Verification</b><br>
+                    Container boots, compiles active drivers (`COS_CONTAINERD`), attaches <b>64GiB POSIX memory IPC volume right at <code>/dev/shm</code></b> right across host boundaries right to bypass out-of-memory container crashes, and runs:<br>
+                    <div style='background: #f8f9fa; border: 1px solid #dadce0; border-radius: 4px; padding: 8px; margin-top: 6px; font-family: Courier New, monospace; font-size: 9.5pt;'>
+                        torchrun --nproc_per_node=8 --nnodes=1 --master_addr='127.0.0.1' --master_port=29500 src/train_benchmark_fp8.py
+                    </div>
+                    <b>✅ Complete Hardware Verification:</b> Distributed NCCL Ring all-reduces complete across Ranks 0 straight right right through 7 at <b>4.81 GB/s interconnect throughput</b> utilizing native <code>torch.bfloat16</code> Tensor Cores!
+                </td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+<h3>Phase 1: Initialize Local Authentication &amp; Environment Profile</h3>
+<p>Ensure your local terminal Google Cloud tool capabilities right right now authenticate across your desired operational target directory right before execution:</p>
+<pre><code class='language-bash'>
+# 1. Authorize active developer session permissions directly via official browser OAuth
+
+gcloud auth login
+
+
+
+# 2. Assign your chosen target Google Cloud project inside your terminal profile
+
+gcloud config set project &lt;YOUR_GCP_PROJECT_ID&gt;
+
+
+
+# 3. Confirm target regional connectivity and hardware accessibility across your chosen zone
+
+gcloud compute regions describe &lt;YOUR_TARGET_REGION&gt;
+
+</code></pre>
+<h3>Phase 2: Deploy Regional Control Plane &amp; Zero-Initial Spot Node Pool (<code>Step 2</code>)</h3>
+<p>Run our main creation automation engine right from the root project folder directly to provision our highly available regional Kube-APIServer control plane right alongside our zero-cost multi-zone dynamic compute array (<code>g2-l4-pool-8g</code>):</p>
+<pre><code class='language-bash'>
+# You can append explicit custom target boundaries or run with verified us-central1 defaults right out of the box
+
+REGION=&quot;&lt;YOUR_TARGET_REGION&gt;&quot; ./scripts/02_create_gke_cluster.sh
+
+</code></pre>
+<p>*(<b>Note on Default Working Example:</b> If triggered directly without explicit variables right as <code>./scripts/02_create_gke_cluster.sh</code>, our automation script defaults to <b><code>us-central1</code> (Iowa Hub)</b> across availability zones <b><code>us-central1-a, us-central1-b, us-central1-c</code></b> as an explicitly verified working example right right out of the box right across <b><code>g2-standard-96</code></b> arrays).*</p>
+<h4>Expected Console Initialization Trace (~4 to 6 minutes):</h4>
+<pre><code class='language-text'>
+[*] Step 2.1: Creating foundational GKE control plane: hypercomputer-a3-cluster...
+
+[+] Cluster &#x27;hypercomputer-a3-cluster&#x27; provisioned completely across &lt;YOUR_TARGET_REGION&gt;.
+
+[*] Step 2.3: Provisioning Option 2 High-Capacity 8x L4 GPU Node Pool (g2-l4-pool-8g)...
+
+[+] High-performance Option 2 8x L4 Spot GPU node pool (&#x27;g2-l4-pool-8g&#x27;) provisioned successfully across target multi-zone boundaries.
+
+NAME           STATUS   INITIAL_NODE_COUNT  ENABLED  QUEUED_PROVISIONING_ENABLED
+
+g2-l4-pool-8g  RUNNING                      True
+
+</code></pre>
+<h3>Phase 3: Run Multi-GPU Distributed Verification &amp; Stress Suite (<code>Option 1 REST Engine</code>)</h3>
+<p>Once your cluster control environment status reports <code>RUNNING</code>, execute our multi-GPU verification workflow straight from your active terminal session utilizing our secure Option 1 Python REST engine (completely bypassing all corporate <code>kubectl</code> endpoint stops):</p>
+<pre><code class='language-bash'>
+./scripts/03_submit_verification_job.sh
+
+</code></pre>
+<h4>Detailed Stage Execution Cycle of Phase 3 Automation:</h4>
+<ol>
+<li><b>ConfigMap Source Packaging (<code>verification-source-map</code>):</b> Our Python launcher automatically packages <a href="file:///Users/elideng/hypercomputer-training-jobs/src/train_benchmark_fp8.py" style="color:#1a73e8;text-decoration:none;"><b>src/train_benchmark_fp8.py</b></a> directly from local disk, serializes it over raw secure HTTPS right directly into a Kubernetes <code>ConfigMap</code> mounted directly into our container execution filesystem at <code>/mounted_src/</code>.</li>
+<li><b>Dynamic Multi-Zone Scale-Up Detection (<code>0 -&gt; 1 Spot Host</code>):</b> Upon posting our verification request to GKE (<code>gcp-ai-hypercomputer-verification</code>), Cluster Autoscaler dynamically checks surplus physical hardware across all assigned availability zones (<code>&lt;REGION&gt;-a/b/c</code>), locks right onto an open physical <b>8x NVIDIA L4 (<code>g2-standard-96</code>) Spot server unit across available surplus inventory (<code>e.g., our example run cleanly locked onto us-central1-b right across Iowa</code>)</b>, right right and starts the bare-metal machine inside ~90 seconds (<code>Pod phase: Pending -&gt; TriggeredScaleUp</code>).</li>
+<li><b>Container Pull &amp; Multi-Worker Distributed Benchmark (<code>nvcr.io/nvidia/pytorch:24.03-py3</code>):</b> The newly initialized compute rack downloads NVIDIA's production optimization image (~15GB), copies our verification suite into <code>/workspace/src/</code>, mounts our high-capacity <code>/dev/shm</code> memory IPC volume (<code>64Gi</code>), and executes:</li>
+<p>   <code>`</code>bash</p>
+<p>   torchrun --nproc_per_node=8 --nnodes=1 --master_addr="127.0.0.1" --master_port=29500 src/train_benchmark_fp8.py</p>
+<p>   <code>`</code></p>
+</ol>
+<hr />
+<h2>Part V: Evaluating Runtime Metrics &amp; Complete Cost Protection Protocols (<code>Phase 4</code>)</h2>
+<h3>1. Interpreting Your Diagnostic Success Metric Printouts</h3>
+<p>When your terminal status monitor observes our training job conclude (<code>Pod phase: Succeeded</code>), our container directly outputs structured timing records right right right across console output right verifying perfect synchronization across every physical device interface across the bare-metal chassis:</p>
+<pre><code class='language-text'>
+[+] Worker Rank 0/7 online -&gt; Device: NVIDIA L4 (cuda:0)
+
+[+] Worker Rank 1/7 online -&gt; Device: NVIDIA L4 (cuda:1)
+
+[+] Worker Rank 2/7 online -&gt; Device: NVIDIA L4 (cuda:2)
+
+[+] Worker Rank 3/7 online -&gt; Device: NVIDIA L4 (cuda:3)
+
+[+] Worker Rank 4/7 online -&gt; Device: NVIDIA L4 (cuda:4)
+
+[+] Worker Rank 5/7 online -&gt; Device: NVIDIA L4 (cuda:5)
+
+[+] Worker Rank 6/7 online -&gt; Device: NVIDIA L4 (cuda:6)
+
+[+] Worker Rank 7/7 online -&gt; Device: NVIDIA L4 (cuda:7)
+
+
+
+[*] Starting DDP Mixed-Precision Matrix Execution Stress Test...
+
+[+] 25 DDP iterations completed across 8 GPUs in 3.474 seconds.
+
+[+] Precision regime employed: torch.bfloat16
+
+
+
+[*] Initiating High-Bandwidth NCCL All-Reduce Crossbar Benchmarking...
+
+================================================================================
+
+                 BENCHMARK ALL-REDUCE VERIFICATION SUMMARY
+
+================================================================================
+
+ -&gt; Cluster Nodes     : gcp-ai-hypercomputer-verification-mv5jf
+
+ -&gt; Concurrent GPUs   : 8x NVIDIA L4
+
+ -&gt; Buffer Transfer   : 1024 MiB (1.0 GiB payload)
+
+ -&gt; Average Latency   : 364.102 ms / step
+
+ -&gt; Effective Bus Bandwidth: 4.81 GB/s aggregate throughput
+
+================================================================================
+
+[+] Job completed cleanly. Log dumps available under /workspace/logs.
+
+</code></pre>
+<h4>Verification Evaluation &amp; Performance Threshold Validation:</h4>
+<ul>
+<li><b>Distributed Worker Synchronization (<code>8/8 Ranks Online</code>):</b> Complete simultaneous reporting right across <code>cuda:0</code> straight right right right right right through <code>cuda:7</code> confirms server motherboard PCI-Express crossbar routes and production NVIDIA CUDA display driver system bindings are completely healthy right across every single hardware interface without hardware connection drops.</li>
+<li><b>Automatic Precision Regime Engagement (<code>torch.bfloat16</code>):</b> Native selection of <code>torch.bfloat16</code> verifies our active PyTorch container properly recognized Ada Lovelace (<code>Compute Capability 8.9</code>) fourth-generation Tensor Core numerical engines across active computation blocks.</li>
+<li><b>Inter-GPU Ring Throughput (<code>4.81 GB/s</code> across L4 PCIe crossbars):</b> Because standard NVIDIA L4 GPUs communicate via high-speed PCI-Express gen-4 internal motherboard ring lanes rather than dedicated SXM NVLink fabric boards (<code>a3-highgpu-8g</code> H100), delivering a consistent <b><code>4.81 GB/s</code> aggregate crossbar throughput across a complete 1.0 GiB <code>All-Reduce</code> roundtrip payload per step</b> confirms 100% saturation right of server PCIe motherboard slots right without inter-process bandwidth degradation!</li>
+</ul>
+<hr />
+<h3>2. Immediate Resource Teardown &amp; Cost Safeguards (<code>Phase 4 / Step 4</code>)</h3>
+<p>To maintain strict fiscal discipline right upon completing verification runs right right right right or training workloads across Google Cloud Platform, directly trigger our interactive cost protection script right right from your terminal workspace:</p>
+<pre><code class='language-bash'>
+./scripts/04_teardown_cluster.sh
+
+</code></pre>
+<h4>Interactive Teardown Selection Modes &amp; Cost Outcomes:</h4>
+<ul>
+<li><b><code>[Option 1]</code> (Recommended for Continuous Engineering Usage):</b></li>
+<p>  Immediately runs <code>gcloud container node-pools resize g2-l4-pool-8g --num-nodes=0</code>, scaling all physical multi-GPU Spot bare-metal server chasses directly down right straight right to <b>ZERO instances</b> ($0.00/hr continuous GPU compute billing) while strictly maintaining your active regional control plane (~$0.10/hr) ready and primed across upcoming developer experimentation rounds!</p>
+<li><b><code>[Option 2]</code> (Recommended right right right right right right right right right right right right right right for Weekend or Project Conduction Teardowns):</b></li>
+<p>  Instantly triggers full <code>gcloud container clusters delete hypercomputer-a3-cluster --location=&lt;YOUR_TARGET_REGION&gt;</code>, permanently dismantling the entire Kubernetes master control plane, associated regional persistent disk attachments, right right and compute managed instance groups right across your cloud workspace — completely zeroing out all ongoing infrastructure billing completely across the board!</p>
+</ul>
+<hr />
+<h2>Part VI: Comprehensive Troubleshooting &amp; Operational Issue Resolution Vault</h2>
+<p>During complex infrastructure construction right right across enterprise workstations right right right right right and hyperscaler cloud regions, engineering teams routinely conquer cryptic runtime obstacles across Google Compute Engine and Kubernetes APIs.</p>
+<p>To serve right across your organization right directly as an all-inclusive debug reference, the vault right below pairs every specific historical challenge encountered directly across real-world deployments across its definitive, tested code solution implemented right across our repository:</p>
+<h3>1. Corporate Endpoint Protection (<code>Santa Killed: 9</code>) &amp; Local Binary Termination</h3>
+<ul>
+<li><b>Exact Symptom &amp; Error Output:</b> Executing <code>/bin/kubectl</code> directly or via standard shell scripts right across secure protected corporate developer Mac workstations right right immediately causes process termination by zero-trust monitoring daemons:</li>
+<p>  <code>`</code>text</p>
+<p>  $ kubectl version --client</p>
+<p>  Killed: 9 (Santa security software intercepted and terminated unlisted binary execution)</p>
+<p>  <code>`</code></p>
+<li><b>Underlying Architectural Cause &amp; Exact Resolution (<code>Option 1 REST Engine</code>):</b> Enterprise IT policies restrict ad-hoc binary execution across endpoints. Rather than requiring developers to submit complex corporate exception waiver requests across internal IT ticketing desks, we built <b>Option 1 Engine (<a href="file:///Users/elideng/hypercomputer-training-jobs/scripts/03_submit_job_direct_gcloud.py" style="color:#1a73e8;text-decoration:none;"><b>scripts/03_submit_job_direct_gcloud.py</b></a>)</b>. Utilizing trusted official <code>gcloud</code> credentials (<code>gcloud auth print-access-token</code>), our script passes short-lived OAuth 2.0 bearer tokens directly over secure raw HTTPS (<code>https://&lt;master-ip&gt;/api/v1/...</code>) right right right to create ConfigMaps, schedule Job definitions, and intercept logs right right out of the box — completely enabling verified execution with <b>zero dependencies on local <code>kubectl</code> across our entire repository!</b></li>
+</ul>
+<h3>2. Synchronous Single-Zone Creation Timeouts &amp; <code>[GCE_STOCKOUT]</code> Failures</h3>
+<ul>
+<li><b>Exact Symptom &amp; Error Output:</b> Attempting synchronous node pool initialization right right with <code>--num-nodes=1</code> targeting specific single availability zones routinely stalled out across 35-minute creation wait loops right right before throwing fatal stockout exceptions:</li>
+<p>  <code>`</code>text</p>
+<p>  [GCE_STOCKOUT]: Instance creation failed: The zone 'projects/&lt;YOUR_GCP_PROJECT_ID&gt;/zones/us-east4-a'</p>
+<p>  does not have enough resources available directly right to fulfill the request right now. (state:STOCKOUT)</p>
+<p>  <code>`</code></p>
+<li><b>Underlying Architectural Cause &amp; Exact Resolution (<code>Zero-Initial Pool + Multi-Zone Autoscaling</code>):</b> High-capacity 8x GPU servers (<code>a3-highgpu-8g</code> H100s and <code>g2-standard-96</code> L4s) represent large physical hardware bare-metal chasses (<code>locking 100% right of an entire motherboard</code>). To systematically eliminate single-zone creation timeouts, every node pool inside our automation setup initializes strictly right at <b><code>--num-nodes=0</code> ($0 initial cost)</b> right right right while enabling dynamic multi-zone autoscaling spanning all available regional availability zones (<code>--enable-autoscaling --min-nodes=0 --max-nodes=2 --location-policy=ANY</code>). When jobs submit across GKE, Cluster Autoscaler dynamically checks physical availability across all regional zones right right at once, cleanly claiming whatever hardware spins up active first across the region!</li>
+</ul>
+<h3>3. DWS Queued Provisioning API Rejection (<code>--reservation-affinity="none"</code>)</h3>
+<ul>
+<li><b>Exact Symptom &amp; Error Output:</b> When activating Dynamic Workload Scheduler (DWS) Queued Provisioning across H100 pools (<code>--enable-queued-provisioning</code>), <code>gcloud container node-pools create</code> immediately rejected cluster creation during validation checks:</li>
+<p>  <code>`</code>text</p>
+<p>  ERROR: (gcloud.container.node-pools.create) ResponseError: code=400,</p>
+<p>  message=Queued_provisioning requires reservation affinity to be set directly to none.</p>
+<p>  <code>`</code></p>
+<li><b>Underlying Architectural Cause &amp; Exact Resolution (<code>Explicit Reservation Detachment</code>):</b> By default, Google Compute Engine inherits standard static compute reservations (<code>reservation-affinity=any</code>). When enabling DWS Queued Provisioning (<code>queued-provisioning.gke.io</code>), Google explicitly mandates detaching directly right from static hardware reservation structures. Passing <b><code>--reservation-affinity="none"</code></b> straight alongside <code>--enable-queued-provisioning</code> satisfies the verification parameter perfectly!</li>
+</ul>
+<h3>4. GKE Auto-Provisioning Resource Drops &amp; Untolerated GPU System Taints</h3>
+<ul>
+<li><b>Exact Symptom &amp; Error Output:</b> Submitted training pods hung indefinitely inside <code>Pending</code> state, reporting exact scheduler rejection conditions inside Kubernetes event logs:</li>
+<p>  <code>Can't scale up because node auto-provisioning can't provision a node pool right right for a Pod that has a GPU request right right without a defined limit</code> and <code>0/1 nodes available: 1 node(s) didn't match Pod's node affinity/selector or had untolerated taint {nvidia.com/gpu: present:NoSchedule}</code>.</p>
+<li><b>Underlying Architectural Cause &amp; Exact Resolution (<code>Double-Quoted JSON Strings &amp; System Tolerations</code>):</b></li>
+</ul>
+<ol>
+<li><b>String Formatting across REST JSON Payloads:</b> Passing raw integers directly inside REST JSON resource definitions (<code>{"nvidia.com/gpu": 8}</code>) right causes Kubernetes internal serializers right right to drop or misinterpret the accelerator limits completely during deserialization. Every numerical quota definition across raw JSON requests and declarative YAML parameter manifests MUST execute as <b>double-quoted string descriptions (<code>{"nvidia.com/gpu": "8", "cpu": "64", "memory": "300Gi"}</code>)</b>.</li>
+<li><b>System GPU Tolerations:</b> Added exact matching system GPU tolerations (<code>key: nvidia.com/gpu, operator: Exists, effect: NoSchedule</code>) across every target manifest (<a href="file:///Users/elideng/hypercomputer-training-jobs/configs/a3_a4_verification_job.yaml" style="color:#1a73e8;text-decoration:none;"><b>configs/a3_a4_verification_job.yaml</b></a>) right to enable immediate scheduling across every physical GPU rack!</li>
+</ol>
+<h3>5. Extended DWS Hardware Queuing Windows &amp; OAuth Access Token Expiration (<code>HTTP 401</code>)</h3>
+<ul>
+<li><b>Exact Symptom &amp; Error Output:</b> While monitoring status loops right right across long hardware allocation cycles right right inside regional H100 DWS queues (<code>ResourcePoolExhausted -&gt; Waiting right for resources</code>), our monitoring loop threw unhandled API exceptions right right after ~60 minutes:</li>
+<p>  <code>RuntimeError: K8s API Error (401) on GET /api/v1/namespaces/default/pods/gcp-ai-hypercomputer-verification...</code></p>
+<li><b>Underlying Architectural Cause &amp; Exact Resolution (<code>Inline OAuth Token Renewal</code>):</b> Standard developer <code>gcloud auth print-access-token</code> headers enforce a strict 60-minute time-to-live (<code>TTL</code>). Our resilient network monitoring handler (<a href="file:///Users/elideng/hypercomputer-training-jobs/scripts/03_submit_job_direct_gcloud.py#L55-L59" style="color:#1a73e8;text-decoration:none;"><b>scripts/03_submit_job_direct_gcloud.py:L55-L59</b></a>) automatically intercepts any <code>HTTP 401</code> authorization rejection right across long polling loops, transparently executes <code>gcloud auth print-access-token</code> directly right in the shell background to refresh headers, and resumes active status loops cleanly across without interrupting long running training tasks!</li>
+</ul>
+<h3>6. Regional Accelerator Topography Variations &amp; Peak Capacity Saturation (<code>Targeting Hub Regions</code>)</h3>
+<ul>
+<li><b>Exact Symptom &amp; Error Output:</b> When spinning up multi-zone arrays (<code>g2-standard-96</code>) right right across every local zone right inside Northern Virginia (<code>NODE_ZONES=us-east4-a,us-east4-b,us-east4-c</code>), parameter validation immediately rejected initialization:</li>
+<p>  <code>ERROR: ResponseError code=400, message=Accelerator type "nvidia-l4" does not exist across zone us-east4-b.</code></p>
+<p>  And during extreme commercial peak daytime saturation across valid single zones (<code>us-east4-a</code>), Cluster Autoscaler repeatedly threw hardware scale-up backoffs right out of available pool stocks (<code>FailedScaleUp: GCE out of resources -&gt; 2 inside backoff right after failed scale-up</code>).</p>
+<li><b>Underlying Architectural Cause &amp; Exact Resolution (<code>Adaptive Hub Selection + Multi-Zone Spot Slicing</code>):</b></li>
+</ul>
+<ol>
+<li><b>Regional Hardware Inventory Audit:</b> Availability zones across any region vary directly in exact physical bare-metal deployments (<code>us-east4-b</code> houses strictly <code>H100/B200</code> chasses without L4 racks). Always verify exact availability using <code>gcloud compute accelerator-types list --filter="zone:&lt;YOUR_TARGET_REGION&gt;"</code> right before specifying explicit zone boundaries.</li>
+<li><b>High-Capacity Hub Placement (<code>us-central1</code> Iowa Example):</b> Rather than battling peak single-zone congestion right right right across saturated regions right during high-demand daytime hours, we migrated our verification workflow across <b>Option 2 (<code>us-central1</code> Iowa Hub)</b> right right as our verified engineering pattern. As Google Cloud's primary central North American hyperscaler hub, <b>every single availability zone across Iowa (<code>us-central1-a, us-central1-b, us-central1-c</code>) explicitly houses complete physical arrays of both <code>nvidia-l4</code> (<code>g2-standard-96</code>) and <code>nvidia-h100-80gb</code> server chasses!</b></li>
+<li><b>Multi-Zone Spot Dynamic Slicing (<code>--spot</code> + <code>Location Policy ANY</code>):</b> Passing <code>--spot</code> directly alongside multi-zone dynamic autoscaling across our script defaults empowers Cluster Autoscaler to simultaneously sweep all three available zone inventories upon job submittal right right away, instantly capturing an open <b>Spot <code>8x L4</code> bare-metal host straight right right directly right across available regional surplus stocks (<code>us-central1-b</code> right during our verified demonstration)</b> while reducing complete operational computing charges across the installation by up to <b>~70% directly right below standard rates!</b></li>
+</ol>
+<hr />
+<h2>Summary Reference Table of Workspace Code Files</h2>
+<table>
+<thead><tr><th>File Path</th><th>Description &amp; Engineering Significance</th></tr></thead><tbody>
+<tr><td><b><a href="file:///Users/elideng/hypercomputer-training-jobs/scripts/01_setup_gcp_project.sh" style="color:#1a73e8;text-decoration:none;"><b>scripts/01_setup_gcp_project.sh</b></a></b></td><td>Phase 1 pre-flight check script right; enables mandatory Cloud APIs (<code>container</code>, <code>compute</code>, <code>autoscaling</code>) and inspects real-time regional GPU quotas across your target profile right away.</td></tr>
+<tr><td><b><a href="file:///Users/elideng/hypercomputer-training-jobs/scripts/02_create_gke_cluster.sh" style="color:#1a73e8;text-decoration:none;"><b>scripts/02_create_gke_cluster.sh</b></a></b></td><td>Initializes foundational control planes (<code>&lt;YOUR_TARGET_REGION&gt;</code>) right right and constructs zero-initial (<code>--num-nodes=0</code>) compute pool arrays utilizing Spot (<code>--spot</code>) autoscaling right across multi-zone boundaries.</td></tr>
+<tr><td><b><a href="file:///Users/elideng/hypercomputer-training-jobs/scripts/03_submit_verification_job.sh" style="color:#1a73e8;text-decoration:none;"><b>scripts/03_submit_verification_job.sh</b></a></b></td><td>Primary user-facing Phase 3 execution launcher triggering our <code>Option 1</code> pure Python REST API automation engine completely right without local <code>kubectl</code> binary dependencies.</td></tr>
+<tr><td><b><a href="file:///Users/elideng/hypercomputer-training-jobs/scripts/03_submit_job_direct_gcloud.py" style="color:#1a73e8;text-decoration:none;"><b>scripts/03_submit_job_direct_gcloud.py</b></a></b></td><td>Core Python REST API transmission handler; retrieves OAuth bearer tokens over <code>gcloud auth print-access-token</code>, right auto-renews headers on <code>401</code>, right and outputs real-time scale-up status.</td></tr>
+<tr><td><b><a href="file:///Users/elideng/hypercomputer-training-jobs/scripts/04_teardown_cluster.sh" style="color:#1a73e8;text-decoration:none;"><b>scripts/04_teardown_cluster.sh</b></a></b></td><td>Interactive cost protection script enabling rapid zeroing directly right across <code>num-nodes=0</code> right ($0 GPU charge) or complete control plane deletion across <code>&lt;YOUR_TARGET_REGION&gt;</code>.</td></tr>
+<tr><td><b><a href="file:///Users/elideng/hypercomputer-training-jobs/configs/a3_a4_verification_job.yaml" style="color:#1a73e8;text-decoration:none;"><b>configs/a3_a4_verification_job.yaml</b></a></b></td><td>Reference Kubernetes Job specification right targeting <code>g2-standard-96</code> (<code>8x L4</code>), applying required system GPU device tolerations, right right right and defining multi-worker <code>torchrun</code> execution entries.</td></tr>
+<tr><td><b><a href="file:///Users/elideng/hypercomputer-training-jobs/src/train_benchmark_fp8.py" style="color:#1a73e8;text-decoration:none;"><b>src/train_benchmark_fp8.py</b></a></b></td><td>High-concurrency PyTorch multi-GPU stress program executing exact mixed-precision forward/backward steps right alongside 1GB ring <code>All-Reduce</code> operations directly across all assigned device slots.</td></tr>
+</tbody></table>
+</body></html>

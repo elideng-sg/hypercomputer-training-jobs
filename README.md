@@ -9,13 +9,20 @@ This repository contains a production-ready operational setup for launching, val
 ```text
 hypercomputer-training-jobs/
 ├── configs/
-│   └── a3_a4_verification_job.yaml     # Kubernetes multi-GPU verification PyTorchJob spec (8x GPUs, IPC shm)
+│   ├── a3_a4_verification_job.yaml           # Kubernetes multi-GPU verification PyTorchJob spec (8x GPUs, IPC shm)
+│   ├── a3_dws_holder.yaml                    # Base zero-GPU capacity holder pause DaemonSet specification
+│   ├── a3_dws_holder_8gpu.yaml               # 8-GPU Active Capacity Holder Deployment totally disarming BookingExpired up to 7 days
+│   ├── dws_provisioning_request.yaml         # Optimized atomic single-machine 7-day DWS Queued Provisioning Request (`TARGET_SIZE: 1`)
+│   ├── dws_provisioning_request_zone_a.yaml  # Standalone DWS Queued Request specifically targeting zone us-central1-a (`604800`s)
+│   ├── dws_provisioning_request_zone_b.yaml  # Standalone DWS Queued Request specifically targeting zone us-central1-b (`604800`s)
+│   └── dws_provisioning_request_zone_c.yaml  # Standalone DWS Queued Request specifically targeting zone us-central1-c (`604800`s)
 ├── scripts/
-│   ├── 01_setup_gcp_project.sh          # Phase 1: Configure gcloud project, APIs & query regional GPU quotas
-│   ├── 02_create_gke_cluster.sh         # Phase 2: Provision GKE cluster with multi-NIC gVNIC A3/A4 node pool
-│   ├── 03_submit_verification_job.sh    # Phase 3: Package ConfigMap & stream live diagnostic training run logs
-│   ├── 03_submit_job_direct_gcloud.py   # Option 1: Direct GKE HTTPS REST API launcher (bypasses local kubectl)
-│   └── 04_teardown_cluster.sh           # Phase 4: Cost-protection script to scale nodes to zero or delete cluster
+│   ├── 01_setup_gcp_project.sh               # Phase 1: Configure gcloud project, APIs & query regional GPU quotas
+│   ├── 02_create_gke_cluster.sh              # Phase 2: Provision foundational Option 2 Spot node pool across Iowa (`8x L4`)
+│   ├── 02_create_gke_cluster_dws.sh          # Phase 2 (DWS): Deploy multi-zone A3 8x H100 node pool with atomic 7-day queue request + 8-GPU Capacity Holder
+│   ├── 03_submit_verification_job.sh         # Phase 3: Package ConfigMap & stream live diagnostic training run logs
+│   ├── 03_submit_job_direct_gcloud.py        # Option 1: Direct GKE HTTPS REST API launcher (bypasses local kubectl)
+│   └── 04_teardown_cluster.sh                # Phase 4: Cost-protection script to scale nodes to zero or delete cluster
 ├── src/
 │   └── train_benchmark_fp8.py          # Distributed PyTorch NCCL & Tensor Core DDP benchmark script
 ├── logs/                               # Output log folder for NCCL traces and runtime timing JSON files
@@ -101,15 +108,23 @@ Configure your active profile against your target GCP Project and enable all req
 
 ---
 
-### Step 2: Provision the A3/A4 AI Hypercomputer Cluster with DWS Queued Provisioning
-Launch the foundational control plane (`hypercomputer-a3-cluster`) and provision our **8x GPU A3 Node Pool (`a3-h100-pool-8g`)** spanning zones `us-east4-a/b/c` using **Dynamic Workload Scheduler (DWS) Queued Provisioning (`--enable-queued-provisioning`)**. The node pool initializes cleanly in seconds at `0 nodes` without crashing on synchronous stockouts.
+### Step 2: Provision A3/A4 AI Hypercomputer Cluster with Multi-Zone DWS Queued Provisioning & Holder Protection
+To launch either our baseline Spot verification pool or our dedicated **8x H100 A3 Dynamic Workload Scheduler (`DWS`) Node Pool (`a3-h100-dws-pool`)** across all 3 Iowa availability zones (`us-central1-a/b/c`), execute the appropriate deployment script below:
 
-**Command to run:**
+#### Option A: Dedicated 8x H100 DWS Queued Setup (Recommended for 7-Day Uninterrupted Workloads)
+Executes our standalone DWS setup script directly at [scripts/02_create_gke_cluster_dws.sh](file:///Users/elideng/hypercomputer-training-jobs/scripts/02_create_gke_cluster_dws.sh). This automatically provisions our multi-zone (`ANY` policy) **8x H100 DWS node pool (`a3-h100-dws-pool`)** across `us-central1-a/b/c`, registers our atomic single-machine 7-day (`"604800"` seconds) physical capacity reservation (`TARGET_SIZE: 1` right to bypass multi-node block bottlenecks), and deploys our active **8-GPU Capacity Holder (`configs/a3_dws_holder_8gpu.yaml`)** right away. Because our 8-GPU holder uses `registry.k8s.io/pause:3.9` while consuming `nvidia.com/gpu: 8`, it immediately lands across any newly booted A3 machine out of the queue to completely disarm `BookingExpired` idle scale-downs—preserving your supercomputing server up to the full 7-day maximum continuous window!
+
+To launch Option A directly across your terminal:
+```bash
+./scripts/02_create_gke_cluster_dws.sh
+```
+
+#### Option B: Standard Spot Option 2 Setup (`8x L4 g2-standard-96`)
 ```bash
 ./scripts/02_create_gke_cluster.sh
 ```
 > [!NOTE]
-> Because DWS Queued Provisioning starts at `0 nodes`, compute charges do not accrue until you launch a workload pod with `cloud.google.com/gke-queued: "true"` in Step 3. To inspect node provisioning events during training runs, run `gcloud compute instances list --filter="name~gke-hypercomputer-a3" --format="table(name,zone,machineType,status)"`.
+> Under our multi-zone DWS workflow (`02_create_gke_cluster_dws.sh`), each availability zone manages its physical hardware reservation right inside its own independent `ProvisioningRequest` object across Google's queues. Because the included `a3-dws-capacity-holder` DaemonSet automatically binds `safe-to-evict: false` onto any newly booted machine, your physical H100 node will remain safely active in your cluster up to the maximum 7 continuous days completely protected from `BookingExpired` termination!
 
 ---
 

@@ -14,10 +14,14 @@ spec:
     spec:
       restartPolicy: Never
       nodeSelector:
-        # Route job directly to high-capacity 8x L4 Ada Lovelace Option 2 Iowa hub (g2-standard-96)
-        node.kubernetes.io/instance-type: g2-standard-96
+        # Route job directly to A3 High-Capacity 8x H100 DWS Queued Node Pool (`a3-highgpu-8g`) across Iowa
+        node.kubernetes.io/instance-type: a3-highgpu-8g
+        gpu-cluster: a3-h100
       tolerations:
       - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"
+      - key: "cloud.google.com/gke-queued"
         operator: "Exists"
         effect: "NoSchedule"
       containers:

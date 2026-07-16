@@ -1,0 +1,56 @@
+# ==============================================================================
+# GKE Dynamic Workload Scheduler (DWS) - Capacity Holder ("Anti-BookingExpired")
+# ==============================================================================
+# Deploys a hyper-lightweight system pause DaemonSet targeting any newly booted
+# A3 8x H100 DWS node directly across availability zones us-central1-a/b/c.
+#
+# Because GKE enters a 10-minute idle countdown upon transition out of the DWS
+# queue (`BookingExpired`), this zero-overhead holder immediately binds all 8x H100s
+# and prevents GKE Cluster Autoscaler scale-down via exact evict protection:
+#   `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"`
+#
+# When you are ready to start verification training workloads across a node,
+# simply delete or suspend this DaemonSet cleanly (`kubectl delete -f configs/a3_dws_holder.yaml`)
+# or configure priority classes directly before task initialization!
+# ==============================================================================
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: a3-dws-capacity-holder
+  namespace: default
+  labels:
+    app: a3-capacity-holder
+spec:
+  selector:
+    matchLabels:
+      app: a3-capacity-holder
+  template:
+    metadata:
+      labels:
+        app: a3-capacity-holder
+      annotations:
+        # Explicitly prohibits GKE Cluster Autoscaler right right from evacuating and reclaiming the host
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+    spec:
+      restartPolicy: Always
+      nodeSelector:
+        node.kubernetes.io/instance-type: a3-highgpu-8g
+        gpu-cluster: a3-h100
+      tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"
+      - key: "cloud.google.com/gke-queued"
+        operator: "Exists"
+        effect: "NoSchedule"
+      containers:
+      - name: pause-holder
+        # Official lightweight system pause image (`safe-to-evict: false` anchors host without consuming GPUs)
+        image: registry.k8s.io/pause:3.9
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "64Mi"
+          requests:
+            cpu: "100m"
+            memory: "64Mi"

@@ -1,0 +1,64 @@
+# ==============================================================================
+# GKE Dynamic Workload Scheduler (DWS) - 8-GPU Active Capacity Holder
+# ==============================================================================
+# Because GKE enforces a strict 10-minute active GPU workload booking rule
+# immediately upon transition of a ProvisioningRequest right to PROVISIONED: True
+# (`BookingExpired`), deploying this explicit 8-GPU Pause Holder alongside your
+# DWS request immediately binds directly across all 8x H100 hardware accelerators
+# the exact second an a3-highgpu-8g instance transitions ready across any zone!
+#
+# By fully consuming `nvidia.com/gpu: "8"` using Google's hyper-lightweight
+# system pause container (`registry.k8s.io/pause:3.9` = 0 CPU/RAM math overhead),
+# this Deployment permanently disarms BookingExpired idle scale-downs—preserving
+# your physical A3 supercomputer standing right right inside your cluster right
+# up to the full 7-day maximum uninterrupted window (`604800 seconds`).
+#
+# When you are ready right to run your actual multi-GPU verification benchmark:
+#   1. Release all 8x H100s cleanly by deleting/scaling this holder right down:
+#      kubectl delete -f configs/a3_dws_holder_8gpu.yaml
+#   2. Execute verification suite right away across your already online H100 node:
+#      USE_KUBECTL=1 ./scripts/03_submit_verification_job.sh
+# ==============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: a3-h100-holder-8gpu
+  namespace: default
+  labels:
+    app: a3-capacity-holder-8gpu
+spec:
+  replicas: 1  # Binds completely to the first physical A3 host that exits our DWS hardware queues
+  selector:
+    matchLabels:
+      app: a3-capacity-holder-8gpu
+  template:
+    metadata:
+      labels:
+        app: a3-capacity-holder-8gpu
+      annotations:
+        # Explicitly prevents GKE Cluster Autoscaler from evacuating and reclaiming our server
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+    spec:
+      restartPolicy: Always
+      nodeSelector:
+        node.kubernetes.io/instance-type: a3-highgpu-8g
+        gpu-cluster: a3-h100
+      tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"
+      - key: "cloud.google.com/gke-queued"
+        operator: "Exists"
+        effect: "NoSchedule"
+      containers:
+      - name: pause-8gpu-holder
+        image: registry.k8s.io/pause:3.9
+        resources:
+          limits:
+            nvidia.com/gpu: "8"
+            cpu: "64"
+            memory: "384Gi"
+          requests:
+            nvidia.com/gpu: "8"
+            cpu: "64"
+            memory: "384Gi"

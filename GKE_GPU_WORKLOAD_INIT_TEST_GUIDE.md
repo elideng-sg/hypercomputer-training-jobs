@@ -152,20 +152,17 @@ The two primary allocation regimes leveraged right right right across high-perfo
   1. **For Uninterrupted Model Fine-Tuning across L4 Arrays (`g2-standard-96`):** If you are running long 12-to-48 hour distributed training loops right on an `8x L4` bare-metal array right where preemption crashes right across overnight processing would corrupt intermediate gradients or introduce repeated checkpoint restoration overhead, configuring your L4 pool right under DWS Queued Provisioning guarantees **100% uninterrupted, non-preemptible run duration directly right upon scale-up out of the queue**!
   2. **For High-End Multi-Chassis Supercomputing Arrays (`a3-highgpu-8g` / `a4-highgpu-8g`):** When deploying large-scale H100/Blackwell training clusters right right requiring simultaneous allocation right right right across multiple bare-metal servers (`e.g., 4x physical A3 hosts / 32x H100 GPUs`), standard synchronous creation loops frequently encounter regional `[GCE_STOCKOUT]` boundaries during daytime hours. DWS guarantees **deterministic atomic multi-node reservation**, directly holding the job in queue right until all demanded physical servers spin right up in sync!
 
-#### How to Switch between Allocation Models in Your Creation Setup:
-To toggle your `02_create_gke_cluster.sh` deployment from standard Spot multi-zone placement right across right to deterministic DWS Queued allocation across upcoming runs, replace `--spot \` across [scripts/02_create_gke_cluster.sh:L76](file:///Users/elideng/hypercomputer-training-jobs/scripts/02_create_gke_cluster.sh#L76) directly right with exact DWS initialization flags:
+#### How to Switch between Allocation Models & Engage Standalone Multi-Zone DWS:
+Rather than manually mutating `scripts/02_create_gke_cluster.sh` directly back and forth, our repository provides **[scripts/02_create_gke_cluster_dws.sh](file:///Users/elideng/hypercomputer-training-jobs/scripts/02_create_gke_cluster_dws.sh)** as our specialized, automated deployment engine for high-end **A3 8x H100 DWS Queued Provisioning** (`a3-highgpu-8g`).
 
-```bash
-# Example modifications right inside scripts/02_create_gke_cluster.sh right for activating DWS Queued pools:
---accelerator="type=nvidia-l4,count=8,gpu-driver-version=default" \  # Or target nvidia-h100-80gb
---enable-queued-provisioning \
---reservation-affinity="none" \
---enable-autoscaling \
---min-nodes="0" \
---max-nodes="4" \
---location-policy="ANY" \
---num-nodes="0"
-```
+Executing directly `02_create_gke_cluster_dws.sh` accomplishes three core operational safeguards right right out of the box:
+1. **Multi-Zone DWS Node Pool Creation (`a3-h100-dws-pool`)**: Provisions an `8x H100` node structure across all three primary availability zones (`us-central1-a`, `us-central1-b`, and `us-central1-c`) configured explicitly with `--enable-queued-provisioning --reservation-affinity="none" --num-nodes=0`.
+2. **Independent 7-Day Hardware Queue Reservations (`maxRunDurationSeconds: "604800"`)**: Submits three completely independent `ProvisioningRequest` specifications across `configs/dws_provisioning_request_zone_*.yaml`. Because each availability zone operates right in its own independent hardware queue right inside Google Compute Engine, whichever zone finishes processing fastest immediately boots an atomic 8-GPU H100 server completely unblocked by regional capacity delays across other zones for up to **7 continuous days (`"604800"` seconds)**!
+3. **Anti-BookingExpired Capacity Protection (`a3-dws-capacity-holder`)**: When a queued instance boots up (`PROVISIONED: True`), GKE enforces a strict 10-minute capacity reservation countdown. If no Pod claiming all 8 GPUs lands on the node within 10 minutes, GKE issues `BookingExpired` and Cluster Autoscaler immediately reclaims the hardware back to `0 nodes`. To eliminate this risk, `02_create_gke_cluster_dws.sh` concurrently deploys our hyper-lightweight `a3-dws-capacity-holder` DaemonSet ([configs/a3_dws_holder.yaml](file:///Users/elideng/hypercomputer-training-jobs/configs/a3_dws_holder.yaml)) using `registry.k8s.io/pause:3.9` (`0 CPU / 0 Memory overhead`) annotated with:
+   ```yaml
+   cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+   ```
+   This holder instantly binds all 8x H100 accelerators the split-second any zone fulfills from the DWS queue, securely holding the bare-metal machine active in your cluster up to the full 7-day duration until your distributed training verification jobs (`USE_KUBECTL=1 ./scripts/03_submit_verification_job.sh`) are ready!
 
 ---
 
