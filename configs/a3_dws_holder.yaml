@@ -1,4 +1,9 @@
 # ==============================================================================
+# !!! DEPRECATED / DO NOT USE -- see configs/a3_dws_consumer_holders.yaml !!!
+# This DaemonSet requested NO GPU and never referenced a ProvisioningRequest, so
+# it could neither hold the 8x H100s nor consume the DWS booking. It does not
+# prevent reclaim. Use the per-zone consumers in a3_dws_consumer_holders.yaml.
+# ==============================================================================
 # GKE Dynamic Workload Scheduler (DWS) - Capacity Holder ("Anti-BookingExpired")
 # ==============================================================================
 # Deploys a hyper-lightweight system pause DaemonSet targeting any newly booted

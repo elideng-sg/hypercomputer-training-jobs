@@ -108,42 +108,53 @@ echo "-> Checking active underlying compute instances across zones via gcloud co
 gcloud compute instances list --filter="name~gke-${CLUSTER_NAME} OR tags.items~ai-hypercomputer" --format="table(name,zone,machineType,status)" || true
 
 echo "========================================================================"
-echo "[*] Step 2.5: Submitting independent multi-zone DWS Queued Provisioning Requests & Capacity Holder..."
+echo "[*] Step 2.5: Submitting per-zone DWS Queued Provisioning Requests + consumers..."
 echo "========================================================================"
-# Clean up older single-zone or expired booking objects if present
-# Clean up older expired overnight queue requests or zero-GPU DaemonSets if present
+# Clean up older queue requests and the OLD (broken) holders that never referenced
+# a ProvisioningRequest. The old a3-h100-holder-8gpu / a3-dws-capacity-holder only set
+# safe-to-evict and were never scheduled onto the DWS node, so the node's 10-minute
+# booking window expired unused and the autoscaler reclaimed it. Remove them.
 kubectl delete provisioningrequest a3-h100-req-zone-a a3-h100-req-zone-b a3-h100-req-zone-c a3-h100-verification-req --ignore-not-found -n default >/dev/null 2>&1 || true
+kubectl delete deployment a3-h100-holder-8gpu --ignore-not-found -n default >/dev/null 2>&1 || true
 kubectl delete daemonset a3-dws-capacity-holder --ignore-not-found -n default >/dev/null 2>&1 || true
 
-echo "[*] Deploying 8-GPU Active Capacity Holder right away to permanently disarm BookingExpired (configs/a3_dws_holder_8gpu.yaml)..."
-if [ -f "configs/a3_dws_holder_8gpu.yaml" ]; then
-    kubectl apply -f configs/a3_dws_holder_8gpu.yaml
-else
-    echo "[!] Warning: configs/a3_dws_holder_8gpu.yaml missing."
-fi
-
 echo ""
-echo "[*] Submitting fresh independent 7-day DWS A3 8x H100 hardware queue requests across all three Iowa availability zones ASAP..."
-echo "[!] WARNING: each zone request is now hard-pinned (topology.kubernetes.io/zone) and asks for 1 node."
-echo "[!]          Applying all three => up to 3x a3-highgpu-8g (24x H100) can provision, one per zone."
-echo "[!]          If you only need ONE machine, submit a single zone file, or as soon as one request"
-echo "[!]          reaches Provisioned=True, cancel the others to avoid paying for extra nodes, e.g.:"
-echo "[!]            kubectl delete provisioningrequest a3-h100-req-zone-b a3-h100-req-zone-c -n default"
+echo "[*] Step 2.5a: Submitting fresh 7-day DWS A3 8x H100 queue requests (hard-pinned per zone)..."
+echo "[!] WARNING: each zone request asks for 1 node; applying all three => up to 3x a3-highgpu-8g (24x H100)."
+echo "[!]          Set ONLY_ZONE=<a|b|c> to provision a single node in just one zone instead."
 # To provision a single node in only one zone instead of hunting all three, set e.g. ONLY_ZONE=a
 if [ -n "${ONLY_ZONE:-}" ]; then
     kubectl apply -f "configs/dws_provisioning_request_zone_${ONLY_ZONE}.yaml"
 else
     for zone_cfg in configs/dws_provisioning_request_zone_*.yaml; do
-        if [ -f "${zone_cfg}" ]; then
-            kubectl apply -f "${zone_cfg}"
-        fi
+        [ -f "${zone_cfg}" ] && kubectl apply -f "${zone_cfg}"
     done
 fi
 
 echo ""
-echo "-> Checking active multi-zone DWS ProvisioningRequests and 8-GPU Holder deployment right away:"
-kubectl get provisioningrequests -n default || true
-kubectl get deployments,pods -l app=a3-capacity-holder-8gpu -n default || true
+echo "[*] Step 2.5b: Deploying per-zone CONSUMER holders so each node is claimed within its 10-min window..."
+echo "    (These carry autoscaling.x-k8s.io/consume-provisioning-request so the autoscaler binds them to"
+echo "     the matching request the instant a node provisions -- this is what prevents the reclaim.)"
+# Consumers must reference an existing ProvisioningRequest, so apply them AFTER the requests above.
+if [ -f "configs/a3_dws_consumer_holders.yaml" ]; then
+    kubectl apply -f configs/a3_dws_consumer_holders.yaml
+    if [ -n "${ONLY_ZONE:-}" ]; then
+        # Keep only the holder matching the single requested zone
+        for z in a b c; do
+            [ "${z}" != "${ONLY_ZONE}" ] && kubectl delete deployment "a3-holder-zone-${z}" --ignore-not-found -n default >/dev/null 2>&1 || true
+        done
+    fi
+else
+    echo "[!] Warning: configs/a3_dws_consumer_holders.yaml missing -- nodes may be reclaimed after 10 min!"
+fi
 
 echo ""
-echo "[+] Step 2 (DWS) completed! A3 cluster infrastructure is running, fresh 7-day multi-zone DWS machine requests are queued ASAP, and explicit 8-GPU capacity holder protection (a3-h100-holder-8gpu) is actively waiting right across the queue right away!"
+echo "-> Active DWS ProvisioningRequests and per-zone consumer holders:"
+kubectl get provisioningrequests -n default || true
+kubectl get deployments,pods -l app=a3-holder -n default || true
+
+echo ""
+echo "[+] Step 2 (DWS) completed! Per-zone 7-day requests are queued and each has a matching consumer"
+echo "    holder waiting, so a provisioned A3 node is claimed inside its booking window and NOT reclaimed."
+echo "    To run your benchmark on a zone: kubectl scale deploy/a3-holder-zone-<z> --replicas=0, then launch"
+echo "    the Job with the same two autoscaling.x-k8s.io/* annotations pointing at a3-h100-req-zone-<z>."
