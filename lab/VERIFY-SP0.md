@@ -170,8 +170,8 @@ Only the pools enabled in `env/<region>.tfvars` need to pass steps 4-6. For exam
 
 ## Known issues and workarounds
 
-- **Capacity waits (step 4):** DWS ProvisioningRequests may wait indefinitely if the region lacks capacity for the requested GPU type. This is documented in `../bugfixes/0001-dws-zone-requests-not-zone-pinned.md` (when that file is created).
-- **Reclaim race (step 4):** Kueue's DWS admission check (configured in `manifests/kueue/provisioning-config.yaml`) prevents premature node reclaim by holding the ProvisioningRequest for the workload's lifecycle. This supersedes the manual zone-pinned holder pattern documented in `../bugfixes/0002-dws-a3-node-reclaimed-after-10min.md` (when that file is created).
+- **Capacity waits (step 4):** DWS ProvisioningRequests may wait indefinitely if the region lacks capacity for the requested GPU type. This is documented in `../bugfixes/0001-dws-zone-requests-not-zone-pinned.md`.
+- **Reclaim race (step 4):** Kueue's DWS admission check (configured in `manifests/kueue/provisioning-config.yaml`) prevents premature node reclaim by holding the ProvisioningRequest for the workload's lifecycle. This supersedes the manual zone-pinned holder pattern documented in `../bugfixes/0002-dws-a3-node-reclaimed-after-10min.md`.
 
 ---
 

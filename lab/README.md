@@ -297,7 +297,7 @@ Each region is a separate Terraform deployment (separate state prefix in GCS).
 - Reduce the number of nodes requested (smoke test only needs 1 node)
 - Wait for capacity to become available (may take hours or days)
 
-**Related:** `../bugfixes/0001-dws-zone-requests-not-zone-pinned.md` (when that file is created) documents zone-pinning issues with manual DWS requests. Kueue's DWS admission check does not pin zones, allowing DWS to search across all zones in the region.
+**Related:** `../bugfixes/0001-dws-zone-requests-not-zone-pinned.md` documents zone-pinning issues with manual DWS requests. Kueue's DWS admission check does not pin zones, allowing DWS to search across all zones in the region.
 
 ### Node reclaim race (historical issue, now fixed)
 
@@ -307,7 +307,7 @@ Each region is a separate Terraform deployment (separate state prefix in GCS).
 
 **Fix:** Kueue's DWS admission check (configured in `manifests/kueue/provisioning-config.yaml`) owns the ProvisioningRequest lifecycle. Kueue holds the request for the workload's lifetime, preventing premature reclaim. **This issue does not affect the SP-0 foundation.**
 
-**Related:** `../bugfixes/0002-dws-a3-node-reclaimed-after-10min.md` (when that file is created) documents the manual holder pattern and why Kueue supersedes it.
+**Related:** `../bugfixes/0002-dws-a3-node-reclaimed-after-10min.md` documents the manual holder pattern and why Kueue supersedes it.
 
 ### Blueprint rendering fails
 
@@ -414,7 +414,7 @@ After deploying, run the full acceptance checklist in `VERIFY-SP0.md` to confirm
 
 - **SP-0 Design Spec:** `../docs/superpowers/specs/2026-07-16-sp0-foundation-iac-design.md`
 - **Program Overview:** `../docs/superpowers/specs/2026-07-16-hypercomputer-lab-program-overview.md`
-- **Bugfixes:** `../bugfixes/` (to be populated with DWS capacity and reclaim issue documentation)
+- **Bugfixes:** `../bugfixes/` — DWS capacity and reclaim issue documentation
 - **User Acceptance Checklist:** `VERIFY-SP0.md` (this directory)
 
 ---
