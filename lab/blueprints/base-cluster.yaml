@@ -1,0 +1,27 @@
+blueprint_name: hpc-lab-sp0
+vars:
+  project_id: $(vars.project_id)
+  region:     $(vars.region)
+  deployment_name: hpc-lab
+deployment_groups:
+- group: primary
+  modules:
+  # NOTE: Module source paths and field names must be verified against the pinned
+  # Cluster Toolkit version (gcluster --version) at deploy time. Adjust if needed.
+  - id: system-net
+    source: modules/network/vpc
+  - id: gke-cluster
+    source: modules/scheduler/gke-cluster
+    use: [system-net]
+    settings:
+      enable_private_endpoint: false
+      release_channel: REGULAR
+      # workload identity on by default in this module
+  - id: system-pool
+    source: modules/compute/gke-node-pool
+    use: [gke-cluster]
+    settings:
+      name: system
+      machine_type: e2-standard-8
+      autoscaling_total_min_nodes: 2
+      autoscaling_total_max_nodes: 3
