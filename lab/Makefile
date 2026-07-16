@@ -40,3 +40,10 @@ down:
 
 verify-cost:
 	python3 scripts/assert_zero_gpu.py $(PROJECT)
+
+smoke:
+	@if [ -z "$(GPU)" ]; then echo "Error: GPU type required. Usage: make smoke GPU=<type>"; exit 1; fi
+	kubectl create -f manifests/smoke/nccl-smoke.yaml --dry-run=client -o yaml | sed 's/__GPU__/$(GPU)/g' | kubectl apply -n team-a -f -
+	kubectl wait --for=condition=complete job/nccl-smoke-$(GPU) -n team-a --timeout=45m
+	kubectl logs job/nccl-smoke-$(GPU) -n team-a | tail -30
+	kubectl delete job nccl-smoke-$(GPU) -n team-a --ignore-not-found
