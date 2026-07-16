@@ -31,3 +31,6 @@ logs/*.txt
 # Ensure log folder itself is tracked
 !logs/.gitkeep
 .superpowers/
+
+# gcluster render / blueprint compose output
+lab/build/
