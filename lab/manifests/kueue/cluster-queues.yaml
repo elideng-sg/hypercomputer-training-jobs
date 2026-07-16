@@ -10,6 +10,7 @@ spec:
     flavors:
     - name: l4
       resources:
+      # NOTE: nominalQuota values below are placeholders; tune from Task 4 pool sizes before production
       - name: nvidia.com/gpu
         nominalQuota: "16"
       - name: cpu

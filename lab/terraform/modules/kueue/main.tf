@@ -15,13 +15,15 @@
  *   queued-provisioning.gke.io manages nvidia.com/gpu resources.
  *
  * DEPLOY-TIME CAVEATS:
- * 1. Kueue version is pinned to v0.8.1 (verify compatibility with GKE version).
- * 2. Multi-team expansion: the current manifests hard-code team-a. For multiple
+ * 1. Operator must ensure kubectl context/credentials for the target cluster are
+ *    active before apply (local-exec blocks assume an authenticated context).
+ * 2. Kueue version is pinned to v0.8.1 (verify compatibility with GKE version).
+ * 3. Multi-team expansion: the current manifests hard-code team-a. For multiple
  *    teams, consider templating the local-queues.yaml and namespaces.yaml at
  *    apply time (e.g., Helm, Kustomize overlays, or a script loop).
- * 3. Quota tuning: nominal quotas are set to 16 GPU / 400 CPU / 3000Gi mem per
+ * 4. Quota tuning: nominal quotas are set to 16 GPU / 400 CPU / 3000Gi mem per
  *    type. Adjust based on actual pool max_nodes * GPUs-per-node before production.
- * 4. This module uses null_resource + local-exec for offline validation; for
+ * 5. This module uses null_resource + local-exec for offline validation; for
  *    production use, consider migrating to kubectl provider or Helm.
  */
 
@@ -59,7 +61,7 @@ variable "kueue_version" {
 variable "kueue_manifest_dir" {
   description = "Path to the directory containing Kueue custom manifests"
   type        = string
-  default     = "../../manifests/kueue"
+  default     = "../../../manifests/kueue"
 }
 
 # Install Kueue CRDs and controller (pinned version)

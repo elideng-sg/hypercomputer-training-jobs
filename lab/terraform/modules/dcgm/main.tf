@@ -6,13 +6,15 @@
  * metrics collection and fabric-ready.
  *
  * DEPLOY-TIME CAVEATS:
- * 1. The GPUDirect/RDMA installer manifest URLs are version-specific and depend
+ * 1. Operator must ensure kubectl context/credentials for the target cluster are
+ *    active before apply (local-exec blocks assume an authenticated context).
+ * 2. The GPUDirect/RDMA installer manifest URLs are version-specific and depend
  *    on the fabric type (TCPX/TCPXO/RDMA). Verify these URLs against the pinned
  *    Cluster Toolkit A3/A4 examples before applying.
- * 2. Installer DaemonSets are typically per-fabric; apply the appropriate set
+ * 3. Installer DaemonSets are typically per-fabric; apply the appropriate set
  *    based on the enabled GPU pools (h100-high→TCPX, h100-mega→TCPXO,
  *    h200-ultra/b200→RDMA).
- * 3. This module uses null_resource + local-exec for offline validation; for
+ * 4. This module uses null_resource + local-exec for offline validation; for
  *    production use, consider migrating to kubectl provider or Helm.
  */
 
@@ -50,7 +52,7 @@ variable "enabled_fabrics" {
 variable "dcgm_manifest_path" {
   description = "Path to the DCGM exporter manifest file"
   type        = string
-  default     = "../../manifests/dcgm/dcgm-exporter.yaml"
+  default     = "../../../manifests/dcgm/dcgm-exporter.yaml"
 }
 
 # DCGM Exporter deployment
