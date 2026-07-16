@@ -35,6 +35,10 @@ template:
     nodeSelector:
       node.kubernetes.io/instance-type: a3-highgpu-8g
       gpu-cluster: a3-h100
+      # Hard-pin this request to a specific zone. Without this, all three
+      # per-zone requests are identical and GKE may place them in the same
+      # zone (the `dws-zone` label below is metadata only and does NOT pin).
+      topology.kubernetes.io/zone: us-central1-c
     tolerations:
     - key: "nvidia.com/gpu"
       operator: "Exists"
