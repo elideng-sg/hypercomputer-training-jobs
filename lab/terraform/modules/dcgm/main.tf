@@ -80,8 +80,8 @@ resource "null_resource" "dcgm_exporter" {
 #   count = contains(var.enabled_fabrics, "tcpx") ? 1 : 0
 #   provisioner "local-exec" {
 #     command = <<-EOT
-#       kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/container-engine-accelerators/master/gpudirect-tcpx/nccl-plugin-installer-daemonset.yaml
-#       kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/container-engine-accelerators/master/gpudirect-tcpx/nccl-tcpx-device-injector-daemonset.yaml
+#       kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/container-engine-accelerators/<PINNED_CLUSTER_TOOLKIT_REF>/gpudirect-tcpx/nccl-plugin-installer-daemonset.yaml
+#       kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/container-engine-accelerators/<PINNED_CLUSTER_TOOLKIT_REF>/gpudirect-tcpx/nccl-tcpx-device-injector-daemonset.yaml
 #     EOT
 #   }
 #   depends_on = [null_resource.dcgm_exporter]
@@ -92,8 +92,8 @@ resource "null_resource" "dcgm_exporter" {
 #   count = contains(var.enabled_fabrics, "tcpxo") ? 1 : 0
 #   provisioner "local-exec" {
 #     command = <<-EOT
-#       kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/container-engine-accelerators/master/gpudirect-tcpxo/nccl-plugin-installer-daemonset.yaml
-#       kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/container-engine-accelerators/master/gpudirect-tcpxo/nccl-tcpxo-device-injector-daemonset.yaml
+#       kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/container-engine-accelerators/<PINNED_CLUSTER_TOOLKIT_REF>/gpudirect-tcpxo/nccl-plugin-installer-daemonset.yaml
+#       kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/container-engine-accelerators/<PINNED_CLUSTER_TOOLKIT_REF>/gpudirect-tcpxo/nccl-tcpxo-device-injector-daemonset.yaml
 #     EOT
 #   }
 #   depends_on = [null_resource.dcgm_exporter]
@@ -104,8 +104,8 @@ resource "null_resource" "dcgm_exporter" {
 #   count = contains(var.enabled_fabrics, "rdma") ? 1 : 0
 #   provisioner "local-exec" {
 #     command = <<-EOT
-#       kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/container-engine-accelerators/master/gpudirect-rdma/nccl-plugin-installer-daemonset.yaml
-#       kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/container-engine-accelerators/master/gpudirect-rdma/rdma-device-injector-daemonset.yaml
+#       kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/container-engine-accelerators/<PINNED_CLUSTER_TOOLKIT_REF>/gpudirect-rdma/nccl-plugin-installer-daemonset.yaml
+#       kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/container-engine-accelerators/<PINNED_CLUSTER_TOOLKIT_REF>/gpudirect-rdma/rdma-device-injector-daemonset.yaml
 #     EOT
 #   }
 #   depends_on = [null_resource.dcgm_exporter]

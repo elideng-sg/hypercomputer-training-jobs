@@ -35,7 +35,7 @@ spec:
         operator: Exists
         effect: NoSchedule
       # Tolerate DWS/queued provisioning taints
-      - key: cloud.google.com/gke-provisioning
+      - key: cloud.google.com/gke-queued
         operator: Exists
         effect: NoSchedule
       # Tolerate custom GPU pool taints if any
