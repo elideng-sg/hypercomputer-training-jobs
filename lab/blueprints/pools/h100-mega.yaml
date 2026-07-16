@@ -1,0 +1,15 @@
+  - id: pool-h100-mega
+    source: modules/compute/gke-node-pool
+    use: [gke-cluster, gpu-nets]
+    settings:
+      name: h100-mega
+      machine_type: a3-megagpu-8g
+      autoscaling_total_min_nodes: 0
+      autoscaling_total_max_nodes: 2
+      initial_node_count: 0
+      enable_queued_provisioning: true
+      reservation_affinity: { consume_reservation_type: NO_RESERVATION }
+      guest_accelerator:
+      - { type: nvidia-h100-mega-80gb, count: 8, gpu_driver_version: DEFAULT }
+      labels: { "lab.gpu/type": "h100-mega", "lab.gpu/interconnect": "tcpxo" }
+      additional_networks: $(gpu-nets.additional_networks)
