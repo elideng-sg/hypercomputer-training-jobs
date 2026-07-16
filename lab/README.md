@@ -110,7 +110,9 @@ max_run_duration_seconds = 86400  # 24h default; adjust as needed
 - H100 (high/mega): select regions (us-central1, europe-west4, asia-southeast1, etc.)
 - H200, B200: limited regions, private preview
 
-**Note:** `max_run_duration_seconds` is a cost guardrail (default 24h). Jobs exceeding this duration are terminated. Adjust based on expected workload runtime.
+**Note:** `max_run_duration_seconds` is a cost guardrail (default 24h). Enforcement is currently via `activeDeadlineSeconds` in Job specs (smoke tests use 3600s). Pool-level maxRunDuration may be supported at deploy time depending on Cluster Toolkit version; see comments in pool blueprints. Adjust based on expected workload runtime.
+
+**Important:** `ENABLED_POOLS` (Makefile variable) is the authoritative pool selector for composition. The tfvar `enabled_pools` in `env/<region>.tfvars` is for informational purposes and is not consumed by the gcluster stage.
 
 ### 3. Deploy the cluster
 
@@ -118,7 +120,9 @@ max_run_duration_seconds = 86400  # 24h default; adjust as needed
 make up REGION=<region> ENABLED_POOLS=l4,a100,h100-high
 ```
 
-This step:
+This step runs two terraform stages:
+
+**Stage 1 (gcluster cluster stage):**
 - Composes the full blueprint from `blueprints/base-cluster.yaml` + enabled pool blueprints
 - Renders the blueprint to Terraform via `gcluster create`
 - Runs `terraform init` (GCS backend) → `terraform validate` → `terraform plan` → `terraform apply`
@@ -127,8 +131,13 @@ This step:
   - GKE cluster (regional, REGULAR release channel)
   - System node pool (2-3 nodes, e2-standard-8, always-on)
   - GPU node pools (DWS flex-start, autoscale 0→N, initial 0)
+
+**Stage 2 (post-cluster configuration via `make configure`):**
+- Applies `lab/terraform/` root module with Kueue, DCGM, and cost modules
+- Deploys:
   - Kueue (ResourceFlavors, ClusterQueues, LocalQueues, ProvisioningConfig)
   - DCGM exporter (for observability)
+  - Cost guardrails (budget alerts if billing_account is set)
 
 **Deploy time:** 10-15 minutes for cluster creation; add 5-10 minutes for Kueue/DCGM manifests.
 
@@ -239,7 +248,8 @@ These labels are used by Kueue ResourceFlavors for workload routing.
 | `compose` | Assemble the full blueprint from base + enabled pool blueprints |
 | `render` | Run `gcluster create` to render Terraform from the composed blueprint |
 | `plan` | Run `terraform init` + `validate` + `plan` (does not apply) |
-| `up` | Full deploy: render → plan → apply (idempotent) |
+| `up` | Full deploy: render → plan → apply (cluster stage), then run `configure` (post-cluster stage) |
+| `configure` | Apply post-cluster terraform (Kueue, DCGM, cost modules); run by `up` or standalone |
 | `down` | Teardown: scale GPU pools to 0 (default) or full destroy (with `DESTROY=1`) |
 | `verify-cost` | Assert zero GPU nodes and zero ProvisioningRequests (cost invariant) |
 | `smoke` | Run per-GPU-type smoke test (DCGM + NCCL all-reduce); requires `GPU=<type>` |

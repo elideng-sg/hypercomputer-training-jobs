@@ -75,7 +75,8 @@ resource "null_resource" "dcgm_exporter" {
 
 # GPUDirect/RDMA installer placeholders
 # DEPLOY-TIME ACTION REQUIRED: Uncomment and configure the appropriate installer
-# based on enabled GPU pools. Example installer URLs (verify against Cluster Toolkit):
+# based on enabled GPU pools. Pin the Cluster Toolkit ref to a specific version.
+# Example installer URLs (verify against Cluster Toolkit):
 #
 # For TCPX (h100-high):
 # resource "null_resource" "gpudirect_tcpx" {

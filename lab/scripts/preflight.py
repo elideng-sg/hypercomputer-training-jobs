@@ -34,7 +34,7 @@ def main():
     if any(p in high_end_pools for p in pools):
         vpc_limit = limits.get("NETWORKS", 0)
         if vpc_limit < 10:
-            print(f"NETWORKS     {'NETWORKS':24} {vpc_limit:8.0f}    10  <-- INSUFFICIENT")
+            print(f"{'vpc':12} {'NETWORKS':24} {vpc_limit:8.0f}    10  <-- INSUFFICIENT")
             ok = False
 
     sys.exit(0 if ok else 2)

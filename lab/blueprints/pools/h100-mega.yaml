@@ -13,3 +13,5 @@
       - { type: nvidia-h100-mega-80gb, count: 8, gpu_driver_version: DEFAULT }
       labels: { "lab.gpu/type": "h100-mega", "lab.gpu/interconnect": "tcpxo" }
       additional_networks: $(gpu-nets.additional_networks)
+      # NOTE: maxRunDuration (if supported) should be set to var.max_run_duration_seconds at deploy;
+      # verify field name against Cluster Toolkit version. Current enforcement is via Job activeDeadlineSeconds.

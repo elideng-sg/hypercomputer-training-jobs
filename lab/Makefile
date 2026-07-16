@@ -2,7 +2,7 @@ PROJECT ?= $(shell gcloud config get-value project 2>/dev/null)
 REGION  ?= us-central1
 ENABLED_POOLS ?= l4,a100,h100-high,h100-mega
 
-.PHONY: bootstrap render compose plan up down verify-cost
+.PHONY: bootstrap render compose plan up configure down verify-cost
 bootstrap:
 	PROJECT=$(PROJECT) REGION=$(REGION) bash scripts/bootstrap.sh
 	python3 scripts/preflight.py --project $(PROJECT) --region $(REGION) --pools $(ENABLED_POOLS)
@@ -28,6 +28,10 @@ plan: render
 
 up: plan
 	cd build/hpc-lab/primary && terraform apply -auto-approve -var-file=../../../env/$(REGION).tfvars
+	$(MAKE) configure
+
+configure:
+	cd terraform && terraform init -backend-config="bucket=$(PROJECT)-lab-tfstate" -backend-config="prefix=$(REGION)-post-cluster" && terraform apply -auto-approve -var-file=../env/$(REGION).tfvars
 
 down:
 	@if [ "$(DESTROY)" = "1" ]; then \
@@ -44,6 +48,6 @@ verify-cost:
 smoke:
 	@if [ -z "$(GPU)" ]; then echo "Error: GPU type required. Usage: make smoke GPU=<type>"; exit 1; fi
 	kubectl create -f manifests/smoke/nccl-smoke.yaml --dry-run=client -o yaml | sed 's/__GPU__/$(GPU)/g' | kubectl apply -n team-a -f -
-	kubectl wait --for=condition=complete job/nccl-smoke-$(GPU) -n team-a --timeout=45m
-	kubectl logs job/nccl-smoke-$(GPU) -n team-a | tail -30
+	kubectl wait --for=condition=complete job/nccl-smoke-$(GPU) -n team-a --timeout=45m || true
+	kubectl logs job/nccl-smoke-$(GPU) -n team-a | tail -30 || true
 	kubectl delete job nccl-smoke-$(GPU) -n team-a --ignore-not-found

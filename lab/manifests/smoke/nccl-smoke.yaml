@@ -8,6 +8,7 @@ metadata:
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 300
+  activeDeadlineSeconds: 3600  # 1h max runtime; enforces max_run_duration guardrail
   template:
     spec:
       restartPolicy: Never
@@ -29,6 +30,7 @@ spec:
         - |
           set -ex
           dcgmi diag -r 1
+          # NOTE: /opt/nccl-tests/build/all_reduce_perf path is specific to this pinned image; verify at deploy
           cd /opt/nccl-tests/build
           ./all_reduce_perf -b 512M -e 2G -g 8
         resources:

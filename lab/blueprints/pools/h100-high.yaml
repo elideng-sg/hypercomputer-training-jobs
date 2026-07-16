@@ -15,3 +15,5 @@
       # NOTE: a3-highgpu requires only the FIRST 4 of the 8 GPU networks.
       # Deploy-time: verify syntax for attaching first 4 networks from gpu-nets module.
       additional_networks: $(gpu-nets.additional_networks)
+      # NOTE: maxRunDuration (if supported) should be set to var.max_run_duration_seconds at deploy;
+      # verify field name against Cluster Toolkit version. Current enforcement is via Job activeDeadlineSeconds.

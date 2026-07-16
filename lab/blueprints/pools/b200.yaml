@@ -13,3 +13,5 @@
       - { type: nvidia-b200, count: 8, gpu_driver_version: DEFAULT }
       labels: { "lab.gpu/type": "b200", "lab.gpu/interconnect": "rdma" }
       additional_networks: $(rdma-net.additional_networks)
+      # NOTE: maxRunDuration (if supported) should be set to var.max_run_duration_seconds at deploy;
+      # verify field name against Cluster Toolkit version. Current enforcement is via Job activeDeadlineSeconds.

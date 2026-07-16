@@ -78,6 +78,8 @@ resource "null_resource" "kueue_install" {
         --location=${var.cluster_location} \
         --project=${var.project_id}
       kubectl apply --server-side -f https://github.com/kubernetes-sigs/kueue/releases/download/${var.kueue_version}/manifests.yaml
+      echo "Waiting for Kueue controller to be ready..."
+      kubectl wait --for=condition=Available --timeout=180s deploy/kueue-controller-manager -n kueue-system
     EOT
   }
 }

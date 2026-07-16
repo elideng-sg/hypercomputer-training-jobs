@@ -4,8 +4,9 @@ variable "project_id" {
 }
 
 variable "billing_account" {
-  description = "Billing account ID for budget alerts"
+  description = "Billing account ID for budget alerts (optional; budget creation gated if empty)"
   type        = string
+  default     = ""
 }
 
 variable "budget_amount" {
@@ -26,8 +27,15 @@ variable "cluster_name" {
   default     = "hpc-lab"
 }
 
-# Budget alert
+variable "region" {
+  description = "Region for cluster location placeholder"
+  type        = string
+  default     = "us-central1"
+}
+
+# Budget alert (gated on billing_account being provided)
 resource "google_billing_budget" "lab_budget" {
+  count           = var.billing_account != "" ? 1 : 0
   billing_account = var.billing_account
   display_name    = "HPC Lab Budget Alert"
 
@@ -59,7 +67,7 @@ resource "google_billing_budget" "lab_budget" {
 resource "google_container_cluster" "cost_allocation" {
   count    = 0 # Placeholder: assumes cluster already exists; use data source or import
   name     = var.cluster_name
-  location = "us-central1"
+  location = var.region
 
   resource_labels = {
     cost-center = "hpc-lab"
@@ -72,6 +80,6 @@ resource "google_container_cluster" "cost_allocation" {
 }
 
 output "budget_id" {
-  description = "Budget resource ID"
-  value       = google_billing_budget.lab_budget.id
+  description = "Budget resource ID (empty if billing_account not provided)"
+  value       = var.billing_account != "" ? google_billing_budget.lab_budget[0].id : ""
 }

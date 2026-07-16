@@ -12,3 +12,5 @@
       guest_accelerator:
       - { type: nvidia-l4, count: 8, gpu_driver_version: DEFAULT }
       labels: { "lab.gpu/type": "l4", "lab.gpu/interconnect": "none" }
+      # NOTE: maxRunDuration (if supported) should be set to var.max_run_duration_seconds at deploy;
+      # verify field name against Cluster Toolkit version. Current enforcement is via Job activeDeadlineSeconds.
