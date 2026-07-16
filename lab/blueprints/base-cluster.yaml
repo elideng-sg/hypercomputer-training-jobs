@@ -10,6 +10,23 @@ deployment_groups:
   # Cluster Toolkit version (gcluster --version) at deploy time. Adjust if needed.
   - id: system-net
     source: modules/network/vpc
+  # 8 GPU networks for TCPX/TCPXO fabrics (a3-high uses first 4, a3-mega uses all 8).
+  # Only created when corresponding GPU pools are enabled. Exact module source and
+  # settings must be verified against the pinned Cluster Toolkit version at deploy time.
+  - id: gpu-nets
+    source: modules/network/multivpc
+    settings:
+      network_name_prefix: gpu-net
+      global_ip_address_range: 192.168.0.0/16
+      network_count: 8
+      subnetwork_cidr_suffix: 24
+  # RDMA network for a3-ultra / a4 pools (mrdma profile). Only created when
+  # corresponding RDMA-capable pools are enabled. Exact module source and settings
+  # must be verified against the pinned Cluster Toolkit version at deploy time.
+  - id: rdma-net
+    source: modules/network/rdma-vpc
+    settings:
+      network_profile: mrdma
   - id: gke-cluster
     source: modules/scheduler/gke-cluster
     use: [system-net]
