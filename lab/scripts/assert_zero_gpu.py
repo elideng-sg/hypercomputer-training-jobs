@@ -4,8 +4,11 @@ def sh(c): return subprocess.check_output(c, shell=True).decode()
 if len(sys.argv) < 2:
     print("Usage: assert_zero_gpu.py <project-id>"); sys.exit(2)
 proj = sys.argv[1]
-vms = json.loads(sh(f"gcloud compute instances list --project {proj} "
-  f"--filter='machineType~(a2|a3|a4|g2)' --format=json"))
+out = subprocess.run(
+    ["gcloud","compute","instances","list","--project",proj,
+     "--filter=machineType~(a2|a3|a4|g2)","--format=json"],
+    capture_output=True, text=True, check=True).stdout
+vms = json.loads(out)
 gpu_vms = [v['name'] for v in vms]
 prs = sh(f"kubectl get provisioningrequests -A --no-headers 2>/dev/null || true").strip()
 if gpu_vms or prs:
