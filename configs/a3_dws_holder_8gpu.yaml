@@ -1,4 +1,11 @@
 # ==============================================================================
+# !!! DEPRECATED / DO NOT USE -- see configs/a3_dws_consumer_holders.yaml !!!
+# This holder only set `safe-to-evict: false` and never carried the
+# `autoscaling.x-k8s.io/consume-provisioning-request` annotation, so it was NOT a
+# ProvisioningRequest consumer. It stayed Pending, never landed on the DWS node,
+# the node's 10-minute booking window expired unused, and the autoscaler reclaimed
+# the node. Use the per-zone consumers in a3_dws_consumer_holders.yaml instead.
+# ==============================================================================
 # GKE Dynamic Workload Scheduler (DWS) - 8-GPU Active Capacity Holder
 # ==============================================================================
 # Because GKE enforces a strict 10-minute active GPU workload booking rule

@@ -1,0 +1,116 @@
+# ==============================================================================
+# GKE DWS - Per-Zone ProvisioningRequest CONSUMERS ("keep-alive" holders)
+# ==============================================================================
+# ROOT CAUSE this fixes: a DWS node is held for only ~10 minutes after its
+# ProvisioningRequest reaches Provisioned=True. If no pod that *consumes* that
+# request is scheduled onto it within the window, the cluster autoscaler removes
+# the node as "not needed" (the reclaim we observed: node ready 07:09 -> gone 07:24).
+#
+# A pod only consumes a ProvisioningRequest if it carries BOTH annotations below
+# (note the `autoscaling.x-k8s.io/` prefix -- NOT `cluster-autoscaler.kubernetes.io/`).
+# These also auto-inject safe-to-evict=false, so once a holder binds, the node stays.
+#
+# Deploy these NOW (in parallel with the requests). Each holder pod stays Pending
+# until its zone's node provisions, then binds immediately -> no BookingExpired reclaim.
+#
+# Hand-off to a real job: scale a holder to 0 (`kubectl scale deploy/a3-holder-zone-a --replicas=0`)
+# and launch your benchmark Job with the SAME two annotations pointing at that zone's request.
+# ==============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: a3-holder-zone-a
+  namespace: default
+  labels: { app: a3-holder, dws-zone: us-central1-a }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: a3-holder-zone-a }
+  template:
+    metadata:
+      labels: { app: a3-holder-zone-a }
+      annotations:
+        autoscaling.x-k8s.io/consume-provisioning-request: a3-h100-req-zone-a
+        autoscaling.x-k8s.io/provisioning-class-name: "queued-provisioning.gke.io"
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+    spec:
+      restartPolicy: Always
+      nodeSelector:
+        node.kubernetes.io/instance-type: a3-highgpu-8g
+        gpu-cluster: a3-h100
+        topology.kubernetes.io/zone: us-central1-a
+      tolerations:
+      - { key: "nvidia.com/gpu", operator: "Exists", effect: "NoSchedule" }
+      - { key: "cloud.google.com/gke-queued", operator: "Exists", effect: "NoSchedule" }
+      containers:
+      - name: pause
+        image: registry.k8s.io/pause:3.9
+        resources:
+          limits: { nvidia.com/gpu: "8", cpu: "64", memory: "384Gi" }
+          requests: { nvidia.com/gpu: "8", cpu: "64", memory: "384Gi" }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: a3-holder-zone-b
+  namespace: default
+  labels: { app: a3-holder, dws-zone: us-central1-b }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: a3-holder-zone-b }
+  template:
+    metadata:
+      labels: { app: a3-holder-zone-b }
+      annotations:
+        autoscaling.x-k8s.io/consume-provisioning-request: a3-h100-req-zone-b
+        autoscaling.x-k8s.io/provisioning-class-name: "queued-provisioning.gke.io"
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+    spec:
+      restartPolicy: Always
+      nodeSelector:
+        node.kubernetes.io/instance-type: a3-highgpu-8g
+        gpu-cluster: a3-h100
+        topology.kubernetes.io/zone: us-central1-b
+      tolerations:
+      - { key: "nvidia.com/gpu", operator: "Exists", effect: "NoSchedule" }
+      - { key: "cloud.google.com/gke-queued", operator: "Exists", effect: "NoSchedule" }
+      containers:
+      - name: pause
+        image: registry.k8s.io/pause:3.9
+        resources:
+          limits: { nvidia.com/gpu: "8", cpu: "64", memory: "384Gi" }
+          requests: { nvidia.com/gpu: "8", cpu: "64", memory: "384Gi" }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: a3-holder-zone-c
+  namespace: default
+  labels: { app: a3-holder, dws-zone: us-central1-c }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: a3-holder-zone-c }
+  template:
+    metadata:
+      labels: { app: a3-holder-zone-c }
+      annotations:
+        autoscaling.x-k8s.io/consume-provisioning-request: a3-h100-req-zone-c
+        autoscaling.x-k8s.io/provisioning-class-name: "queued-provisioning.gke.io"
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+    spec:
+      restartPolicy: Always
+      nodeSelector:
+        node.kubernetes.io/instance-type: a3-highgpu-8g
+        gpu-cluster: a3-h100
+        topology.kubernetes.io/zone: us-central1-c
+      tolerations:
+      - { key: "nvidia.com/gpu", operator: "Exists", effect: "NoSchedule" }
+      - { key: "cloud.google.com/gke-queued", operator: "Exists", effect: "NoSchedule" }
+      containers:
+      - name: pause
+        image: registry.k8s.io/pause:3.9
+        resources:
+          limits: { nvidia.com/gpu: "8", cpu: "64", memory: "384Gi" }
+          requests: { nvidia.com/gpu: "8", cpu: "64", memory: "384Gi" }
