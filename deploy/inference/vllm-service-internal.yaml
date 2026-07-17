@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: qwen3-vllm
+  namespace: inference
+  annotations: { networking.gke.io/load-balancer-type: "Internal" }
+spec:
+  type: LoadBalancer
+  selector: { app: qwen3-vllm }
+  ports: [{ port: 8000, targetPort: 8000, protocol: TCP }]
