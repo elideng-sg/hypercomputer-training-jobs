@@ -3,6 +3,9 @@ vars:
   project_id: $(vars.project_id)
   region:     $(vars.region)
   deployment_name: hpc-lab
+  # Name of the Compute Engine reservation the durable h100-reserved pool consumes.
+  # Create it first (see lab/RESERVATIONS.md); only used when h100-reserved is enabled.
+  reserved_reservation_name: a3-h100-res
 deployment_groups:
 - group: primary
   modules:

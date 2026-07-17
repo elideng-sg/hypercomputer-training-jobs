@@ -284,6 +284,19 @@ Each region is a separate Terraform deployment (separate state prefix in GCS).
 
 **Note:** Removing a pool does NOT delete provisioned nodes; scale the pool to 0 first via `make down` or `gcloud container clusters resize`.
 
+### Keep GPUs longer than 7 days (durable / reserved capacity)
+
+DWS Flex-Start pools are capped at **7 days**. To hold GPUs longer (e.g. a multi-month
+demo/debug cluster), use the reservation-backed **`h100-reserved`** pool
+(`blueprints/pools/h100-reserved.yaml`) — a standard, non-DWS pool consuming a Compute
+Engine reservation, with no run-duration cap. For multi-node work, keep all nodes in
+**one zone** with **COMPACT** placement (cross-zone breaks the GPUDirect fabric). Full
+guide: **[RESERVATIONS.md](RESERVATIONS.md)**.
+
+```bash
+make up REGION=us-central1 ENABLED_POOLS=h100-reserved   # after creating the reservation
+```
+
 ### Upgrade Cluster Toolkit
 
 1. Upgrade `gcluster` binary to the new version

@@ -1,0 +1,33 @@
+  # Durable 3-node RESERVED A3 pool for multi-node demo + troubleshooting/debug.
+  # This is NOT DWS flex-start: it consumes a Compute Engine reservation, so it has
+  # NO 7-day run-duration cap — nodes persist until the pool/reservation is deleted.
+  # All 3 nodes are in ONE zone with COMPACT placement so multi-node GPUDirect-TCPX
+  # NCCL works across them (cross-zone would fall back to slow TCP). Create the
+  # reservation first — see lab/RESERVATIONS.md (3x a3-highgpu-8g, single zone).
+  # Deploy-time: verify module field names (reservation_affinity, placement_policy)
+  # against the pinned Cluster Toolkit version.
+  - id: pool-h100-reserved
+    source: modules/compute/gke-node-pool
+    use: [gke-cluster, gpu-nets]
+    settings:
+      name: h100-reserved
+      machine_type: a3-highgpu-8g   # swap to a3-megagpu-8g (TCPXO, 8 NICs) if you reserve that type
+      # Fixed size: reserved capacity is meant to stay up (no autoscale-to-zero).
+      autoscaling_total_min_nodes: 3
+      autoscaling_total_max_nodes: 3
+      initial_node_count: 3
+      # Consume the specific reservation instead of DWS queued provisioning.
+      enable_queued_provisioning: false
+      reservation_affinity:
+        consume_reservation_type: SPECIFIC_RESERVATION
+        key: "compute.googleapis.com/reservation-name"
+        values: [ $(vars.reserved_reservation_name) ]
+      # COMPACT placement -> nodes land on the same network block (rail-aligned),
+      # required for good multi-node NCCL. Verify field/shape at deploy time.
+      placement_policy:
+        type: COMPACT
+      guest_accelerator:
+      - { type: nvidia-h100-80gb, count: 8, gpu_driver_version: DEFAULT }
+      labels: { "lab.gpu/type": "h100-reserved", "lab.gpu/interconnect": "tcpx" }
+      # Attach GPU NICs for GPUDirect-TCPX (a3-highgpu-8g uses the first 4).
+      additional_networks: $(gpu-nets.additional_networks)
