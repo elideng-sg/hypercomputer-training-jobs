@@ -201,7 +201,7 @@ A single vLLM pod in the `inference` namespace serves **Qwen3-32B** with an Open
 
 - **Image:** `vllm/vllm-openai:v0.8.4`
 - **Served model name:** `qwen3-32b` (weights `Qwen/Qwen3-32B`, ungated)
-- **`--tensor-parallel-size 2`** — the model is split across **2 of the 8 H100s**, using ~77 GB per GPU.
+- **`--tensor-parallel-size 2`** — the model is split across **2 of the 8 H100s**, using ~77 GB (77583 MiB) per GPU.
 - **`--max-model-len 32768`**, `--gpu-memory-utilization 0.90`
 - **Endpoint:** internal LB `10.128.0.43:8000`; in-cluster DNS `qwen3-vllm.inference.svc.cluster.local:8000`
 
@@ -297,7 +297,7 @@ curl localhost:8000/v1/chat/completions -H 'Content-Type: application/json' \
 ```
 (Truncated at `max_tokens=20`. Qwen3 emits a `<think>…` reasoning preamble by default.)
 
-**GPU utilization** (both TP GPUs loaded ~76 GB each):
+**GPU utilization** (both TP GPUs loaded ~77 GB (77583 MiB) each):
 ```bash
 kubectl -n inference exec deploy/qwen3-vllm -- nvidia-smi --query-gpu=index,memory.used --format=csv
 ```
@@ -463,18 +463,15 @@ kubectl -n inference delete deploy qwen3-vllm --ignore-not-found
 kubectl -n default scale deploy/a3-holder-zone-a --replicas=1
 ```
 
-### 5.3 Node rotation before 7-day expiry (zero-downtime)
+### 5.3 Node rotation before 7-day expiry (single-replica reschedule)
 
-DWS Flex-Start nodes expire at 7 days (~2026-07-23 for the current node). To rotate without downtime, use the **2-replica overlap** strategy (`deploy/ops/node-rotation-runbook.md`), protected by the PDB (`minAvailable: 1`):
+DWS Flex-Start nodes expire at 7 days (~2026-07-23 for the current node). The **supported continuity path today is single-replica reschedule** (`deploy/ops/node-rotation-runbook.md`): when the node is lost/rotated, the Deployment recreates the pod and the ReadWriteOnce PD **reattaches in the same zone** with the model cache intact — a **brief serving gap** while the replacement node provisions (DWS-queued, capacity-permitting). This is **continuity, not zero-downtime.**
 
-1. **Days 5-6:** submit a new DWS request for a second A3 node in the same zone.
-2. **When ready:** `kubectl -n inference scale deploy/qwen3-vllm --replicas=2` (each replica binds a separate node; PDB keeps ≥1 serving).
-3. **Verify:** `kubectl -n inference get pods -l app=qwen3-vllm` (both healthy).
-4. **Drain old node:** `kubectl cordon <old-node>` then `kubectl drain <old-node> --ignore-daemonsets --delete-emptydir-data` (PDB prevents both pods being evicted at once).
-5. **Let the old node expire** and be reclaimed.
-6. **Scale back:** `kubectl -n inference scale deploy/qwen3-vllm --replicas=1`.
+1. **Days 5-6:** submit a new DWS request for a replacement A3 node in the same zone to minimize the gap.
+2. **Let the old node expire** naturally or cordon/drain it (note: the PDB `minAvailable: 1` on a single-replica Deployment will block an ad-hoc `kubectl drain` until you scale up or delete the PDB — the documented procedure order matters).
+3. **Verify reschedule:** once the replacement node is ready, `kubectl -n inference get pods -l app=qwen3-vllm` (the pending pod binds and service resumes). The `hf-cache` PVC (ReadWriteOnce) reattaches to the new node automatically.
 
-Notes: PVCs reattach automatically in the same zone; a pending pod can trigger reprovisioning **if capacity is available** — if there is no A3 capacity, the overlap window is blocked, so plan the new request early.
+**Zero-downtime overlap (not currently configured):** True **zero-downtime overlap (2 replicas across two nodes) is NOT possible with the current setup** and would require: (a) a **ReadWriteMany** model cache (e.g. Filestore) instead of the ReadWriteOnce PD, since a PD can't attach to two nodes; and (b) **pod anti-affinity / topology spread** to force the replicas onto separate nodes. These are marked as future enhancements, not currently configured.
 
 ### 5.4 Capacity / reservation reality (`lab/RESERVATIONS.md`)
 
