@@ -1,0 +1,36 @@
+hub:
+  config:
+    JupyterHub:
+      authenticator_class: dummy
+    DummyAuthenticator:
+      password: "demo2026"
+proxy:
+  service:
+    type: LoadBalancer
+    annotations:
+      networking.gke.io/load-balancer-type: "Internal"
+singleuser:
+  storage:
+    dynamic:
+      storageClass: premium-rwo
+    capacity: 20Gi
+  profileList:
+  - display_name: "CPU (no GPU)"
+    default: true
+    kubespawner_override:
+      cpu_limit: 4
+      mem_limit: "16G"
+  - display_name: "GPU (1x H100)"
+    kubespawner_override:
+      image: quay.io/jupyter/pytorch-notebook:cuda12-latest
+      extra_resource_limits:
+        nvidia.com/gpu: "1"
+      node_selector:
+        cloud.google.com/gke-accelerator: nvidia-h100-80gb
+      tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"
+      - key: "cloud.google.com/gke-queued"
+        operator: "Exists"
+        effect: "NoSchedule"
