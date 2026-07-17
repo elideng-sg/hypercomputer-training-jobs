@@ -1,0 +1,114 @@
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ClusterQueue
+metadata:
+  name: cq-l4
+spec:
+  cohort: gpu
+  admissionChecks: ["dws-flex"]
+  resourceGroups:
+  - coveredResources: ["nvidia.com/gpu", "cpu", "memory"]
+    flavors:
+    - name: l4
+      resources:
+      # NOTE: nominalQuota values below are placeholders; tune from Task 4 pool sizes before production
+      - name: nvidia.com/gpu
+        nominalQuota: "16"
+      - name: cpu
+        nominalQuota: "400"
+      - name: memory
+        nominalQuota: 3000Gi
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ClusterQueue
+metadata:
+  name: cq-a100
+spec:
+  cohort: gpu
+  admissionChecks: ["dws-flex"]
+  resourceGroups:
+  - coveredResources: ["nvidia.com/gpu", "cpu", "memory"]
+    flavors:
+    - name: a100
+      resources:
+      - name: nvidia.com/gpu
+        nominalQuota: "16"
+      - name: cpu
+        nominalQuota: "400"
+      - name: memory
+        nominalQuota: 3000Gi
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ClusterQueue
+metadata:
+  name: cq-h100-high
+spec:
+  cohort: gpu
+  admissionChecks: ["dws-flex"]
+  resourceGroups:
+  - coveredResources: ["nvidia.com/gpu", "cpu", "memory"]
+    flavors:
+    - name: h100-high
+      resources:
+      - name: nvidia.com/gpu
+        nominalQuota: "16"
+      - name: cpu
+        nominalQuota: "400"
+      - name: memory
+        nominalQuota: 3000Gi
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ClusterQueue
+metadata:
+  name: cq-h100-mega
+spec:
+  cohort: gpu
+  admissionChecks: ["dws-flex"]
+  resourceGroups:
+  - coveredResources: ["nvidia.com/gpu", "cpu", "memory"]
+    flavors:
+    - name: h100-mega
+      resources:
+      - name: nvidia.com/gpu
+        nominalQuota: "16"
+      - name: cpu
+        nominalQuota: "400"
+      - name: memory
+        nominalQuota: 3000Gi
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ClusterQueue
+metadata:
+  name: cq-h200-ultra
+spec:
+  cohort: gpu
+  admissionChecks: ["dws-flex"]
+  resourceGroups:
+  - coveredResources: ["nvidia.com/gpu", "cpu", "memory"]
+    flavors:
+    - name: h200-ultra
+      resources:
+      - name: nvidia.com/gpu
+        nominalQuota: "16"
+      - name: cpu
+        nominalQuota: "400"
+      - name: memory
+        nominalQuota: 3000Gi
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ClusterQueue
+metadata:
+  name: cq-b200
+spec:
+  cohort: gpu
+  admissionChecks: ["dws-flex"]
+  resourceGroups:
+  - coveredResources: ["nvidia.com/gpu", "cpu", "memory"]
+    flavors:
+    - name: b200
+      resources:
+      - name: nvidia.com/gpu
+        nominalQuota: "16"
+      - name: cpu
+        nominalQuota: "400"
+      - name: memory
+        nominalQuota: 3000Gi

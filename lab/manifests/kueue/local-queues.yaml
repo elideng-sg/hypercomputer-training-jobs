@@ -1,0 +1,47 @@
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: LocalQueue
+metadata:
+  name: lq-l4
+  namespace: team-a
+spec:
+  clusterQueue: cq-l4
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: LocalQueue
+metadata:
+  name: lq-a100
+  namespace: team-a
+spec:
+  clusterQueue: cq-a100
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: LocalQueue
+metadata:
+  name: lq-h100-high
+  namespace: team-a
+spec:
+  clusterQueue: cq-h100-high
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: LocalQueue
+metadata:
+  name: lq-h100-mega
+  namespace: team-a
+spec:
+  clusterQueue: cq-h100-mega
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: LocalQueue
+metadata:
+  name: lq-h200-ultra
+  namespace: team-a
+spec:
+  clusterQueue: cq-h200-ultra
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: LocalQueue
+metadata:
+  name: lq-b200
+  namespace: team-a
+spec:
+  clusterQueue: cq-b200

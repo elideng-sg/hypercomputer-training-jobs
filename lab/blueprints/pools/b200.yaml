@@ -1,0 +1,17 @@
+  - id: pool-b200
+    source: modules/compute/gke-node-pool
+    use: [gke-cluster, rdma-net]
+    settings:
+      name: b200
+      machine_type: a4-highgpu-8g
+      autoscaling_total_min_nodes: 0
+      autoscaling_total_max_nodes: 2
+      initial_node_count: 0
+      enable_queued_provisioning: true
+      reservation_affinity: { consume_reservation_type: NO_RESERVATION }
+      guest_accelerator:
+      - { type: nvidia-b200, count: 8, gpu_driver_version: DEFAULT }
+      labels: { "lab.gpu/type": "b200", "lab.gpu/interconnect": "rdma" }
+      additional_networks: $(rdma-net.additional_networks)
+      # NOTE: maxRunDuration (if supported) should be set to var.max_run_duration_seconds at deploy;
+      # verify field name against Cluster Toolkit version. Current enforcement is via Job activeDeadlineSeconds.

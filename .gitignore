@@ -15,7 +15,19 @@ env/
 venv/
 .venv/
 
+# Allow lab/env directory for Terraform variable templates
+!lab/env/
+
+# Terraform runtime
+.terraform/
+*.tfstate
+*.tfstate.*
+
 # Execution logs under logs/ are intentionally TRACKED (committed) for review/audit —
 # pod stdout, NCCL traces, benchmark results, and run orchestration logs are kept in-repo
 # so past runs are reviewable. (Previously these were ignored.)
 !logs/.gitkeep
+.superpowers/
+
+# gcluster render / blueprint compose output
+lab/build/

@@ -1,0 +1,40 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nccl-smoke-__GPU__
+  namespace: team-a
+  labels:
+    kueue.x-k8s.io/queue-name: lq-__GPU__
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 300
+  activeDeadlineSeconds: 3600  # 1h max runtime; enforces max_run_duration guardrail
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        lab.gpu/type: __GPU__
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+      - key: cloud.google.com/gke-queued
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: nccl-test
+        image: nvcr.io/nvidia/pytorch:24.07-py3
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -ex
+          dcgmi diag -r 1
+          # NOTE: /opt/nccl-tests/build/all_reduce_perf path is specific to this pinned image; verify at deploy
+          cd /opt/nccl-tests/build
+          ./all_reduce_perf -b 512M -e 2G -g 8
+        resources:
+          requests:
+            nvidia.com/gpu: 8
+          limits:
+            nvidia.com/gpu: 8
