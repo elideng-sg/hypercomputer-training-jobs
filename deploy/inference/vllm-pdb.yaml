@@ -1,0 +1,4 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: qwen3-vllm, namespace: inference }
+spec: { minAvailable: 1, selector: { matchLabels: { app: qwen3-vllm } } }
