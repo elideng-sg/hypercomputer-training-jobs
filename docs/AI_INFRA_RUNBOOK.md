@@ -40,11 +40,15 @@ The rest of this document explains each layer with the real values from our depl
 
 **CUDA** — NVIDIA's software platform and driver stack that lets programs use the GPU. Software is compiled against a **CUDA version**; the version supported by the installed GPU **driver** must be new enough for the software. This version mismatch is a real gotcha in this deployment (see Section 3.4).
 
+**DCGM (Data Center GPU Manager)** — NVIDIA's tool for monitoring GPU health, clocks, memory errors, and telemetry. Used in validation tests to confirm GPUs are healthy before handing them to workloads.
+
 **H100** — NVIDIA's Hopper-generation data-center GPU. Our variant is the **H100 80GB HBM3** (81,559 MiB of high-bandwidth memory each). Big models like Qwen3-32B need this much memory.
 
 **HBM (High-Bandwidth Memory)** — the fast memory physically stacked on the GPU. "80GB" refers to HBM capacity; model weights and activations live here.
 
 **NVLink / NVSwitch** — NVIDIA's high-speed GPU-to-GPU interconnect. Inside one 8-GPU machine, **NVLink** connects GPUs directly and **NVSwitch** is the crossbar that lets all 8 talk at full bandwidth. This is what makes splitting a model across GPUs on the *same* machine fast (see tensor parallelism).
+
+**NCCL (NVIDIA Collective Communications Library)** — a library for multi-GPU / multi-node communication. An "all-reduce" test verifies GPUs can exchange data over NVLink/RDMA without errors.
 
 **A3 / `a3-highgpu-8g`** — Google Cloud's "A3 High" machine type: one VM with **8× H100 80GB** GPUs wired together with NVLink/NVSwitch. This is the single GPU machine at the center of this runbook.
 
