@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset='utf-8'>
+<title>Complete Step-by-Step Initialization & Testing Guide: Hosting Multi-GPU AI Hypercomputer Workloads on GKE</title>
+<style>
+body { font-family: 'Arial', sans-serif; font-size: 11pt; line-height: 1.6; color: #222222; max-width: 8.5in; margin: 1in auto; padding: 0 1rem; }
+h1 { color: #1a73e8; font-size: 20pt; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px; margin-top: 24px; font-weight: bold; }
+h2 { color: #1a73e8; font-size: 15pt; margin-top: 22px; margin-bottom: 10px; border-bottom: 1px solid #eeeeee; padding-bottom: 4px; font-weight: bold; }
+h3 { color: #202124; font-size: 13pt; margin-top: 18px; margin-bottom: 8px; font-weight: bold; }
+h4 { color: #5f6368; font-size: 11.5pt; margin-top: 14px; margin-bottom: 6px; font-weight: bold; }
+p { margin-bottom: 10px; }
+pre { background-color: #f8f9fa; border: 1px solid #dadce0; border-radius: 6px; padding: 12px; font-family: 'Courier New', monospace; font-size: 9.5pt; white-space: pre-wrap; word-break: break-all; margin-bottom: 14px; }
+code { background-color: #f1f3f4; color: #d93025; font-family: 'Courier New', monospace; font-size: 9.5pt; padding: 2px 4px; border-radius: 4px; }
+pre code { background-color: transparent; color: #202124; padding: 0; }
+table { width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 10pt; }
+th { background-color: #e8f0fe; color: #1a73e8; border: 1px solid #dadce0; padding: 10px; text-align: left; font-weight: bold; }
+td { border: 1px solid #dadce0; padding: 9px; vertical-align: top; }
+ul, ol { margin-top: 4px; margin-bottom: 12px; padding-left: 24px; }
+li { margin-bottom: 6px; }
+.alert-caution { border-left: 5px solid #d93025; background-color: #fce8e6; padding: 12px; border-radius: 0 4px 4px 0; margin-bottom: 14px; color: #3c4043; }
+hr { border: 0; border-top: 1px solid #dadce0; margin: 22px 0; }
+</style>
+</head>
+<body>
+<h1>AI Infrastructure Runbook — GKE + DWS H100 → Qwen3-32B Inference → JupyterHub</h1>
+<p><b>Audience:</b> Engineers who are comfortable with the command line and Kubernetes basics but are <b>new to GPUs and Google Cloud AI infrastructure</b>. Every GPU/GCP term is defined in the glossary (Section 1) before it is used, and each concept is explained rather than assumed.</p>
+<p><b>What this runbook covers:</b> the full stack we stood up, end to end — a Google Kubernetes Engine (GKE) cluster, a GPU node pool that provisions an 8× H100 machine through Dynamic Workload Scheduler (DWS), a vLLM inference service that serves the Qwen3-32B model over an OpenAI-compatible API, and a JupyterHub host whose GPU notebooks land on the same H100 machine and call that inference endpoint.</p>
+<p><b>Live deployment this runbook documents:</b></p>
+<table>
+<thead><tr><th>Attribute</th><th>Value</th></tr></thead><tbody>
+<tr><td>Project</td><td><code>hdlab-elideng</code></td></tr>
+<tr><td>Region</td><td><code>us-central1</code></td></tr>
+<tr><td>Cluster</td><td><code>hypercomputer-a3-cluster</code></td></tr>
+<tr><td>GPU node</td><td><code>gke-hypercomputer-a3-a3-h100-dws-pool-16664d9c-hhp6</code> (zone <code>us-central1-a</code>)</td></tr>
+<tr><td>Machine / GPUs</td><td><code>a3-highgpu-8g</code> = 8× NVIDIA H100 80GB</td></tr>
+<tr><td>Provisioning</td><td>DWS Flex-Start, 7-day cap (expires ~2026-07-23)</td></tr>
+<tr><td>Inference</td><td>vLLM <code>v0.8.4</code> serving <code>qwen3-32b</code>, internal LB <code>10.128.0.43:8000</code></td></tr>
+<tr><td>Notebooks</td><td>JupyterHub 5.5.0, internal LB <code>10.128.15.234</code></td></tr>
+<tr><td>Date documented</td><td>2026-07-17</td></tr>
+</tbody></table>
+<hr />
+<h2>Section 1 — Introduction and Glossary</h2>
+<h3>1.1 The 60-second mental model</h3>
+<p>Think of the stack as five nested layers, each one built on the one below it:</p>
+<ol>
+<li><b>A cluster</b> (GKE) — the managed Kubernetes control plane that schedules everything.</li>
+<li><b>A node pool</b> — a group of identical machines the cluster can add or remove. Ours is a GPU pool.</li>
+<li><b>A GPU machine</b> (the A3 node) — one physical server with 8 NVIDIA H100 GPUs, obtained through DWS.</li>
+<li><b>Pods</b> — the containers that actually run. Two consume GPUs: the vLLM inference server and (optionally) Jupyter notebooks.</li>
+<li><b>The services people use</b> — an OpenAI-compatible chat API (Qwen3-32B) and a JupyterHub web UI, each reachable inside the private network through a load balancer.</li>
+</ol>
+<p>The rest of this document explains each layer with the real values from our deployment.</p>
+<h3>1.2 Glossary (read this first)</h3>
+<p><b>GPU (Graphics Processing Unit)</b> — a processor with thousands of small cores optimized for the massively parallel math (matrix multiplies) that neural networks need. A modern LLM runs on GPUs, not CPUs, because a CPU would be orders of magnitude too slow.</p>
+<p><b>CUDA</b> — NVIDIA's software platform and driver stack that lets programs use the GPU. Software is compiled against a <b>CUDA version</b>; the version supported by the installed GPU <b>driver</b> must be new enough for the software. This version mismatch is a real gotcha in this deployment (see Section 3.4).</p>
+<p><b>H100</b> — NVIDIA's Hopper-generation data-center GPU. Our variant is the <b>H100 80GB HBM3</b> (81,559 MiB of high-bandwidth memory each). Big models like Qwen3-32B need this much memory.</p>
+<p><b>HBM (High-Bandwidth Memory)</b> — the fast memory physically stacked on the GPU. "80GB" refers to HBM capacity; model weights and activations live here.</p>
+<p><b>NVLink / NVSwitch</b> — NVIDIA's high-speed GPU-to-GPU interconnect. Inside one 8-GPU machine, <b>NVLink</b> connects GPUs directly and <b>NVSwitch</b> is the crossbar that lets all 8 talk at full bandwidth. This is what makes splitting a model across GPUs on the *same* machine fast (see tensor parallelism).</p>
+<p><b>A3 / <code>a3-highgpu-8g</code></b> — Google Cloud's "A3 High" machine type: one VM with <b>8× H100 80GB</b> GPUs wired together with NVLink/NVSwitch. This is the single GPU machine at the center of this runbook.</p>
+<p><b>GKE (Google Kubernetes Engine)</b> — Google's managed Kubernetes. Google runs the control plane; you declare what you want (pods, services) and GKE schedules it onto nodes.</p>
+<p><b>Node</b> — one machine (VM) that belongs to the cluster and runs pods. Our GPU node is one <code>a3-highgpu-8g</code> VM.</p>
+<p><b>Node pool</b> — a set of nodes with identical configuration that GKE manages as a unit (can autoscale up/down). Ours is <code>a3-h100-dws-pool</code>.</p>
+<p><b>Pod</b> — the smallest deployable unit in Kubernetes: one or more containers scheduled together on a node. The vLLM server is a pod; each Jupyter notebook is a pod.</p>
+<p><b>Namespace</b> — a logical partition of the cluster for organizing and isolating workloads. We use <code>inference</code> (vLLM), <code>jupyter</code> (JupyterHub), and <code>default</code> (the capacity holder).</p>
+<p><b>Deployment</b> — a Kubernetes object that keeps a specified number of identical pod replicas running and handles rollouts/rollbacks.</p>
+<p><b>Service / LoadBalancer</b> — a stable network endpoint in front of pods. A <b>LoadBalancer</b> Service gets an IP address; with the <code>Internal</code> annotation on GCP it is a <b>private</b> IP reachable only inside the VPC (not the public internet). Both our services use internal load balancers.</p>
+<p><b>VPC (Virtual Private Cloud)</b> — the private network your cloud resources live in. Internal load balancer IPs (<code>10.128.x.x</code> here) are only reachable from inside this VPC.</p>
+<p><b>PVC (PersistentVolumeClaim) / PV / Persistent Disk</b> — a request for durable storage that outlives a pod. A PVC binds to a PersistentVolume backed by a GCP Persistent Disk. We use one to cache the downloaded model weights so restarts don't re-download 60+ GB.</p>
+<p><b>DWS (Dynamic Workload Scheduler) — Flex-Start mode</b> — a Google Cloud way to obtain scarce GPU capacity: you submit a request and GKE provisions the GPU node <b>when capacity becomes available</b>, then holds it for up to a <b>hard 7-day maximum run duration</b>. It is cheaper and easier to get than an on-demand or reserved GPU, at the cost of the 7-day cap and the wait for capacity. See Section 2.3.</p>
+<p><b>ProvisioningRequest</b> — the Kubernetes object DWS uses to ask for capacity. A pod must actively <b>consume</b> it (via specific annotations) to occupy the node once it arrives, or the node is reclaimed (see the reclaim-bug story, Section 2.4).</p>
+<p><b>Capacity holder ("holder")</b> — a tiny placeholder pod (a <code>pause</code> container) that occupies the GPU node so GKE does not scale it away when no real workload is running. House rule: never leave the DWS GPU node idle/unheld — re-arm a holder immediately after teardown.</p>
+<p><b>Taint / Toleration</b> — a taint marks a node so ordinary pods avoid it; a pod with a matching <b>toleration</b> is allowed to schedule there. GPU/DWS nodes are tainted so only GPU-aware pods land on them.</p>
+<p><b>nodeSelector</b> — a pod's rule to pick nodes by label (e.g. <code>cloud.google.com/gke-accelerator: nvidia-h100-80gb</code> targets the H100 node).</p>
+<p><b>Tensor parallelism (TP)</b> — a way to run a model too big or too slow for one GPU by <b>splitting each layer's weight matrices across multiple GPUs</b>, which then compute in lockstep and exchange partial results over NVLink. We use <code>--tensor-parallel-size 2</code>, so Qwen3-32B is split across 2 of the 8 H100s.</p>
+<p><b>vLLM</b> — a high-throughput open-source LLM inference server. It loads a model and exposes an <b>OpenAI-compatible</b> HTTP API (<code>/v1/models</code>, <code>/v1/chat/completions</code>), so existing OpenAI client code works by just changing the base URL.</p>
+<p><b>Qwen3-32B</b> — the ~32-billion-parameter open-weights LLM we serve. Ungated on Hugging Face (no access token required).</p>
+<p><b>OpenAI-compatible API</b> — an HTTP API that mimics OpenAI's endpoints and JSON schema, letting the official <code>openai</code> Python client (or <code>curl</code>) talk to a self-hosted model.</p>
+<p><b>JupyterHub</b> — multi-user Jupyter: a hub that authenticates users and spawns a private notebook server pod per user. Ours offers a CPU profile and a GPU profile that lands on the H100 node.</p>
+<p><b>Helm / chart / values.yaml</b> — Helm is Kubernetes' package manager; a <b>chart</b> is a packaged app (we use Zero-to-JupyterHub) and <b><code>values.yaml</code></b> is the config you supply to customize it.</p>
+<p><b>PDB (PodDisruptionBudget)</b> — a rule that limits how many replicas of a workload can be voluntarily evicted at once, protecting availability during node drains/rotations.</p>
+<hr />
+<h2>Section 2 — Infrastructure (cluster → node pool → A3/H100 → DWS → networking)</h2>
+<h3>2.1 The cluster</h3>
+<p>Everything runs on one regional GKE cluster:</p>
+<ul>
+<li><b>Name:</b> <code>hypercomputer-a3-cluster</code></li>
+<li><b>Region:</b> <code>us-central1</code></li>
+<li><b>Project:</b> <code>hdlab-elideng</code></li>
+</ul>
+<p>The broader Infrastructure-as-Code foundation for this environment lives in <code>lab/</code> (the "SP-0 foundation"). It defines a regional GKE cluster with a <b>matrix of GPU node pools</b> (L4, A100, H100, H200, B200), each DWS flex-start autoscaled <code>0→N</code> and defaulting to <b>zero</b> nodes for cost control, with GPU networking (gVNIC, GPUDirect-TCPX/TCPXO, RDMA/CX-7) baked in per GPU type. It also wires in <b>Kueue</b> for per-team quota/admission and per-GPU-type smoke tests (DCGM + NCCL all-reduce). See <code>lab/README.md</code>. This runbook focuses on the <b>H100 pool</b> that we actually brought up.</p>
+<p>Get credentials to talk to the cluster:</p>
+<pre><code class='language-bash'>
+gcloud container clusters get-credentials hypercomputer-a3-cluster \
+
+  --region us-central1 --project hdlab-elideng
+
+</code></pre>
+<h3>2.2 The GPU node pool and the A3/H100 node</h3>
+<p>The GPU node pool is <code>a3-h100-dws-pool</code>. When capacity is granted, it provisions a single <b><code>a3-highgpu-8g</code></b> node:</p>
+<ul>
+<li><b>Node name:</b> <code>gke-hypercomputer-a3-a3-h100-dws-pool-16664d9c-hhp6</code></li>
+<li><b>Zone:</b> <code>us-central1-a</code></li>
+<li><b>GPUs:</b> 8× NVIDIA H100 80GB HBM3 (each ~81,559 MiB), NVLink/NVSwitch-connected</li>
+<li><b>Accelerator label:</b> <code>cloud.google.com/gke-accelerator=nvidia-h100-80gb</code> — pods select the node with this label.</li>
+</ul>
+<p>Because it is a GPU/DWS node it carries taints; workloads must tolerate both:</p>
+<pre><code class='language-yaml'>
+tolerations:
+
+- { key: &quot;nvidia.com/gpu&quot;,              operator: &quot;Exists&quot;, effect: &quot;NoSchedule&quot; }
+
+- { key: &quot;cloud.google.com/gke-queued&quot;, operator: &quot;Exists&quot;, effect: &quot;NoSchedule&quot; }
+
+</code></pre>
+<p>The <code>nvidia.com/gpu</code> taint keeps non-GPU pods off; <code>cloud.google.com/gke-queued</code> is the DWS/queued-provisioning taint.</p>
+<h3>2.3 Why DWS Flex-Start (and the 7-day cap)</h3>
+<p>H100 capacity is scarce and expensive. <b>DWS Flex-Start</b> lets us request an A3 node and have GKE provision it <b>when capacity frees up</b>, rather than paying to reserve it 24/7. The trade-offs:</p>
+<ul>
+<li>You may <b>wait</b> for capacity (hours, occasionally longer).</li>
+<li>Once provisioned, the node has a <b>hard 7-day <code>maxRunDuration</code>.</b> No holder or trick keeps a Flex-Start node past 7 days. Ours provisioned around 2026-07-16 and <b>expires ~2026-07-23</b>.</li>
+<li>It is not idle-scaled *away* during those 7 days <b>as long as a pod occupies it</b> — which is why we run a capacity holder when no real workload is bound.</li>
+</ul>
+<p>For capacity that must live longer than 7 days (e.g. a multi-month lab), you need a <b>Compute Engine reservation</b> consumed by a <b>standard</b> (non-DWS) node pool — see Section 5.4 and <code>lab/RESERVATIONS.md</code>. You <b>cannot</b> convert a Flex-Start node to reserved; you stand up the reserved pool separately and migrate before expiry.</p>
+<h3>2.4 The reclaim bug story (bugfixes 0001 &amp; 0002)</h3>
+<p>Getting a DWS H100 node to actually <b>stay</b> took two fixes. Both are worth understanding because they are easy traps.</p>
+<p><b>Bug 0001 — "multi-zone" requests weren't zone-scoped</b> (<code>bugfixes/0001-dws-zone-requests-not-zone-pinned.md</code>).</p>
+<p>We had three per-zone ProvisioningRequests (<code>us-central1-a/b/c</code>) meant to hunt for capacity in parallel, but they differed <b>only by a cosmetic pod label</b> (<code>dws-zone: ...</code>) — their <code>nodeSelector</code> was identical and had <b>no <code>topology.kubernetes.io/zone</code></b>. A label is metadata; it does not constrain scheduling. So all three requests were interchangeable and GKE never spread them. The fix added a real zone selector:</p>
+<pre><code class='language-yaml'>
+nodeSelector:
+
+  node.kubernetes.io/instance-type: a3-highgpu-8g
+
+  gpu-cluster: a3-h100
+
+  topology.kubernetes.io/zone: us-central1-a   # b / c in the others
+
+</code></pre>
+<p><b>Lesson:</b> *labels ≠ scheduling constraints.* Also note each per-zone request asks for its <b>own</b> node — three requests can provision <b>3× a3-highgpu-8g (24 H100s)</b>, so decide up front whether you want one node or one-per-zone and cancel extras.</p>
+<p><b>Bug 0002 — the provisioned node was reclaimed ~10-15 minutes after boot</b> (<code>bugfixes/0002-dws-a3-node-reclaimed-after-10min.md</code>).</p>
+<p>This is the painful one. The A3 node finally booted, joined the cluster… and ~15 minutes later GKE <b>deleted it</b>, back to zero. Root cause: <b>nothing in the cluster consumed the ProvisioningRequest.</b> DWS holds a freshly provisioned node for only a short (~10-minute) booking window; a pod must land on it inside that window or the autoscaler removes it as "not needed."</p>
+<p>A pod only counts as consuming the request if it carries <b>both</b> annotations — and the prefix must be <code>autoscaling.x-k8s.io/</code>, *not* the older <code>cluster-autoscaler.kubernetes.io/</code>:</p>
+<pre><code class='language-yaml'>
+autoscaling.x-k8s.io/consume-provisioning-request: &lt;request-name&gt;
+
+autoscaling.x-k8s.io/provisioning-class-name: &quot;queued-provisioning.gke.io&quot;
+
+</code></pre>
+<p>The old holders had only <code>safe-to-evict: false</code> — which does nothing for a pod that was never scheduled. The fix (<code>configs/a3_dws_consumer_holders.yaml</code>) deploys a <b>zone-pinned consumer holder per request</b>, carrying both annotations plus <code>safe-to-evict: false</code>, requesting the full 8-GPU shape (<code>registry.k8s.io/pause:3.9</code>). Deployed <b>in parallel</b> with the request, it is already <code>Pending</code>-and-linked, so the scheduler binds it the instant the node provisions — inside the booking window — and the node stays up for the 7-day window.</p>
+<p>Two mechanisms, both required:</p>
+<ol>
+<li><b>consume annotation</b> → pod placed on the node within the booking window (defeats the initial reclaim).</li>
+<li><b>occupying pod + <code>safe-to-evict: false</code></b> → node stays up (defeats later idle scale-down).</li>
+</ol>
+<p>Healthy signal after the fix (autoscaler event):</p>
+<pre><code class='language-'>
+IgnoredInScaleUp — Unschedulable pod ignored in scale-up loop, because it&#x27;s
+
+consuming ProvisioningRequest default/a3-h100-req-zone-a that is in Accepted state.
+
+</code></pre>
+<p>The broken state instead logged <code>no.scale.up.nap.pod.gpu.no.limit.defined</code>.</p>
+<h3>2.5 Networking</h3>
+<ul>
+<li>The cluster lives in a <b>VPC</b> using the <code>10.128.x.x</code> range.</li>
+<li>Both user-facing services are <b>internal LoadBalancers</b> (private IPs, reachable only inside the VPC), via the annotation <code>networking.gke.io/load-balancer-type: "Internal"</code>:</li>
+<li>vLLM: <code>10.128.0.43:8000</code></li>
+<li>JupyterHub: <code>10.128.15.234:80</code></li>
+<li>In-cluster, pods reach vLLM by DNS: <code>qwen3-vllm.inference.svc.cluster.local:8000</code> (the <code>&lt;service&gt;.&lt;namespace&gt;.svc.cluster.local</code> pattern). This is how Jupyter notebooks call the model without needing the IP.</li>
+</ul>
+<hr />
+<h2>Section 3 — Inference service (vLLM serving Qwen3-32B)</h2>
+<h3>3.1 What runs</h3>
+<p>A single vLLM pod in the <code>inference</code> namespace serves <b>Qwen3-32B</b> with an OpenAI-compatible API:</p>
+<ul>
+<li><b>Image:</b> <code>vllm/vllm-openai:v0.8.4</code></li>
+<li><b>Served model name:</b> <code>qwen3-32b</code> (weights <code>Qwen/Qwen3-32B</code>, ungated)</li>
+<li><b><code>--tensor-parallel-size 2</code></b> — the model is split across <b>2 of the 8 H100s</b>, using ~77 GB per GPU.</li>
+<li><b><code>--max-model-len 32768</code></b>, <code>--gpu-memory-utilization 0.90</code></li>
+<li><b>Endpoint:</b> internal LB <code>10.128.0.43:8000</code>; in-cluster DNS <code>qwen3-vllm.inference.svc.cluster.local:8000</code></li>
+</ul>
+<h3>3.2 The manifests</h3>
+<p><b>Deployment</b> (<code>deploy/inference/vllm-deployment.yaml</code>):</p>
+<pre><code class='language-yaml'>
+apiVersion: apps/v1
+
+kind: Deployment
+
+metadata: { name: qwen3-vllm, namespace: inference, labels: { app: qwen3-vllm } }
+
+spec:
+
+  replicas: 1
+
+  selector: { matchLabels: { app: qwen3-vllm } }
+
+  template:
+
+    metadata: { labels: { app: qwen3-vllm } }
+
+    spec:
+
+      nodeSelector: { cloud.google.com/gke-accelerator: nvidia-h100-80gb }
+
+      tolerations:
+
+      - { key: &quot;nvidia.com/gpu&quot;, operator: &quot;Exists&quot;, effect: &quot;NoSchedule&quot; }
+
+      - { key: &quot;cloud.google.com/gke-queued&quot;, operator: &quot;Exists&quot;, effect: &quot;NoSchedule&quot; }
+
+      containers:
+
+      - name: vllm
+
+        image: vllm/vllm-openai:v0.8.4       # v0.8.4 - CUDA 12.0 compat + Qwen3 support
+
+        args: [&quot;--model&quot;,&quot;Qwen/Qwen3-32B&quot;,&quot;--served-model-name&quot;,&quot;qwen3-32b&quot;,
+
+               &quot;--tensor-parallel-size&quot;,&quot;2&quot;,&quot;--gpu-memory-utilization&quot;,&quot;0.90&quot;,
+
+               &quot;--max-model-len&quot;,&quot;32768&quot;,&quot;--host&quot;,&quot;0.0.0.0&quot;,&quot;--port&quot;,&quot;8000&quot;]
+
+        env:
+
+        - { name: HF_HOME, value: /hf-cache }
+
+        ports: [{ containerPort: 8000 }]
+
+        resources:
+
+          limits: { nvidia.com/gpu: &quot;2&quot;, cpu: &quot;24&quot;, memory: &quot;200Gi&quot; }
+
+          requests: { nvidia.com/gpu: &quot;2&quot;, cpu: &quot;24&quot;, memory: &quot;200Gi&quot; }
+
+        readinessProbe: { httpGet: { path: /health, port: 8000 }, initialDelaySeconds: 60, periodSeconds: 15, failureThreshold: 40 }
+
+        livenessProbe: { httpGet: { path: /health, port: 8000 }, initialDelaySeconds: 600, periodSeconds: 30 }
+
+        volumeMounts:
+
+        - { name: hf-cache, mountPath: /hf-cache }
+
+        - { name: shm, mountPath: /dev/shm }
+
+      volumes:
+
+      - { name: hf-cache, persistentVolumeClaim: { claimName: hf-cache } }
+
+      - { name: shm, emptyDir: { medium: Memory, sizeLimit: 16Gi } }
+
+</code></pre>
+<p>Notes: the <b><code>hf-cache</code> PVC</b> (150Gi <code>premium-rwo</code>, <code>deploy/inference/model-cache-pvc.yaml</code>) caches the downloaded weights so a pod restart does not re-download 60+ GB. The <b><code>/dev/shm</code> 16Gi memory volume</b> is required — tensor parallelism uses shared memory for inter-GPU IPC, and the container default (64 MB) causes crashes.</p>
+<p><b>Internal LoadBalancer Service</b> (<code>deploy/inference/vllm-service-internal.yaml</code>):</p>
+<pre><code class='language-yaml'>
+apiVersion: v1
+
+kind: Service
+
+metadata:
+
+  name: qwen3-vllm
+
+  namespace: inference
+
+  annotations: { networking.gke.io/load-balancer-type: &quot;Internal&quot; }
+
+spec:
+
+  type: LoadBalancer
+
+  selector: { app: qwen3-vllm }
+
+  ports: [{ port: 8000, targetPort: 8000, protocol: TCP }]
+
+</code></pre>
+<p><b>PodDisruptionBudget</b> (<code>deploy/inference/vllm-pdb.yaml</code>) — keeps ≥1 pod serving during node drains/rotations:</p>
+<pre><code class='language-yaml'>
+apiVersion: policy/v1
+
+kind: PodDisruptionBudget
+
+metadata: { name: qwen3-vllm, namespace: inference }
+
+spec: { minAvailable: 1, selector: { matchLabels: { app: qwen3-vllm } } }
+
+</code></pre>
+<h3>3.3 Verified live output (from Task 1)</h3>
+<p><b>Model list:</b></p>
+<pre><code class='language-bash'>
+curl localhost:8000/v1/models
+
+</code></pre>
+<pre><code class='language-json'>
+{&quot;object&quot;:&quot;list&quot;,&quot;data&quot;:[{&quot;id&quot;:&quot;qwen3-32b&quot;,&quot;object&quot;:&quot;model&quot;,&quot;created&quot;:1784284247,
+
+&quot;owned_by&quot;:&quot;vllm&quot;,&quot;root&quot;:&quot;Qwen/Qwen3-32B&quot;,&quot;max_model_len&quot;:32768, ...}]}
+
+</code></pre>
+<p><b>Chat completion:</b></p>
+<pre><code class='language-bash'>
+curl localhost:8000/v1/chat/completions -H &#x27;Content-Type: application/json&#x27; \
+
+  -d &#x27;{&quot;model&quot;:&quot;qwen3-32b&quot;,&quot;messages&quot;:[{&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;Reply with exactly: hello from qwen3&quot;}],&quot;max_tokens&quot;:20}&#x27;
+
+</code></pre>
+<pre><code class='language-json'>
+{&quot;id&quot;:&quot;chatcmpl-971f5573976c4b7ca0aecc292c892e86&quot;,&quot;object&quot;:&quot;chat.completion&quot;,
+
+ &quot;model&quot;:&quot;qwen3-32b&quot;,
+
+ &quot;choices&quot;:[{&quot;index&quot;:0,&quot;message&quot;:{&quot;role&quot;:&quot;assistant&quot;,
+
+   &quot;content&quot;:&quot;&lt;think&gt;\nOkay, the user wants me to reply with exactly \&quot;hello from qwen3\&quot;. Let&quot;},
+
+   &quot;finish_reason&quot;:&quot;length&quot;}],
+
+ &quot;usage&quot;:{&quot;prompt_tokens&quot;:17,&quot;total_tokens&quot;:37,&quot;completion_tokens&quot;:20}}
+
+</code></pre>
+<p>(Truncated at <code>max_tokens=20</code>. Qwen3 emits a <code>&lt;think&gt;…</code> reasoning preamble by default.)</p>
+<p><b>GPU utilization</b> (both TP GPUs loaded ~76 GB each):</p>
+<pre><code class='language-bash'>
+kubectl -n inference exec deploy/qwen3-vllm -- nvidia-smi --query-gpu=index,memory.used --format=csv
+
+</code></pre>
+<pre><code class='language-'>
+index, memory.used [MiB]
+
+0, 77583 MiB
+
+1, 77583 MiB
+
+</code></pre>
+<h3>3.4 The CUDA-version gotcha (why v0.8.4, not the newest vLLM)</h3>
+<p>The A3 node ships an NVIDIA driver whose <b>CUDA runtime is 12.0</b>. Newer vLLM images are built against <b>CUDA 12.2+</b> and fail to initialize on this driver. We pin <b><code>vllm/vllm-openai:v0.8.4</code></b> (CUDA 12.0-compatible and already supports Qwen3). This is not academic: a drift to <code>vllm/vllm-openai:v0.25.1</code> was observed <b>crash-looping</b> with "Engine core initialization failed"; re-applying the committed v0.8.4 manifest recovered the service (Task 1). <b>Always confirm the image's CUDA build against the node driver before upgrading vLLM.</b> (Note: <code>nvidia-smi</code> may report a higher "CUDA Version" — that is the driver's *max* supported CUDA, not what every image can safely assume; the working image must match what the runtime actually provides.)</p>
+<h3>3.5 How to call the endpoint</h3>
+<p><b>curl (from inside the VPC / a pod):</b></p>
+<pre><code class='language-bash'>
+curl http://10.128.0.43:8000/v1/chat/completions \
+
+  -H &#x27;Content-Type: application/json&#x27; \
+
+  -d &#x27;{&quot;model&quot;:&quot;qwen3-32b&quot;,&quot;messages&quot;:[{&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;Hello&quot;}],&quot;max_tokens&quot;:64}&#x27;
+
+</code></pre>
+<p><b>Python (OpenAI client), using in-cluster DNS:</b></p>
+<pre><code class='language-python'>
+from openai import OpenAI
+
+client = OpenAI(base_url=&quot;http://qwen3-vllm.inference.svc.cluster.local:8000/v1&quot;,
+
+                api_key=&quot;none&quot;)   # vLLM ignores the key by default
+
+resp = client.chat.completions.create(
+
+    model=&quot;qwen3-32b&quot;,
+
+    messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Explain tensor parallelism in one sentence.&quot;}],
+
+    max_tokens=128)
+
+print(resp.choices[0].message.content)
+
+</code></pre>
+<hr />
+<h2>Section 4 — Jupyter host (JupyterHub with GPU notebooks)</h2>
+<h3>4.1 What runs</h3>
+<p><b>JupyterHub 5.5.0</b> (Zero-to-JupyterHub Helm chart <code>4.4.0</code>) in the <code>jupyter</code> namespace, exposed on internal LB <b><code>10.128.15.234</code></b> (port 80). It offers two notebook profiles:</p>
+<ul>
+<li><b>CPU (no GPU)</b> — default; 4 CPU / 16 GB, no GPU.</li>
+<li><b>GPU (1x H100)</b> — image <code>quay.io/jupyter/pytorch-notebook:cuda12-latest</code>, requests <code>nvidia.com/gpu: 1</code>, and carries the H100 <code>nodeSelector</code> + DWS tolerations so the notebook lands on the A3 node.</li>
+</ul>
+<p>Each user gets a <b>20Gi <code>premium-rwo</code></b> persistent home that survives server restarts.</p>
+<h3>4.2 Login and launch a GPU notebook</h3>
+<ol>
+<li>Browse to <code>http://10.128.15.234</code> (must be inside the VPC).</li>
+<li>Log in with <b>any username</b> and password <b><code>demo2026</code></b> (DummyAuthenticator — demo only; replace with Google OAuth for production).</li>
+<li>Select <b>"GPU (1x H100)"</b> from the profile dropdown → <b>Start My Server</b>.</li>
+<li>First launch may take 2-3 minutes while the CUDA PyTorch image pulls; the pod schedules onto <code>gke-hypercomputer-a3-...-hhp6</code>.</li>
+</ol>
+<h3>4.3 The Helm values</h3>
+<p><code>deploy/jupyter/values.yaml</code>:</p>
+<pre><code class='language-yaml'>
+hub:
+
+  config:
+
+    JupyterHub:
+
+      authenticator_class: dummy
+
+    DummyAuthenticator:
+
+      password: &quot;demo2026&quot;
+
+proxy:
+
+  service:
+
+    type: LoadBalancer
+
+    annotations:
+
+      networking.gke.io/load-balancer-type: &quot;Internal&quot;
+
+singleuser:
+
+  storage:
+
+    dynamic:
+
+      storageClass: premium-rwo
+
+    capacity: 20Gi
+
+  profileList:
+
+  - display_name: &quot;CPU (no GPU)&quot;
+
+    default: true
+
+    kubespawner_override:
+
+      cpu_limit: 4
+
+      mem_limit: &quot;16G&quot;
+
+  - display_name: &quot;GPU (1x H100)&quot;
+
+    kubespawner_override:
+
+      image: quay.io/jupyter/pytorch-notebook:cuda12-latest
+
+      extra_resource_limits:
+
+        nvidia.com/gpu: &quot;1&quot;
+
+      node_selector:
+
+        cloud.google.com/gke-accelerator: nvidia-h100-80gb
+
+      tolerations:
+
+      - { key: &quot;nvidia.com/gpu&quot;, operator: &quot;Exists&quot;, effect: &quot;NoSchedule&quot; }
+
+      - { key: &quot;cloud.google.com/gke-queued&quot;, operator: &quot;Exists&quot;, effect: &quot;NoSchedule&quot; }
+
+</code></pre>
+<h3>4.4 Verified GPU access (from Task 2)</h3>
+<p>A GPU notebook (or the equivalent test pod) sees the H100:</p>
+<pre><code class='language-'>
+Fri Jul 17 10:48:03 2026
+
++---------------------------------------------------------------------------------------+
+
+| NVIDIA-SMI 535.309.01             Driver Version: 535.309.01   CUDA Version: 12.2     |
+
+|   0  NVIDIA H100 80GB HBM3          Off | 00000000:04:00.0 Off |                    0 |
+
+| N/A   33C    P0              71W / 700W |      0MiB / 81559MiB |      0%      Default |
+
++---------------------------------------------------------------------------------------+
+
+
+
+CUDA available: True
+
+Device: NVIDIA H100 80GB HBM3
+
+</code></pre>
+<p>The scheduling landed on the A3 node:</p>
+<pre><code class='language-'>
+NAME                READY   STATUS    RESTARTS   AGE   NODE
+
+gpu-schedule-test   1/1     Running   0          18s   gke-hypercomputer-a3-a3-h100-dws-pool-16664d9c-hhp6
+
+</code></pre>
+<h3>4.5 Calling vLLM from a notebook (<code>call_vllm</code>)</h3>
+<p>The example notebook <code>deploy/jupyter/examples/call_vllm.ipynb</code> uses in-cluster DNS (works cross-namespace, <code>jupyter</code> → <code>inference</code>):</p>
+<pre><code class='language-python'>
+from openai import OpenAI
+
+client = OpenAI(base_url=&#x27;http://qwen3-vllm.inference.svc.cluster.local:8000/v1&#x27;, api_key=&#x27;none&#x27;)
+
+response = client.chat.completions.create(
+
+    model=&#x27;qwen3-32b&#x27;,
+
+    messages=[{&#x27;role&#x27;: &#x27;user&#x27;, &#x27;content&#x27;: &#x27;2+2?&#x27;}],
+
+    max_tokens=20)
+
+print(response.choices[0].message.content)
+
+</code></pre>
+<p>Verified live output:</p>
+<pre><code class='language-'>
+vLLM response: &lt;think&gt;
+
+Okay, so I need to figure out what 2 plus 2 is. Let me
+
+</code></pre>
+<p>The <code>gpu_check.ipynb</code> example runs <code>nvidia-smi</code> and <code>torch.cuda.is_available()</code> (output above). Both example notebooks live in <code>deploy/jupyter/examples/</code>.</p>
+<hr />
+<h2>Section 5 — Operations</h2>
+<h3>5.1 Cost and the capacity holder</h3>
+<p>The A3/H100 node is the expensive, scarce resource; the design keeps <b>exactly one workload on it at a time</b>, and never leaves it idle-but-unheld (house rule):</p>
+<ul>
+<li>When a real workload (vLLM) is running, <b>it</b> occupies the node.</li>
+<li>When there is no workload, the <b>holder</b> <code>a3-holder-zone-a</code> (ns <code>default</code>) is scaled to 1 to keep the node from being reclaimed.</li>
+<li>The holder is currently at <b>0 replicas</b> because vLLM holds the node. After any teardown, <b>re-arm the holder immediately</b> so the scarce node is never lost.</li>
+</ul>
+<p>vLLM uses 2 of 8 GPUs; roughly <b>6 H100s remain</b> for GPU notebooks.</p>
+<h3>5.2 Deploy / handoff and teardown scripts</h3>
+<p><b>Hand off the node from holder to vLLM</b> (<code>deploy/ops/handoff.sh</code>) — applies inference manifests then releases the holder, gap-free:</p>
+<pre><code class='language-bash'>
+kubectl apply -f deploy/inference/          # PVC, deployment, service, pdb
+
+kubectl -n default scale deploy/a3-holder-zone-a --replicas=0
+
+</code></pre>
+<p><b>Tear down and re-arm the holder</b> (<code>deploy/ops/rearm-holder.sh</code>) — enforces the house rule:</p>
+<pre><code class='language-bash'>
+kubectl -n inference delete deploy qwen3-vllm --ignore-not-found
+
+kubectl -n default scale deploy/a3-holder-zone-a --replicas=1
+
+</code></pre>
+<h3>5.3 Node rotation before 7-day expiry (zero-downtime)</h3>
+<p>DWS Flex-Start nodes expire at 7 days (~2026-07-23 for the current node). To rotate without downtime, use the <b>2-replica overlap</b> strategy (<code>deploy/ops/node-rotation-runbook.md</code>), protected by the PDB (<code>minAvailable: 1</code>):</p>
+<ol>
+<li><b>Days 5-6:</b> submit a new DWS request for a second A3 node in the same zone.</li>
+<li><b>When ready:</b> <code>kubectl -n inference scale deploy/qwen3-vllm --replicas=2</code> (each replica binds a separate node; PDB keeps ≥1 serving).</li>
+<li><b>Verify:</b> <code>kubectl -n inference get pods -l app=qwen3-vllm</code> (both healthy).</li>
+<li><b>Drain old node:</b> <code>kubectl cordon &lt;old-node&gt;</code> then <code>kubectl drain &lt;old-node&gt; --ignore-daemonsets --delete-emptydir-data</code> (PDB prevents both pods being evicted at once).</li>
+<li><b>Let the old node expire</b> and be reclaimed.</li>
+<li><b>Scale back:</b> <code>kubectl -n inference scale deploy/qwen3-vllm --replicas=1</code>.</li>
+</ol>
+<p>Notes: PVCs reattach automatically in the same zone; a pending pod can trigger reprovisioning <b>if capacity is available</b> — if there is no A3 capacity, the overlap window is blocked, so plan the new request early.</p>
+<h3>5.4 Capacity / reservation reality (<code>lab/RESERVATIONS.md</code>)</h3>
+<p>The 7-day cap is a hard ceiling on Flex-Start — no holder defeats it. For durable GPUs (e.g. a 6-month lab):</p>
+<ul>
+<li>Use a <b>Compute Engine reservation</b> consumed by a <b>standard</b> node pool (<code>lab/blueprints/pools/h100-reserved.yaml</code>, <code>min=max=3</code>, COMPACT placement). Reserved nodes have <b>no run-duration cap</b>, are not idle-scaled, and give <b>guaranteed capacity</b> (no stockout wait).</li>
+<li><b>Zone layout:</b> for a demo+debug lab, book all 3 A3 nodes in <b>one zone</b> with <b>COMPACT placement</b> rather than one-per-zone — the high-bandwidth A3 fabric (GPUDirect-TCPX/TCPXO/RDMA) <b>does not span zones</b>, so cross-zone falls back to slow TCP. Same-zone+COMPACT gives you both single-node experiments and a real 24-GPU multi-node fabric.</li>
+<li><b>Cost:</b> a reservation bills at on-demand rate whether used or not, and persists until you delete it. CUDs are 1- or 3-year only (no 6-month discount).</li>
+<li><b>Migration:</b> you cannot convert Flex-Start → reserved; stand up the reserved pool separately and move workloads/checkpoints <b>before</b> the 7-day expiry, then release the Flex-Start request.</li>
+</ul>
+<pre><code class='language-bash'>
+gcloud compute reservations create a3-h100-res --project=hdlab-elideng \
+
+  --zone=us-central1-a --require-specific-reservation --vm-count=3 \
+
+  --machine-type=a3-highgpu-8g --accelerator=type=nvidia-h100-80gb,count=8
+
+# then: cd lab &amp;&amp; make up REGION=us-central1 ENABLED_POOLS=h100-reserved
+
+</code></pre>
+<h3>5.5 Troubleshooting</h3>
+<table>
+<thead><tr><th>Symptom</th><th>Likely cause</th><th>Where to look</th></tr></thead><tbody>
+<tr><td>A3 node provisions then vanishes ~10-15 min later</td><td>Nothing consumed the ProvisioningRequest</td><td><code>bugfixes/0002</code> — add the <code>autoscaling.x-k8s.io/*</code> consume annotations</td></tr>
+<tr><td>DWS requests never spread across zones</td><td><code>nodeSelector</code> missing <code>topology.kubernetes.io/zone</code> (label ≠ constraint)</td><td><code>bugfixes/0001</code></td></tr>
+<tr><td>vLLM pod crash-loops "Engine core initialization failed"</td><td>vLLM image built for CUDA 12.2+ on a 12.0 driver</td><td>§3.4 — pin <code>v0.8.4</code>, re-apply committed manifest</td></tr>
+<tr><td>vLLM OOM / IPC errors under TP</td><td><code>/dev/shm</code> too small (64 MB default)</td><td>§3.2 — 16Gi memory <code>emptyDir</code> at <code>/dev/shm</code></td></tr>
+<tr><td>Notebook stuck <code>Pending</code></td><td>GPU node full, or missing tolerations/nodeSelector</td><td>check holder/vLLM GPU usage; §4.3</td></tr>
+<tr><td>Model re-downloads on every restart</td><td>PVC cache not mounted / <code>HF_HOME</code> unset</td><td>§3.2 — <code>hf-cache</code> PVC + <code>HF_HOME=/hf-cache</code></td></tr>
+</tbody></table>
+<p>Bug reports and the template live in <code>bugfixes/</code> (<code>bugfixes/README.md</code>).</p>
+<hr />
+<h2>Section 6 — Appendices</h2>
+<h3>Appendix A — Command reference</h3>
+<pre><code class='language-bash'>
+# --- Cluster access ---
+
+gcloud container clusters get-credentials hypercomputer-a3-cluster \
+
+  --region us-central1 --project hdlab-elideng
+
+
+
+# --- Inspect the GPU node ---
+
+kubectl get nodes -L cloud.google.com/gke-accelerator
+
+kubectl describe node gke-hypercomputer-a3-a3-h100-dws-pool-16664d9c-hhp6
+
+
+
+# --- Inference (namespace: inference) ---
+
+kubectl -n inference get deploy,po,svc,pvc,pdb
+
+kubectl -n inference logs deploy/qwen3-vllm -f
+
+kubectl -n inference exec deploy/qwen3-vllm -- nvidia-smi \
+
+  --query-gpu=index,memory.used --format=csv
+
+curl http://10.128.0.43:8000/v1/models
+
+curl http://10.128.0.43:8000/v1/chat/completions -H &#x27;Content-Type: application/json&#x27; \
+
+  -d &#x27;{&quot;model&quot;:&quot;qwen3-32b&quot;,&quot;messages&quot;:[{&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;Hello&quot;}],&quot;max_tokens&quot;:64}&#x27;
+
+
+
+# --- JupyterHub (namespace: jupyter) ---
+
+kubectl -n jupyter get pods
+
+kubectl -n jupyter get svc proxy-public          # -&gt; internal IP 10.128.15.234
+
+helm -n jupyter upgrade --install jhub jupyterhub/jupyterhub \
+
+  --version 4.4.0 -f deploy/jupyter/values.yaml
+
+
+
+# --- Ops: handoff / teardown / rotation ---
+
+bash deploy/ops/handoff.sh                        # holder -&gt; vLLM (gap-free)
+
+bash deploy/ops/rearm-holder.sh                   # teardown + re-arm holder (house rule)
+
+kubectl -n default get deploy a3-holder-zone-a    # holder state (0 = vLLM holds node)
+
+kubectl -n inference scale deploy/qwen3-vllm --replicas=2   # rotation overlap
+
+</code></pre>
+<h3>Appendix B — Full manifests</h3>
+<p>The authoritative manifests are committed under <code>deploy/</code>:</p>
+<ul>
+<li><code>deploy/inference/namespace.yaml</code> — creates <code>inference</code> and <code>jupyter</code> namespaces.</li>
+<li><code>deploy/inference/model-cache-pvc.yaml</code> — 150Gi <code>premium-rwo</code> <code>hf-cache</code> PVC.</li>
+<li><code>deploy/inference/vllm-deployment.yaml</code> — the vLLM Deployment (§3.2).</li>
+<li><code>deploy/inference/vllm-service-internal.yaml</code> — internal LB Service (§3.2).</li>
+<li><code>deploy/inference/vllm-pdb.yaml</code> — PodDisruptionBudget (§3.2).</li>
+<li><code>deploy/jupyter/values.yaml</code> — JupyterHub Helm values (§4.3).</li>
+<li><code>deploy/jupyter/examples/gpu_check.ipynb</code>, <code>deploy/jupyter/examples/call_vllm.ipynb</code> — example notebooks.</li>
+<li><code>deploy/ops/handoff.sh</code>, <code>deploy/ops/rearm-holder.sh</code>, <code>deploy/ops/node-rotation-runbook.md</code> — operations.</li>
+<li>DWS/capacity: <code>configs/dws_provisioning_request_zone_{a,b,c}.yaml</code>, <code>configs/a3_dws_consumer_holders.yaml</code>.</li>
+<li>Foundation IaC: <code>lab/</code> (see <code>lab/README.md</code>, <code>lab/RESERVATIONS.md</code>).</li>
+</ul>
+<p>The PVC, namespace, PDB and Service manifests are short and reproduced inline in §2/§3; the two larger ones (Deployment, JupyterHub values) are reproduced in full in §3.2 and §4.3.</p>
+<h3>Appendix C — Architecture diagram</h3>
+<pre><code class='language-mermaid'>flowchart TB
+  subgraph VPC[&quot;VPC 10.128.0.0/16 (us-central1, project hdlab-elideng)&quot;]
+    subgraph GKE[&quot;GKE cluster: hypercomputer-a3-cluster&quot;]
+      subgraph np[&quot;Node pool: a3-h100-dws-pool (DWS Flex-Start, 7-day cap)&quot;]
+        subgraph node[&quot;A3 node ...-hhp6 (us-central1-a) — 8x H100 80GB, NVLink/NVSwitch&quot;]
+          vllm[&quot;Pod: qwen3-vllm (ns inference)\nvLLM v0.8.4, TP=2\nGPUs 0-1 (~77GB each)&quot;]
+          nb[&quot;Pod: GPU notebook (ns jupyter)\nPyTorch cuda12\nuses 1 of remaining ~6 GPUs&quot;]
+          holder[&quot;Holder a3-holder-zone-a (ns default)\npause pod, currently 0 replicas&quot;]
+        end
+      end
+      hub[&quot;JupyterHub 5.5.0 hub+proxy (ns jupyter)&quot;]
+      svcV[&quot;Service qwen3-vllm (internal LB)\n10.128.0.43:8000\nqwen3-vllm.inference.svc.cluster.local&quot;]
+      svcJ[&quot;Service proxy-public (internal LB)\n10.128.15.234:80&quot;]
+    end
+    user[&quot;User / client inside VPC&quot;]
+  end
+
+  user --&gt;|&quot;HTTP :80&quot;| svcJ --&gt; hub --&gt; nb
+  user --&gt;|&quot;OpenAI API :8000&quot;| svcV --&gt; vllm
+  nb --&gt;|&quot;in-cluster DNS :8000&quot;| svcV
+  hub --&gt;|&quot;spawns&quot;| nb</code></pre><p style='color:#5f6368;font-size:9.5pt;'>[Mermaid architecture diagram — render in GitHub / mermaid.live and paste the image into Google Docs.]</p>
+<p>*(This Mermaid diagram renders in GitHub, VS Code, and mermaid.live. In the Google Docs HTML export, paste the rendered image separately — see the export note in the task report.)*</p>
+<hr />
+<p>*End of runbook. All values reflect the live deployment as of 2026-07-17; the A3 Flex-Start node expires ~2026-07-23.*</p>
+</body></html>
