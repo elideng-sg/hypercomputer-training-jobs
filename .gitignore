@@ -23,12 +23,9 @@ venv/
 *.tfstate
 *.tfstate.*
 
-# Job operational runtime logs (exclude bulky log outputs from git tracking while keeping folder)
-logs/*.log
-logs/*.json
-logs/*.txt
-
-# Ensure log folder itself is tracked
+# Execution logs under logs/ are intentionally TRACKED (committed) for review/audit —
+# pod stdout, NCCL traces, benchmark results, and run orchestration logs are kept in-repo
+# so past runs are reviewable. (Previously these were ignored.)
 !logs/.gitkeep
 .superpowers/
 
