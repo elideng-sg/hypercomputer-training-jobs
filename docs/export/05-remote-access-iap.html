@@ -257,6 +257,7 @@ kubectl -n inference get managedcertificate vllm-cert -o jsonpath=&#x27;{.status
 KEY=$(kubectl -n inference get secret vllm-api-key -o jsonpath=&#x27;{.data.api-key}&#x27; | base64 -d)
 curl -s https://infer.${VLLM_IP}.nip.io/v1/models -H &quot;Authorization: Bearer $KEY&quot;
 </code></pre>
+<p><strong>Share the key with the team</strong> over a secure channel (a password manager — not chat or email). Team members then set <code>export VLLM_API_KEY=&lt;key&gt;</code> and use it as shown in the <a href="03-inference-endpoint-user-guide.html#getting-your-api-key">Inference Endpoint User Guide → Getting your API key</a>.</p>
 <blockquote>⚠️ <strong>Enabling the key changes existing behavior:</strong> in-cluster callers (JupyterHub notebooks) that previously used <code>api_key=&quot;none&quot;</code> now get <strong>401</strong> and must send the real key. The user guides have been updated accordingly.</blockquote>
 <hr>
 <h2 id="part-b--jupyterhub-public-ui-google-sign-in">Part B — JupyterHub public UI (Google sign-in)</h2>

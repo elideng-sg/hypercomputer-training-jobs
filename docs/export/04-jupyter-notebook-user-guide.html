@@ -549,6 +549,7 @@ Device count: 1
 </code></pre>
 <p>(The <code>-q</code> flag suppresses verbose output. The PyTorch notebook image may already have <code>openai</code> installed, but this ensures it&#x27;s available.)</p>
 <h3 id="step-2-call-the-inference-endpoint">Step 2: Call the inference endpoint</h3>
+<p>The endpoint requires an API key — <strong>ask your admin for it</strong> (details: <a href="03-inference-endpoint-user-guide.html#getting-your-api-key">Inference Endpoint User Guide → Getting your API key</a>). In your notebook, set it once, e.g. <code>import os; os.environ[&quot;VLLM_API_KEY&quot;] = &quot;&lt;the key&gt;&quot;</code>, or paste it directly below.</p>
 <pre><code class="language-python">
 from openai import OpenAI
 
