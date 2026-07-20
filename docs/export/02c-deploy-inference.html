@@ -178,6 +178,7 @@
 <hr>
 <p><strong>Part 3 of the deployment series.</strong> Requires a provisioned GPU node from <a href="02b-gpu-nodepool-dws.html">Part 2 — GPU Node Pool &amp; DWS</a>.</p>
 <p>This part deploys the <strong><a href="appendix-glossary.html#vllm">vLLM</a></strong> inference server serving <strong><a href="appendix-glossary.html#qwen3-32b">Qwen3-32B</a></strong> across 2 of the 8 H100 GPUs, hands the node off from the holder to vLLM gap-free, and exposes it on an internal load balancer.</p>
+<blockquote>To expose the endpoint to teammates outside the VPC over public HTTPS (with an API key), do this base deploy first, then follow <strong><a href="05-remote-access-iap.html">Remote Access</a></strong>.</blockquote>
 <hr>
 <h2 id="step-6-deploy-the-vllm-inference-service">Step 6: Deploy the vLLM inference service</h2>
 <h3 id="61-deploy-vllm-qwen3-32b-tensor-parallel--2">6.1 Deploy vLLM (Qwen3-32B, tensor parallel = 2)</h3>

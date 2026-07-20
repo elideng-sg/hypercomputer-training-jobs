@@ -1,7 +1,7 @@
 # GCP AI Hypercomputer Multi-GPU Verification Comprehensive Report
 
 ## Executive Summary
-This report summarizes the successful completion and diagnostic verification of our **distributed 8x GPU AI Hypercomputer benchmark run** ([train_benchmark_fp8.py](file:///Users/elideng/hypercomputer-training-jobs/src/train_benchmark_fp8.py)) directly on Google Cloud Platform across the **`us-central1` (Iowa Hub)** high-capacity region.
+This report summarizes the successful completion and diagnostic verification of our **distributed 8x GPU AI Hypercomputer benchmark run** ([train_benchmark_fp8.py](src/train_benchmark_fp8.py)) directly on Google Cloud Platform across the **`us-central1` (Iowa Hub)** high-capacity region.
 
 By migrating to **Option 2 (`g2-standard-96` | 8x NVIDIA L4 Ada Lovelace 24GB GPUs + 96 vCPUs)** configured across **multi-zone Spot dynamic autoscaling** (`--spot --location-policy=ANY`), our pipeline entirely eliminated previous single-zone allocation blocks in Northern Virginia (`us-east4`), instantaneously claimed a contiguous 8-GPU physical rack in `us-central1-b`, and executed exact distributed PyTorch DDP matrix computations and high-bandwidth NCCL All-Reduce operations with zero queuing delays.
 
@@ -57,7 +57,7 @@ Our comprehensive log audit (`logs/job_runtime_diagnostics.log`) confirmed that 
 
 ## 3. Pure Option 1 REST Execution Engine Reliability
 
-Our local macOS command launcher ([scripts/03_submit_job_direct_gcloud.py](file:///Users/elideng/hypercomputer-training-jobs/scripts/03_submit_job_direct_gcloud.py)) achieved 100% execution reliability over direct HTTPS REST APIs:
+Our local macOS command launcher ([scripts/03_submit_job_direct_gcloud.py](scripts/03_submit_job_direct_gcloud.py)) achieved 100% execution reliability over direct HTTPS REST APIs:
 - **Zero Local `kubectl` Executions:** Completely circumvented endpoint protection blocks (`Santa Killed: 9`) by strictly transmitting secure JSON object payloads via `gcloud auth print-access-token` headers directly to GKE Master API (`https://34.135.25.101/`).
 - **Pre-Execution Self-Cleaning:** Automatically detected and pruned previous verification resources (`verification-source-map` and legacy Pod templates) via background propagation deletes before scheduling.
 - **Real-Time Event Stream Parsing:** Transparently monitored pod phase changes (`Pending -> Running -> Succeeded`) straight to console output, cleanly terminating upon detecting container log confirmation (`Job completed cleanly`).
@@ -72,7 +72,7 @@ Because your high-capacity `g2-standard-96` (`8x L4`) instance inside `us-centra
 Furthermore, because GKE dynamic autoscaling (`MIN_NODES=0`) is enabled right across the pool, Cluster Autoscaler automatically initiates node shutdown approximately 10–15 minutes post-job completion right during the scale-down soak cycle.
 
 ### Recommended Operational Next Step: Execute Instant Cost Safeguard (`Step 4`)
-If you wish to cleanly terminate compute billing on the active `g2-standard-96` unit right now rather than waiting for the automatic cooldown cycle, run our interactive teardown script ([scripts/04_teardown_cluster.sh](file:///Users/elideng/hypercomputer-training-jobs/scripts/04_teardown_cluster.sh)):
+If you wish to cleanly terminate compute billing on the active `g2-standard-96` unit right now rather than waiting for the automatic cooldown cycle, run our interactive teardown script ([scripts/04_teardown_cluster.sh](scripts/04_teardown_cluster.sh)):
 
 ```bash
 ./scripts/04_teardown_cluster.sh

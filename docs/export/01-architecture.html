@@ -444,7 +444,7 @@
 <li><strong>Region:</strong> <code>us-central1</code> (Iowa, USA)</li>
 <li><strong>VPC network:</strong> A private network using the <code>10.128.0.0/16</code> IP range</li>
 </ul>
-<p>All resources live in this project and region. The <a href="appendix-glossary.html#vpc">VPC</a> provides private networking — internal load balancers get IPs like <code>10.128.0.43</code> that are only reachable from within this network.</p>
+<p>All resources live in this project and region. The <a href="appendix-glossary.html#vpc">VPC</a> provides private networking — internal resources use private <code>10.128.x.x</code> addresses reachable only within this network. The two user-facing services are additionally exposed to the team over public HTTPS (see <a href="05-remote-access-iap.html">Remote Access</a>).</p>
 <h3 id="layer-2-gke-cluster">Layer 2: GKE Cluster</h3>
 <ul>
 <li><strong>Cluster name:</strong> <code>hypercomputer-a3-cluster</code></li>
@@ -581,9 +581,10 @@ tolerations:
 </ul>
 <p><strong><a href="appendix-glossary.html#service">Services</a></strong> provide stable network endpoints:</p>
 <ul>
-<li><strong><code>qwen3-vllm</code> Service</strong> — <a href="appendix-glossary.html#loadbalancer-internal">Internal LoadBalancer</a> at <code>10.128.0.43:8000</code> (and DNS name <code>qwen3-vllm.inference.svc.cluster.local:8000</code>)</li>
-<li><strong><code>proxy-public</code> Service</strong> — Internal LoadBalancer at <code>10.128.15.234:80</code> for JupyterHub</li>
+<li><strong><code>qwen3-vllm</code> Service</strong> — in-cluster DNS <code>qwen3-vllm.inference.svc.cluster.local:8000</code>, and exposed to the team over public HTTPS at <code>https://infer.136.69.110.10.nip.io/v1</code> (API-key gated)</li>
+<li><strong><code>proxy-public</code> Service</strong> — JupyterHub, exposed over public HTTPS at <code>https://jupyter.34.54.187.199.nip.io</code> (Google sign-in)</li>
 </ul>
+<blockquote>These two services were originally internal-only load balancers; they are now fronted by public HTTPS load balancers. See <strong><a href="05-remote-access-iap.html">Remote Access</a></strong> for how (Ingress + managed TLS, GoogleOAuthenticator for JupyterHub, API key for vLLM).</blockquote>
 <hr>
 <h2 id="3-how-gpus-are-obtained--dws-flex-start">3. How GPUs are Obtained — DWS Flex-Start</h2>
 <h3 id="the-dws-flex-start-lifecycle">The DWS Flex-Start lifecycle</h3>
@@ -815,7 +816,7 @@ consuming ProvisioningRequest default/a3-h100-req-zone-a that is in Accepted sta
 <li>Loads the <strong><a href="appendix-glossary.html#qwen3-32b">Qwen3-32B</a></strong> model weights from Hugging Face</li>
 <li>Splits the model across <strong>2 H100 GPUs</strong> using <a href="appendix-glossary.html#tensor-parallelism">tensor parallelism</a> (<code>--tensor-parallel-size 2</code>)</li>
 <li>Exposes an <strong><a href="appendix-glossary.html#openai-compatible-api">OpenAI-compatible HTTP API</a></strong> on port 8000</li>
-<li>Is reachable at internal load balancer IP <code>10.128.0.43:8000</code> or in-cluster DNS name <code>qwen3-vllm.inference.svc.cluster.local:8000</code></li>
+<li>Is reachable in-cluster at DNS name <code>qwen3-vllm.inference.svc.cluster.local:8000</code>, and to the team over public HTTPS at <code>https://infer.136.69.110.10.nip.io/v1</code> — all requests require the API key (<code>Authorization: Bearer &lt;key&gt;</code>). See <a href="05-remote-access-iap.html">Remote Access</a>.</li>
 </ul>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
@@ -1003,7 +1004,7 @@ consuming ProvisioningRequest default/a3-h100-req-zone-a that is in Accepted sta
 </g>
 </svg>
 
-<p><strong>Figure 4: Inference request flow.</strong> A user sends an HTTP request (curl or Python OpenAI client) to the internal load balancer (<code>10.128.0.43:8000</code>). The request routes to the vLLM pod running on the A3 node. The pod spans GPUs 0-1 (tensor parallelism), processes the request, and returns the generated text.</p>
+<p><strong>Figure 4: Inference request flow.</strong> A user sends an HTTP request (curl or Python OpenAI client, with the API key) to the endpoint — the public HTTPS load balancer or the in-cluster DNS name. The request routes to the vLLM pod running on the A3 node. The pod spans GPUs 0-1 (tensor parallelism), processes the request, and returns the generated text.</p>
 <h3 id="technical-details">Technical details</h3>
 <ul>
 <li><strong>Image:</strong> <code>vllm/vllm-openai:v0.8.4</code></li>
@@ -1326,15 +1327,12 @@ print(response.choices[0].message.content)
 </g>
 </svg>
 
-<p><strong>Figure 5: Jupyter notebook spawn and model call flow.</strong> (1) User logs into JupyterHub at <code>10.128.15.234</code>. (2) User selects &quot;GPU (1x H100)&quot; profile and clicks Start My Server. (3) Hub spawns a notebook pod on the A3 node with 1 GPU. (4) User opens the notebook, writes Python code, and makes an API call to <code>qwen3-vllm.inference.svc.cluster.local:8000</code> using the OpenAI client. (5) Request routes to the vLLM pod, which generates a response.</p>
+<p><strong>Figure 5: Jupyter notebook spawn and model call flow.</strong> (1) User opens JupyterHub at <code>https://jupyter.34.54.187.199.nip.io</code> and signs in with Google. (2) User selects &quot;GPU (1x H100)&quot; profile and clicks Start My Server. (3) Hub spawns a notebook pod on the A3 node with 1 GPU. (4) User opens the notebook, writes Python code, and makes an API call to <code>qwen3-vllm.inference.svc.cluster.local:8000</code> (with the API key) using the OpenAI client. (5) Request routes to the vLLM pod, which generates a response.</p>
 <h3 id="how-to-log-in-and-launch-a-gpu-notebook">How to log in and launch a GPU notebook</h3>
-<p>For the full walkthrough (profiles, SSH, GPU usage, tips, and troubleshooting), see the <strong><a href="04-jupyter-notebook-user-guide.html">Jupyter Notebook User Guide</a></strong>. In brief:</p>
+<p>For the full walkthrough (profiles, GPU usage, tips, and troubleshooting), see the <strong><a href="04-jupyter-notebook-user-guide.html">Jupyter Notebook User Guide</a></strong>. In brief:</p>
 <ol>
-<li>Browse to <code>http://10.128.15.234</code> (must be inside the VPC)</li>
-<li>Log in with <strong>any username</strong> and password <strong><code>demo2026</code></strong></li>
-</ol>
-<p>(This uses DummyAuthenticator, a demo-only auth method — replace with Google OAuth or another real authenticator for production)</p>
-<ol>
+<li>Browse to <code>https://jupyter.34.54.187.199.nip.io</code></li>
+<li><strong>Sign in with Google</strong> using your Workspace account (restricted to the org domain; no shared password). See <a href="05-remote-access-iap.html">Remote Access</a> for the auth setup.</li>
 <li>On the profile selection page, choose <strong>&quot;GPU (1x H100)&quot;</strong> from the dropdown</li>
 <li>Click <strong>Start My Server</strong></li>
 <li>First launch may take 2-3 minutes while the PyTorch CUDA image pulls</li>
@@ -1360,7 +1358,7 @@ print(response.choices[0].message.content)
 </code></pre>
 <p><strong>Note:</strong> The DNS name <code>qwen3-vllm.inference.svc.cluster.local</code> resolves to the vLLM Service within the cluster. This works even though the notebook is in the <code>jupyter</code> namespace and vLLM is in <code>inference</code> — Kubernetes DNS resolves <code>&lt;service&gt;.&lt;namespace&gt;.svc.cluster.local</code> cluster-wide.</p>
 <h3 id="the-jupyterhub-helm-values">The JupyterHub Helm values</h3>
-<p>JupyterHub is deployed via the <strong>Zero-to-JupyterHub</strong> <a href="appendix-glossary.html#helm">Helm</a> chart (version 4.4.0, JupyterHub 5.5.0). Configuration is in <code>deploy/jupyter/values.yaml</code>:</p>
+<p>JupyterHub is deployed via the <strong>Zero-to-JupyterHub</strong> <a href="appendix-glossary.html#helm">Helm</a> chart (version 4.4.0, JupyterHub 5.5.0). The base configuration is in <code>deploy/jupyter/values.yaml</code> (shown below — internal LB, demo auth). The <strong>live deployment layers a public-access overlay</strong> on top (<code>deploy/expose/jupyter-values-public.yaml</code>): GoogleOAuthenticator + a ClusterIP proxy behind a public HTTPS Ingress. See <strong><a href="05-remote-access-iap.html">Remote Access</a></strong>.</p>
 <pre><code class="language-yaml">
 hub:
   config:
@@ -1399,8 +1397,8 @@ singleuser:
 </code></pre>
 <p><strong>Key points:</strong></p>
 <ul>
-<li><strong>DummyAuthenticator</strong> is for demos only — any username works, password is <code>demo2026</code></li>
-<li><strong>Internal LoadBalancer</strong> — service only reachable inside the VPC</li>
+<li><strong>Authentication:</strong> the base values above use <code>DummyAuthenticator</code> (internal-only starting point). The <strong>live deployment replaces this with <code>GoogleOAuthenticator</code></strong>, restricted to the Workspace domain, and serves JupyterHub over public HTTPS (<a href="05-remote-access-iap.html">Remote Access</a>)</li>
+<li><strong>Base LoadBalancer</strong> — the base chart uses an internal LB; the live overlay switches the proxy to ClusterIP behind the public Ingress</li>
 <li><strong>GPU profile</strong> — Uses <code>quay.io/jupyter/pytorch-notebook:cuda12-latest</code> (includes PyTorch, CUDA, and common data science libraries), requests 1 GPU, and has the node selector + tolerations to land on the A3 node</li>
 </ul>
 <hr>

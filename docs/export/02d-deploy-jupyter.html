@@ -177,7 +177,8 @@
 <p><strong>Deployment series:</strong> <a href="02a-cluster-setup.html">1. Cluster Setup</a> → <a href="02b-gpu-nodepool-dws.html">2. GPU Node &amp; DWS</a> → <a href="02c-deploy-inference.html">3. Inference</a> → <strong>4. JupyterHub</strong> → <a href="02e-verify-teardown.html">5. Verify &amp; Teardown</a></p>
 <hr>
 <p><strong>Part 4 of the deployment series.</strong> Assumes the GPU node from <a href="02b-gpu-nodepool-dws.html">Part 2</a> is running (the inference service from <a href="02c-deploy-inference.html">Part 3</a> is recommended but not strictly required for this part).</p>
-<p>This part installs <strong><a href="appendix-glossary.html#jupyterhub">JupyterHub</a></strong> via Helm with a CPU profile and a GPU profile, so users can launch notebooks that land on the A3 node and request an H100.</p>
+<p>This part installs <strong><a href="appendix-glossary.html#jupyterhub">JupyterHub</a></strong> via Helm with a CPU profile and a GPU profile, so users can launch notebooks that land on the A3 node and request an H100. It uses <code>DummyAuthenticator</code> (demo password) on an internal LB as the base.</p>
+<blockquote>For team access — public HTTPS + <strong>Google sign-in</strong> instead of the demo password — do this base install first, then follow <strong><a href="05-remote-access-iap.html">Remote Access</a></strong>, which swaps in <code>GoogleOAuthenticator</code> and a public Ingress.</blockquote>
 <hr>
 <h2 id="step-7-deploy-jupyterhub">Step 7: Deploy JupyterHub</h2>
 <h3 id="71-add-the-jupyterhub-helm-repo">7.1 Add the JupyterHub Helm repo</h3>

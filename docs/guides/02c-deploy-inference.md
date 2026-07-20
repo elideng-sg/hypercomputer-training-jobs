@@ -8,6 +8,8 @@
 
 This part deploys the **[vLLM](appendix-glossary.md#vllm)** inference server serving **[Qwen3-32B](appendix-glossary.md#qwen3-32b)** across 2 of the 8 H100 GPUs, hands the node off from the holder to vLLM gap-free, and exposes it on an internal load balancer.
 
+> To expose the endpoint to teammates outside the VPC over public HTTPS (with an API key), do this base deploy first, then follow **[Remote Access](05-remote-access-iap.md)**.
+
 ---
 
 ## Step 6: Deploy the vLLM inference service
