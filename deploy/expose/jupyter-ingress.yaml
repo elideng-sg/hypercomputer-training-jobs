@@ -1,0 +1,16 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jupyter-ingress
+  namespace: jupyter
+  annotations:
+    kubernetes.io/ingress.class: "gce"                       # external HTTPS LB
+    kubernetes.io/ingress.global-static-ip-name: "jupyter-lb-ip"
+    networking.gke.io/managed-certificates: "jupyter-cert"
+    networking.gke.io/v1beta1.FrontendConfig: "jupyter-frontendconfig"
+spec:
+  defaultBackend:
+    service:
+      name: proxy-public          # created by the JupyterHub Helm chart
+      port:
+        number: 80

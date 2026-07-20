@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Remote Access — Expose JupyterHub &amp;amp; vLLM to the Team over HTTPS</title>
+    <style>
+        body {
+            font-family: 'Arial', 'Helvetica', sans-serif;
+            font-size: 11pt;
+            line-height: 1.6;
+            color: #202124;
+            max-width: 8.5in;
+            margin: 1in auto;
+            padding: 0 1rem;
+            background-color: #ffffff;
+        }
+
+        h1 {
+            color: #1a73e8;
+            font-size: 20pt;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 8px;
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: bold;
+        }
+
+        h2 {
+            color: #1a73e8;
+            font-size: 15pt;
+            margin-top: 22px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #eeeeee;
+            padding-bottom: 4px;
+            font-weight: bold;
+        }
+
+        h3 {
+            color: #202124;
+            font-size: 13pt;
+            margin-top: 18px;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        h4 {
+            color: #5f6368;
+            font-size: 11.5pt;
+            margin-top: 14px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        h5 {
+            color: #5f6368;
+            font-size: 10.5pt;
+            margin-top: 12px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        h6 {
+            color: #5f6368;
+            font-size: 10pt;
+            margin-top: 10px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        p {
+            margin-bottom: 10px;
+        }
+
+        pre {
+            background-color: #f8f9fa;
+            border: 1px solid #dadce0;
+            border-radius: 6px;
+            padding: 12px;
+            font-family: 'Courier New', 'Consolas', monospace;
+            font-size: 9.5pt;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin-bottom: 14px;
+            overflow-x: auto;
+        }
+
+        code {
+            background-color: #f1f3f4;
+            color: #d93025;
+            font-family: 'Courier New', 'Consolas', monospace;
+            font-size: 9.5pt;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+
+        pre code {
+            background-color: transparent;
+            color: #202124;
+            padding: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 18px;
+            font-size: 10pt;
+        }
+
+        th {
+            background-color: #e8f0fe;
+            color: #1a73e8;
+            border: 1px solid #dadce0;
+            padding: 10px;
+            text-align: left;
+            font-weight: bold;
+        }
+
+        td {
+            border: 1px solid #dadce0;
+            padding: 9px;
+            vertical-align: top;
+        }
+
+        ul, ol {
+            margin-top: 4px;
+            margin-bottom: 12px;
+            padding-left: 24px;
+        }
+
+        li {
+            margin-bottom: 6px;
+        }
+
+        a {
+            color: #1a73e8;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        blockquote {
+            border-left: 4px solid #dadce0;
+            padding-left: 12px;
+            color: #5f6368;
+            margin: 12px 0;
+        }
+
+        hr {
+            border: 0;
+            border-top: 1px solid #dadce0;
+            margin: 22px 0;
+        }
+
+        /* SVG styling for embedded diagrams */
+        svg {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 16px auto;
+        }
+
+        /* Alert/callout boxes */
+        .admonition {
+            border-left: 4px solid #ea4335;
+            background-color: #fce8e6;
+            padding: 12px;
+            margin: 14px 0;
+            border-radius: 0 4px 4px 0;
+        }
+    </style>
+</head>
+<body>
+<h1 id="remote-access--expose-jupyterhub--vllm-to-the-team-over-https">Remote Access — Expose JupyterHub &amp; vLLM to the Team over HTTPS</h1>
+<p><strong>Audience:</strong> The cluster admin. This makes the JupyterHub UI and the vLLM inference endpoint reachable by teammates who <strong>cannot</strong> access your GCP project or VPC directly — no VPN, no <code>kubectl</code>.</p>
+<blockquote><strong>New to the terminology?</strong> Ingress, LoadBalancer, and Service are defined in the <strong><a href="appendix-glossary.html">Glossary appendix</a></strong>.</blockquote>
+<h2 id="approach">Approach</h2>
+<p>Two public <strong>external HTTPS Load Balancers</strong> (one per service — a GKE Ingress can only target Services in its own namespace), each with a Google-managed TLS certificate:</p>
+<table>
+<thead><tr>
+<th>Service</th>
+<th>Public host</th>
+<th>Gate</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>vLLM inference API</td>
+<td><code>infer.&lt;VLLM_LB_IP&gt;.nip.io</code></td>
+<td><strong>API key</strong> (<code>Authorization: Bearer &lt;key&gt;</code>)</td>
+</tr>
+<tr>
+<td>JupyterHub UI</td>
+<td><code>jupyter.&lt;JUPYTER_LB_IP&gt;.nip.io</code></td>
+<td><strong>GoogleOAuthenticator</strong>, restricted to your Workspace domain</td>
+</tr>
+</tbody></table>
+<ul>
+<li><strong>vLLM</strong> is gated by a <strong>vLLM API key</strong> so the OpenAI client works unchanged.</li>
+<li><strong>JupyterHub</strong> is gated by <strong>GoogleOAuthenticator</strong> (Google sign-in restricted to your Workspace domain), replacing the demo <code>DummyAuthenticator</code>. Each user gets a real identity and their own home directory.</li>
+</ul>
+<p><strong>Why not IAP?</strong> The IAP OAuth Admin APIs were shut down in early 2026, so the &quot;bring-your-own OAuth client for IAP&quot; path is no longer usable. GoogleOAuthenticator uses a <em>standard</em> OAuth 2.0 client (unaffected) and gives equivalent domain-restricted access control. If you later want IAP as an extra edge layer, enable it via Google-managed OAuth in the console.</p>
+<p><strong>Why nip.io:</strong> Google-managed certs need a publicly-resolvable domain. <code>nip.io</code> resolves <code>anything.&lt;IP&gt;.nip.io</code> → <code>&lt;IP&gt;</code>, giving valid managed TLS with no domain registration. Swap in a real domain later by editing the <code>ManagedCertificate</code>, <code>Ingress</code>, and <code>oauth_callback_url</code>.</p>
+<p>Manifests live in <a href="../../deploy/expose"><code>deploy/expose/</code></a>.</p>
+<blockquote><strong>Current live deployment (project <code>hdlab-elideng</code>, region <code>us-central1</code>):</strong></blockquote>
+<blockquote>- vLLM: <strong><code>https://infer.136.69.110.10.nip.io</code></strong> (Part A below — already provisioned)</blockquote>
+<blockquote>- JupyterHub: <strong><code>https://jupyter.34.54.187.199.nip.io</code></strong> (Part B — awaiting the OAuth client step)</blockquote>
+<blockquote>- The vLLM API key lives in the <code>vllm-api-key</code> secret; retrieve it with:</blockquote>
+<blockquote>```bash</blockquote>
+<blockquote>kubectl -n inference get secret vllm-api-key -o jsonpath=&#x27;{.data.api-key}&#x27; | base64 -d; echo</blockquote>
+<blockquote>```</blockquote>
+<blockquote>Certs can take 10–60 min to go <strong>Active</strong> after first provisioning.</blockquote>
+<hr>
+<h2 id="prerequisites">Prerequisites</h2>
+<ul>
+<li>The stack from the <a href="02a-cluster-setup.html">deployment series</a> is running.</li>
+<li>You are on a Google <strong>Workspace / Cloud Identity</strong> org.</li>
+<li><code>gcloud</code>, <code>kubectl</code>, <code>helm</code> configured against the cluster.</li>
+<li>Roles to enable APIs, reserve IPs, configure OAuth, and run Helm.</li>
+</ul>
+<h2 id="one-time-setup-both-services">One-time setup (both services)</h2>
+<pre><code class="language-bash">
+gcloud services enable compute.googleapis.com container.googleapis.com --project hdlab-elideng
+
+# Reserve one global static IP per service, then read the addresses:
+gcloud compute addresses create vllm-lb-ip    --global --project hdlab-elideng
+gcloud compute addresses create jupyter-lb-ip --global --project hdlab-elideng
+VLLM_IP=$(gcloud compute addresses describe vllm-lb-ip    --global --format=&#x27;value(address)&#x27; --project hdlab-elideng)
+JUP_IP=$(gcloud compute addresses describe jupyter-lb-ip  --global --format=&#x27;value(address)&#x27; --project hdlab-elideng)
+echo &quot;vLLM host:  infer.${VLLM_IP}.nip.io&quot;
+echo &quot;Jupyter host: jupyter.${JUP_IP}.nip.io&quot;
+</code></pre>
+<hr>
+<h2 id="part-a--vllm-public-endpoint-api-key-gated">Part A — vLLM public endpoint (API-key gated)</h2>
+<pre><code class="language-bash">
+# 1. Create a strong API key secret
+kubectl -n inference create secret generic vllm-api-key \
+  --from-literal=api-key=&quot;$(openssl rand -hex 24)&quot;
+
+# 2. Add the key to the running deployment (vLLM then requires it on EVERY request,
+#    in-cluster and external). Re-apply the manifest, or patch in place:
+kubectl -n inference patch deploy qwen3-vllm --type=json \
+  -p=&#x27;[{&quot;op&quot;:&quot;add&quot;,&quot;path&quot;:&quot;/spec/template/spec/containers/0/env/-&quot;,&quot;value&quot;:{&quot;name&quot;:&quot;VLLM_API_KEY&quot;,&quot;valueFrom&quot;:{&quot;secretKeyRef&quot;:{&quot;name&quot;:&quot;vllm-api-key&quot;,&quot;key&quot;:&quot;api-key&quot;}}}}]&#x27;
+kubectl -n inference rollout status deploy/qwen3-vllm
+
+# 3. Swap the internal LB for a ClusterIP+NEG Service and add the HTTPS Ingress
+kubectl apply -f deploy/expose/vllm-service.yaml          # replaces vllm-service-internal
+kubectl apply -f deploy/expose/vllm-backendconfig.yaml
+kubectl apply -f deploy/expose/vllm-frontendconfig.yaml
+sed &quot;s/&lt;INFER_LB_IP&gt;/${VLLM_IP}/g&quot; deploy/expose/vllm-managedcert.yaml | kubectl apply -f -
+kubectl apply -f deploy/expose/vllm-ingress.yaml
+</code></pre>
+<p><strong>Verify</strong> (once the cert is Active):</p>
+<pre><code class="language-bash">
+kubectl -n inference get managedcertificate vllm-cert -o jsonpath=&#x27;{.status.certificateStatus}&#x27;; echo
+KEY=$(kubectl -n inference get secret vllm-api-key -o jsonpath=&#x27;{.data.api-key}&#x27; | base64 -d)
+curl -s https://infer.${VLLM_IP}.nip.io/v1/models -H &quot;Authorization: Bearer $KEY&quot;
+</code></pre>
+<blockquote>⚠️ <strong>Enabling the key changes existing behavior:</strong> in-cluster callers (JupyterHub notebooks) that previously used <code>api_key=&quot;none&quot;</code> now get <strong>401</strong> and must send the real key. The user guides have been updated accordingly.</blockquote>
+<hr>
+<h2 id="part-b--jupyterhub-public-ui-google-sign-in">Part B — JupyterHub public UI (Google sign-in)</h2>
+<h3 id="b1-oauth-consent-screen-one-time-console">B1. OAuth consent screen (one-time, console)</h3>
+<p>Console → <strong>APIs &amp; Services → OAuth consent screen</strong> → User type <strong>Internal</strong> (your Workspace org) → set app name + support email → Save.</p>
+<h3 id="b2-create-an-oauth-20-web-client-console">B2. Create an OAuth 2.0 Web client (console)</h3>
+<p>Console → <strong>APIs &amp; Services → Credentials → Create credentials → OAuth client ID → Web application</strong>. Add this <strong>Authorized redirect URI</strong> (use your reserved Jupyter IP):</p>
+<pre><code class="language-">
+https://jupyter.&lt;JUPYTER_LB_IP&gt;.nip.io/hub/oauth_callback
+</code></pre>
+<p>Note the generated <strong>Client ID</strong> and <strong>Client secret</strong>.</p>
+<h3 id="b3-fill-in-the-values-overlay">B3. Fill in the values overlay</h3>
+<pre><code class="language-bash">
+export WORKSPACE_DOMAIN=yourco.com     # your Workspace domain
+sed -i \
+  -e &quot;s/&lt;JUPYTER_LB_IP&gt;/${JUP_IP}/g&quot; \
+  -e &quot;s/&lt;WORKSPACE_DOMAIN&gt;/${WORKSPACE_DOMAIN}/g&quot; \
+  deploy/expose/jupyter-values-public.yaml deploy/expose/jupyter-managedcert.yaml
+</code></pre>
+<p>Then edit <code>deploy/expose/jupyter-values-public.yaml</code> and paste the <strong>Client ID / Client secret</strong> from B2 into the <code>GoogleOAuthenticator</code> block. (For real deployments, prefer a Kubernetes secret / <code>--set</code> over committing them.)</p>
+<h3 id="b4-apply">B4. Apply</h3>
+<pre><code class="language-bash">
+kubectl apply -f deploy/expose/jupyter-backendconfig.yaml
+kubectl apply -f deploy/expose/jupyter-frontendconfig.yaml
+kubectl apply -f deploy/expose/jupyter-managedcert.yaml
+
+# Reconfigure JupyterHub: ClusterIP proxy + GoogleOAuthenticator (overlay on base values)
+helm upgrade jhub jupyterhub/jupyterhub --namespace jupyter --version 4.4.0 \
+  -f deploy/jupyter/values.yaml \
+  -f deploy/expose/jupyter-values-public.yaml \
+  --timeout 10m
+
+kubectl apply -f deploy/expose/jupyter-ingress.yaml
+</code></pre>
+<h3 id="b5-verify">B5. Verify</h3>
+<pre><code class="language-bash">
+kubectl -n jupyter get managedcertificate jupyter-cert -o jsonpath=&#x27;{.status.certificateStatus}&#x27;; echo
+kubectl -n jupyter get ingress jupyter-ingress
+</code></pre>
+<p>Browse to <code>https://jupyter.&lt;JUPYTER_LB_IP&gt;.nip.io</code> → &quot;Sign in with Google&quot; → only <code>@&lt;WORKSPACE_DOMAIN&gt;</code> accounts are allowed → profile page.</p>
+<h3 id="managing-who-has-access">Managing who has access</h3>
+<p>Access is anyone in <code>hosted_domain</code>. To restrict further, set <code>allow_all: false</code> and list <code>allowed_users</code> in <code>jupyter-values-public.yaml</code>, then re-run the <code>helm upgrade</code>.</p>
+<hr>
+<h2 id="security-notes--gotchas">Security notes &amp; gotchas</h2>
+<ul>
+<li><strong>Managed-cert provisioning isn&#x27;t instant</strong> (10–60 min). It needs the Ingress live with the static IP attached; nip.io resolves immediately. If stuck <code>Provisioning</code> &gt;1 hour, confirm the Ingress has the reserved IP.</li>
+<li><strong>vLLM is public with only an API key.</strong> Rotate it if it leaks (<code>kubectl create secret ... --dry-run=client -o yaml | kubectl apply -f -</code>, then <code>kubectl rollout restart deploy/qwen3-vllm</code>). For stronger protection add <strong><a href="https://cloud.google.com/armor">Cloud Armor</a></strong> (IP allowlist / rate limiting) to <code>vllm-backendconfig.yaml</code> via a <code>securityPolicy</code>.</li>
+<li><strong>JupyterHub has no IAP layer</strong> — the gate is GoogleOAuthenticator&#x27;s <code>hosted_domain</code>. That is real, domain-restricted auth; just be sure <code>hosted_domain</code> is set so it&#x27;s not open to any Google account.</li>
+<li><strong>The GPU node is DWS Flex-Start (7-day cap).</strong> LBs and certs stay up across node rotation, but the vLLM/notebook <strong>backends</strong> go unavailable while the node is replaced (see <a href="02e-verify-teardown.html#step-10-node-rotation-and-the-7-day-expiry">Part 5 — node rotation</a>) — expect 502s during that window.</li>
+</ul>
+<h2 id="revert-to-internal-only">Revert to internal-only</h2>
+<pre><code class="language-bash">
+kubectl delete -f deploy/expose/jupyter-ingress.yaml -f deploy/expose/vllm-ingress.yaml
+kubectl delete -f deploy/expose/jupyter-managedcert.yaml
+kubectl delete managedcertificate vllm-cert -n inference
+kubectl apply  -f deploy/inference/vllm-service-internal.yaml
+helm upgrade jhub jupyterhub/jupyterhub -n jupyter --version 4.4.0 -f deploy/jupyter/values.yaml --timeout 10m
+gcloud compute addresses delete jupyter-lb-ip vllm-lb-ip --global --project hdlab-elideng
+</code></pre>
+<hr>
+<p><strong>Related:</strong> <a href="01-architecture.html">Architecture Reference</a> · <a href="02a-cluster-setup.html">Deployment series</a> · <a href="03-inference-endpoint-user-guide.html">Inference User Guide</a> · <a href="04-jupyter-notebook-user-guide.html">Jupyter User Guide</a> · <a href="appendix-glossary.html">Glossary</a></p>
+</body>
+</html>

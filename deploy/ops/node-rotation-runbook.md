@@ -3,6 +3,8 @@
 ## Overview
 DWS Flex-Start A3 nodes have a 7-day lifetime. This runbook documents the **single-replica reschedule** continuity path for node rotation — the model cache PVC (ReadWriteOnce) reattaches in the same zone with a brief serving gap during replacement node provisioning.
 
+> **User-facing version:** the same 7-day expiry / node-rotation topic is covered for operators in [docs/guides/02e-verify-teardown.md](../../docs/guides/02e-verify-teardown.md) (Step 10).
+
 ## Procedure (Single-Replica Reschedule)
 
 **Supported continuity path:** When the node expires or is lost, the Deployment recreates the pod and the ReadWriteOnce PD **reattaches in the same zone** with the model cache intact — a **brief serving gap** while the replacement node provisions (DWS-queued, capacity-permitting). This is **continuity, not zero-downtime.**

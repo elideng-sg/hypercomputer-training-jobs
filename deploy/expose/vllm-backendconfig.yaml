@@ -1,0 +1,11 @@
+# NO IAP for the inference backend - it is gated by the vLLM --api-key instead
+# (so the OpenAI client works unchanged over HTTPS).
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: vllm-backendconfig
+  namespace: inference
+spec:
+  healthCheck:
+    type: HTTP
+    requestPath: /health

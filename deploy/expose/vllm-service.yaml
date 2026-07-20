@@ -1,0 +1,16 @@
+# Public-exposure variant of the vLLM Service: ClusterIP behind the Ingress
+# (with NEG for container-native LB). Apply INSTEAD OF
+# deploy/inference/vllm-service-internal.yaml (same name -> replaces it).
+apiVersion: v1
+kind: Service
+metadata:
+  name: qwen3-vllm
+  namespace: inference
+  annotations:
+    cloud.google.com/neg: '{"ingress": true}'
+    cloud.google.com/backend-config: '{"default":"vllm-backendconfig"}'
+spec:
+  type: ClusterIP
+  selector: { app: qwen3-vllm }
+  ports:
+  - { port: 8000, targetPort: 8000, protocol: TCP }

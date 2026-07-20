@@ -1,0 +1,8 @@
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: jupyter-cert
+  namespace: jupyter
+spec:
+  domains:
+  - "jupyter.<JUPYTER_LB_IP>.nip.io"   # nip.io resolves this host -> the LB IP

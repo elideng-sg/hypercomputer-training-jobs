@@ -23,6 +23,10 @@ This documentation covers the complete setup, deployment, and operation of a GKE
 - **[Inference Endpoint User Guide](guides/03-inference-endpoint-user-guide.md)** — Use the vLLM-powered Qwen3-32B endpoint: API reference, request examples, troubleshooting.
 - **[Jupyter Notebook User Guide](guides/04-jupyter-notebook-user-guide.md)** — Launch and use GPU-powered Jupyter notebooks: profile selection, GPU usage, calling the inference endpoint, tips & limitations.
 
+### 4. Share it with a team
+
+- **[Remote Access — HTTPS + IAP](guides/05-remote-access-iap.md)** — Expose JupyterHub and the vLLM endpoint to teammates who can't reach your VPC directly: external HTTPS load balancers, Identity-Aware Proxy (Google sign-in) for the notebook UI, and an API key for the inference endpoint. No VPN, no `kubectl` for users.
+
 ### Reference
 
 - **[Glossary appendix](guides/appendix-glossary.md)** — Plain-language definitions of every term (GPU, GKE, pod, DWS, tensor parallelism, …). The guides link here on first use of each term.

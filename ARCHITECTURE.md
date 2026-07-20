@@ -2,6 +2,8 @@
 
 This document defines the physical hardware architecture and network topologies of our **Google Cloud AI Hypercomputer (`a3-highgpu-8g`)** deployment across Google Kubernetes Engine (GKE). It specifically illustrates how multi-GPU distributed workloads achieve low-latency communication via **internal NVLink / NVSwitch crossbars** and **GPUDirect multi-NIC line-rate mesh networks**.
 
+> **Scope:** this covers the multi-GPU *training / verification* subsystem. For the GKE + H100 **inference (Qwen3-32B via vLLM)** and **JupyterHub notebook** platform on the same cluster — including remote access over HTTPS — see **[docs/README.md](docs/README.md)**.
+
 ---
 
 ## 1. End-to-End Cluster Network Fabric Topology
@@ -11,13 +13,13 @@ Our architecture minimizes client access complexity into a simplified API entryp
 ```mermaid
 graph TB
     subgraph Access ["Simplified User & Control Access"]
-        Client["Developer Workstation / API Script"] -->|HTTPS REST / OAuth Token| CP["GKE Master Control Plane (1.36 | Channel: None)"]
+        Client["Developer Workstation / API Script"] -->|HTTPS REST / OAuth Token| CP["GKE Master Control Plane (1.34.8-gke.1278000 | Channel: None)"]
     end
 
     subgraph ClusterMesh ["AI Hypercomputer High-Performance Network Fabric (us-east4-a/b/c)"]
         subgraph Node1 ["A3 High-GPU Compute Node 1 (a3-highgpu-8g | COS 121)"]
             subgraph Host1 ["Host Compute Sub-System"]
-                CPU1["64x vCPUs & 384GiB RAM"] --- SHM1["128GiB Shared IPC Mount (/dev/shm)"]
+                CPU1["64x vCPUs & 384GiB RAM"] --- SHM1["64GiB Shared IPC Mount (/dev/shm)"]
             end
             
             subgraph NVLink_Mesh1 ["Intra-Node NVLink Fabric & NVSwitch Array (900 GB/s Bidirectional per GPU)"]
@@ -140,7 +142,7 @@ sequenceDiagram
     Dev->>API: POST ConfigMap verification-source-map (train_benchmark_fp8.py)
     Dev->>API: POST batch/v1 Job (gcp-ai-hypercomputer-verification)
     API->>Pool: Instantiate Pod on available H100 node across us-east4-a/b/c
-    Pool->>Fabric: Mount /dev/shm (128Gi) & attach 8x H100 NVSwitches
+    Pool->>Fabric: Mount /dev/shm (64Gi) & attach 8x H100 NVSwitches
     Fabric->>Fabric: Execute torchrun distributed training & ring all-reduce benchmarks
     Dev->>API: Stream diagnostics over HTTP HTTPS GET (/pods/name/log)
     API-->>Dev: Return live NCCL timing traces & JSON precision reports to local logs/
@@ -156,5 +158,5 @@ sequenceDiagram
 | **`--enable-gvnic`** | `gcloud container node-pools create` | Activates hardware line-rate Google Virtual NICs (`gVNIC`), delivering maximum packet rates required for multi-node inter-node scaling. |
 | **`NCCL_NET_GDR_LEVEL=5`** | `a3_a4_verification_job.yaml` Container Env | Instructs NVIDIA NCCL to use GPUDirect RDMA across direct PCIe-to-network pathways, totally bypassing host CPU RAM copies during cluster exchanges. |
 | **`NCCL_ALGORITHM=RING`** | `a3_a4_verification_job.yaml` Container Env | Enforces deterministic ring gradient summation protocols perfectly mirroring the circular physical NVSwitch interlock topology. |
-| **`128Gi /dev/shm` (In-Memory `emptyDir`)** | `a3_a4_verification_job.yaml` Spec Volumes | Mounts a 128 GiB POSIX tmpfs ramdisk across all 8 training sub-processes (`torchrun --nproc_per_node=8`), ensuring local IPC data tensor transfers never crash out-of-memory. |
+| **`64Gi /dev/shm` (In-Memory `emptyDir`)** | `a3_a4_verification_job.yaml` Spec Volumes | Mounts a 64 GiB POSIX tmpfs ramdisk across all 8 training sub-processes (`torchrun --nproc_per_node=8`), ensuring local IPC data tensor transfers never crash out-of-memory. |
 | **`--node-version=1.33.13-gke.1101000`** | `gcloud container node-pools create` | Guarantees **Container-Optimized OS (COS) 121**, which maintains validated NVIDIA LTSB device drivers fully certified for stable `gVNIC` multi-NIC throughput without packet drops. |

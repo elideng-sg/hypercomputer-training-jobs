@@ -1,0 +1,11 @@
+# No IAP: JupyterHub is gated by GoogleOAuthenticator (domain-restricted) inside
+# the hub itself. This BackendConfig just tunes the LB health check to hit the hub.
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: jupyter-backendconfig
+  namespace: jupyter
+spec:
+  healthCheck:
+    type: HTTP
+    requestPath: /hub/health

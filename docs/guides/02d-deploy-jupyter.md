@@ -6,7 +6,9 @@
 
 **Part 4 of the deployment series.** Assumes the GPU node from [Part 2](02b-gpu-nodepool-dws.md) is running (the inference service from [Part 3](02c-deploy-inference.md) is recommended but not strictly required for this part).
 
-This part installs **[JupyterHub](appendix-glossary.md#jupyterhub)** via Helm with a CPU profile and a GPU profile, so users can launch notebooks that land on the A3 node and request an H100.
+This part installs **[JupyterHub](appendix-glossary.md#jupyterhub)** via Helm with a CPU profile and a GPU profile, so users can launch notebooks that land on the A3 node and request an H100. It uses `DummyAuthenticator` (demo password) on an internal LB as the base.
+
+> For team access — public HTTPS + **Google sign-in** instead of the demo password — do this base install first, then follow **[Remote Access](05-remote-access-iap.md)**, which swaps in `GoogleOAuthenticator` and a public Ingress.
 
 ---
 

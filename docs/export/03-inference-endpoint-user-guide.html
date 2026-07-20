@@ -386,25 +386,25 @@
 <li><strong>Model served:</strong> <code>Qwen/Qwen3-32B</code> (from Hugging Face, ungated)</li>
 <li><strong>Model name to use in API calls:</strong> <code>qwen3-32b</code></li>
 <li><strong>API compatibility:</strong> OpenAI-compatible <code>/v1/chat/completions</code> and <code>/v1/models</code> endpoints</li>
-<li><strong>Internal load balancer IP:</strong> <code>10.128.0.43:8000</code></li>
-<li><strong>In-cluster DNS name:</strong> <code>qwen3-vllm.inference.svc.cluster.local:8000</code></li>
+<li><strong>Public endpoint (HTTPS):</strong> <code>https://infer.136.69.110.10.nip.io/v1</code></li>
+<li><strong>In-cluster DNS name:</strong> <code>qwen3-vllm.inference.svc.cluster.local:8000</code> (for notebooks/pods in the cluster)</li>
 <li><strong>Maximum context length:</strong> 32,768 tokens</li>
-<li><strong>API key:</strong> Not required (vLLM ignores the <code>api_key</code> field by default; use <code>&quot;none&quot;</code> or any placeholder)</li>
+<li><strong>API key: REQUIRED.</strong> Every request must carry <code>Authorization: Bearer &lt;key&gt;</code> (OpenAI client: <code>api_key=&quot;&lt;key&gt;&quot;</code>). <strong>Ask your admin for the key</strong> — it&#x27;s stored in the <code>vllm-api-key</code> Kubernetes secret.</li>
 </ul>
-<h3 id="important-vpc-internal-only">Important: VPC-internal only</h3>
-<p>The endpoint is <strong>not publicly accessible</strong>. It uses an internal load balancer, so you can only reach it from:</p>
+<h3 id="access">Access</h3>
+<p>The endpoint is reachable two ways, both requiring the API key:</p>
 <ul>
-<li>Inside the VPC (from a VM, container, or service in the same GCP network)</li>
-<li>From a Jupyter notebook running in-cluster (see <a href="#8-using-from-a-jupyter-notebook">Section 8</a>)</li>
-<li>From your laptop via <code>kubectl port-forward</code> (see <a href="#2-how-to-reach-the-endpoint">Section 2</a>)</li>
+<li><strong>Public HTTPS (for the team):</strong> <code>https://infer.136.69.110.10.nip.io/v1</code> — works from anywhere, no VPC access or <code>kubectl</code> needed.</li>
+<li><strong>In-cluster:</strong> notebooks and pods use the DNS name <code>qwen3-vllm.inference.svc.cluster.local:8000</code> (see <a href="#8-using-from-a-jupyter-notebook">Section 8</a>).</li>
 </ul>
 <hr>
 <h2 id="2-how-to-reach-the-endpoint">2. How to Reach the Endpoint</h2>
-<h3 id="a-from-inside-the-vpc">(a) From inside the VPC</h3>
-<p>If you&#x27;re running on a VM or container inside the VPC, use the load balancer IP directly:</p>
+<h3 id="a-public-https-endpoint-recommended-for-the-team">(a) Public HTTPS endpoint (recommended, for the team)</h3>
+<p>From anywhere — no VPC access or <code>kubectl</code> needed. Use the HTTPS URL plus the API key:</p>
 <pre><code class="language-">
-http://10.128.0.43:8000
+https://infer.136.69.110.10.nip.io/v1
 </code></pre>
+<p>Every request must include <code>Authorization: Bearer &lt;API_KEY&gt;</code> (the OpenAI client sends this automatically when you set <code>api_key</code>). Get the key from your admin.</p>
 <h3 id="b-from-a-jupyter-notebook-in-cluster">(b) From a Jupyter notebook in-cluster</h3>
 <p>Notebooks running in the JupyterHub environment (namespace <code>jupyter</code>) can use the in-cluster DNS name:</p>
 <pre><code class="language-">
@@ -427,7 +427,8 @@ gcloud container clusters get-credentials hypercomputer-a3-cluster \
 <h2 id="3-list-available-models">3. List Available Models</h2>
 <p>To see the model(s) served by the endpoint:</p>
 <pre><code class="language-bash">
-curl http://10.128.0.43:8000/v1/models
+curl https://infer.136.69.110.10.nip.io/v1/models \
+  -H &quot;Authorization: Bearer $VLLM_API_KEY&quot;
 </code></pre>
 <p><strong>Sample output:</strong></p>
 <pre><code class="language-json">
@@ -450,7 +451,8 @@ curl http://10.128.0.43:8000/v1/models
 <h2 id="4-chat-completion-with-curl">4. Chat Completion with curl</h2>
 <h3 id="basic-request">Basic request</h3>
 <pre><code class="language-bash">
-curl http://10.128.0.43:8000/v1/chat/completions \
+curl https://infer.136.69.110.10.nip.io/v1/chat/completions \
+  -H &quot;Authorization: Bearer $VLLM_API_KEY&quot; \
   -H &#x27;Content-Type: application/json&#x27; \
   -d &#x27;{
     &quot;model&quot;: &quot;qwen3-32b&quot;,
@@ -494,10 +496,11 @@ pip install openai
 <pre><code class="language-python">
 from openai import OpenAI
 
-# Initialize the client (use localhost:8000 if port-forwarding from your laptop)
+# Public HTTPS endpoint + API key (ask your admin for the key)
+import os
 client = OpenAI(
-    base_url=&quot;http://10.128.0.43:8000/v1&quot;,
-    api_key=&quot;none&quot;  # vLLM ignores this; required by SDK but any value works
+    base_url=&quot;https://infer.136.69.110.10.nip.io/v1&quot;,
+    api_key=os.environ[&quot;VLLM_API_KEY&quot;],   # or paste the key string directly
 )
 
 # Send a chat completion request
@@ -568,8 +571,8 @@ print(response.choices[0].message.content)
 from openai import OpenAI
 
 client = OpenAI(
-    base_url=&quot;http://10.128.0.43:8000/v1&quot;,
-    api_key=&quot;none&quot;
+    base_url=&quot;https://infer.136.69.110.10.nip.io/v1&quot;,
+    api_key=os.environ[&quot;VLLM_API_KEY&quot;],
 )
 
 stream = client.chat.completions.create(
@@ -675,7 +678,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url=&quot;http://qwen3-vllm.inference.svc.cluster.local:8000/v1&quot;,
-    api_key=&quot;none&quot;
+    api_key=os.environ[&quot;VLLM_API_KEY&quot;]   # required now; ask your admin for the key
 )
 
 response = client.chat.completions.create(
@@ -696,7 +699,7 @@ requests.exceptions.ConnectionError: (&#x27;Connection aborted.&#x27;, Connectio
 </code></pre>
 <p>or</p>
 <pre><code class="language-">
-curl: (7) Failed to connect to 10.128.0.43 port 8000: Connection refused
+curl: (7) Failed to connect to infer.136.69.110.10.nip.io port 443: Connection refused
 </code></pre>
 <p><strong>Possible causes and fixes:</strong></p>
 <table>
@@ -707,21 +710,25 @@ curl: (7) Failed to connect to 10.128.0.43 port 8000: Connection refused
 </tr></thead>
 <tbody>
 <tr>
-<td>You&#x27;re outside the VPC</td>
-<td>Check if you&#x27;re on a laptop or external machine</td>
-<td>Use <code>kubectl port-forward</code> (see <a href="#c-from-your-laptop-outside-the-vpc">Section 2c</a>)</td>
+<td>Wrong URL</td>
+<td>Verify you&#x27;re using <code>https://infer.136.69.110.10.nip.io/v1</code> (public) or <code>qwen3-vllm.inference.svc.cluster.local:8000</code> (in-cluster)</td>
+<td>Double-check the base URL in your code</td>
+</tr>
+<tr>
+<td>TLS cert not ready yet</td>
+<td><code>curl -v</code> shows a certificate error</td>
+<td>The Google-managed cert can take 10–60 min after first setup; retry, or ask your admin to check <code>managedcertificate vllm-cert</code></td>
 </tr>
 <tr>
 <td>vLLM pod is down</td>
-<td><code>kubectl -n inference get pods -l app=qwen3-vllm</code></td>
-<td>Wait for pod to become <code>Running</code> and <code>Ready</code>, or check pod logs: <code>kubectl -n inference logs -l app=qwen3-vllm</code></td>
-</tr>
-<tr>
-<td>Wrong IP or port</td>
-<td>Verify you&#x27;re using <code>10.128.0.43:8000</code> (inside VPC) or <code>localhost:8000</code> (with port-forward)</td>
-<td>Double-check the URL in your code</td>
+<td>(Admin) <code>kubectl -n inference get pods -l app=qwen3-vllm</code></td>
+<td>Wait for the pod to be <code>Running</code>/<code>Ready</code>; across the 7-day node rotation expect brief unavailability</td>
 </tr>
 </tbody></table>
+<h3 id="problem-401-unauthorized">Problem: 401 Unauthorized</h3>
+<p><strong>Symptom:</strong> <code>{&quot;error&quot;:{&quot;message&quot;:&quot;...&quot;,&quot;code&quot;:401}}</code> or an HTTP 401.</p>
+<p><strong>Cause:</strong> Missing or wrong API key — the endpoint now <strong>requires</strong> one.</p>
+<p><strong>Fix:</strong> Send <code>Authorization: Bearer &lt;key&gt;</code> (OpenAI client: set <code>api_key</code>). Get the key from your admin (it lives in the <code>vllm-api-key</code> secret). Example: <code>export VLLM_API_KEY=&lt;key&gt;</code> then retry.</p>
 <h3 id="problem-model-not-found-or-404-error">Problem: &quot;Model not found&quot; or 404 error</h3>
 <p><strong>Symptoms:</strong></p>
 <pre><code class="language-json">
@@ -792,6 +799,6 @@ messages = [
 </ul>
 <hr>
 <p><strong>Document version:</strong> 2026-07-20</p>
-<p><strong>Endpoint details:</strong> vLLM v0.8.4 serving Qwen3-32B at <code>10.128.0.43:8000</code> (internal LB, VPC-only access)</p>
+<p><strong>Endpoint details:</strong> vLLM v0.8.4 serving Qwen3-32B at <code>https://infer.136.69.110.10.nip.io/v1</code> (public HTTPS, API-key gated). In-cluster: <code>qwen3-vllm.inference.svc.cluster.local:8000</code>.</p>
 </body>
 </html>
