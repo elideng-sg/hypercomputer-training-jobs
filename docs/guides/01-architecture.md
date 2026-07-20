@@ -9,13 +9,14 @@
 1. A **[Qwen3-32B](appendix-glossary.md#qwen3-32b) inference endpoint** served by [vLLM](appendix-glossary.md#vllm) on NVIDIA [H100](appendix-glossary.md#h100) GPUs
 2. A **[JupyterHub](appendix-glossary.md#jupyterhub)** environment where users can launch GPU-powered notebooks
 3. All infrastructure running on [Google Kubernetes Engine (GKE)](appendix-glossary.md#gke) with [Dynamic Workload Scheduler (DWS)](appendix-glossary.md#dws-flex-start) provisioned GPUs
+4. **Team access** to both services over public HTTPS — vLLM via an API key, JupyterHub via Google sign-in (see [Remote Access](05-remote-access-iap.md))
 
 **How to read this guide:**
 
 - **Sections 1–2** give the high-level architecture: what the system is and how the GKE stack is layered.
 - **Section 3** explains how the scarce GPU node is obtained (DWS Flex-Start).
-- **Sections 4–6** cover the two workloads (inference, notebooks) and how they share the GPUs.
-- **Section 7** points to the step-by-step deployment and user guides.
+- **Sections 4–6** cover the two workloads (inference and notebooks), how each is reached — including the public HTTPS endpoints the team uses — and how they share the GPUs.
+- **Section 7** points onward: the step-by-step deployment series, the user guides, and the remote-access setup.
 
 ---
 
