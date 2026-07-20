@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Remote Access — Expose JupyterHub &amp;amp; vLLM to the Team via HTTPS + IAP</title>
+    <style>
+        body {
+            font-family: 'Arial', 'Helvetica', sans-serif;
+            font-size: 11pt;
+            line-height: 1.6;
+            color: #202124;
+            max-width: 8.5in;
+            margin: 1in auto;
+            padding: 0 1rem;
+            background-color: #ffffff;
+        }
+
+        h1 {
+            color: #1a73e8;
+            font-size: 20pt;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 8px;
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: bold;
+        }
+
+        h2 {
+            color: #1a73e8;
+            font-size: 15pt;
+            margin-top: 22px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #eeeeee;
+            padding-bottom: 4px;
+            font-weight: bold;
+        }
+
+        h3 {
+            color: #202124;
+            font-size: 13pt;
+            margin-top: 18px;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        h4 {
+            color: #5f6368;
+            font-size: 11.5pt;
+            margin-top: 14px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        h5 {
+            color: #5f6368;
+            font-size: 10.5pt;
+            margin-top: 12px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        h6 {
+            color: #5f6368;
+            font-size: 10pt;
+            margin-top: 10px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        p {
+            margin-bottom: 10px;
+        }
+
+        pre {
+            background-color: #f8f9fa;
+            border: 1px solid #dadce0;
+            border-radius: 6px;
+            padding: 12px;
+            font-family: 'Courier New', 'Consolas', monospace;
+            font-size: 9.5pt;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin-bottom: 14px;
+            overflow-x: auto;
+        }
+
+        code {
+            background-color: #f1f3f4;
+            color: #d93025;
+            font-family: 'Courier New', 'Consolas', monospace;
+            font-size: 9.5pt;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+
+        pre code {
+            background-color: transparent;
+            color: #202124;
+            padding: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 18px;
+            font-size: 10pt;
+        }
+
+        th {
+            background-color: #e8f0fe;
+            color: #1a73e8;
+            border: 1px solid #dadce0;
+            padding: 10px;
+            text-align: left;
+            font-weight: bold;
+        }
+
+        td {
+            border: 1px solid #dadce0;
+            padding: 9px;
+            vertical-align: top;
+        }
+
+        ul, ol {
+            margin-top: 4px;
+            margin-bottom: 12px;
+            padding-left: 24px;
+        }
+
+        li {
+            margin-bottom: 6px;
+        }
+
+        a {
+            color: #1a73e8;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        blockquote {
+            border-left: 4px solid #dadce0;
+            padding-left: 12px;
+            color: #5f6368;
+            margin: 12px 0;
+        }
+
+        hr {
+            border: 0;
+            border-top: 1px solid #dadce0;
+            margin: 22px 0;
+        }
+
+        /* SVG styling for embedded diagrams */
+        svg {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 16px auto;
+        }
+
+        /* Alert/callout boxes */
+        .admonition {
+            border-left: 4px solid #ea4335;
+            background-color: #fce8e6;
+            padding: 12px;
+            margin: 14px 0;
+            border-radius: 0 4px 4px 0;
+        }
+    </style>
+</head>
+<body>
+<h1 id="remote-access--expose-jupyterhub--vllm-to-the-team-via-https--iap">Remote Access — Expose JupyterHub &amp; vLLM to the Team via HTTPS + IAP</h1>
+<p><strong>Audience:</strong> The cluster admin. This guide makes the JupyterHub UI and the vLLM inference endpoint reachable by teammates who <strong>cannot</strong> access your GCP project or VPC directly — with no VPN and no <code>kubectl</code>.</p>
+<blockquote><strong>New to the terminology?</strong> IAP, Ingress, LoadBalancer, and Service are defined in the <strong><a href="appendix-glossary.html">Glossary appendix</a></strong>.</blockquote>
+<h2 id="what-youll-build">What you&#x27;ll build</h2>
+<p>Two public <strong>external HTTPS Load Balancers</strong> (one per service, because a GKE Ingress can only target Services in its own namespace), each with a Google-managed TLS certificate:</p>
+<table>
+<thead><tr>
+<th>Service</th>
+<th>Namespace</th>
+<th>Public host (nip.io)</th>
+<th>Gate</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>JupyterHub UI</td>
+<td><code>jupyter</code></td>
+<td><code>jupyter.&lt;JUPYTER_LB_IP&gt;.nip.io</code></td>
+<td><strong>IAP</strong> (Google sign-in, IAM-controlled) + GoogleOAuthenticator</td>
+</tr>
+<tr>
+<td>vLLM inference API</td>
+<td><code>inference</code></td>
+<td><code>infer.&lt;INFER_LB_IP&gt;.nip.io</code></td>
+<td><strong>API key</strong> (<code>Authorization: Bearer &lt;key&gt;</code>)</td>
+</tr>
+</tbody></table>
+<ul>
+<li><strong>JupyterHub</strong> is gated by <strong><a href="https://cloud.google.com/iap/docs/concepts-overview">Identity-Aware Proxy (IAP)</a></strong>: teammates authenticate with their Google (Workspace) account and you control who gets in with a single IAM binding — no VPC access. The chart&#x27;s <code>DummyAuthenticator</code> is replaced with <code>GoogleOAuthenticator</code> (restricted to your Workspace domain) so each user gets a real identity and their own home directory.</li>
+<li><strong>vLLM</strong> is gated by a <strong>vLLM API key</strong> rather than IAP, so the OpenAI client works unchanged (IAP would require an OIDC-token wrapper). It&#x27;s still HTTPS-only.</li>
+</ul>
+<p><strong>Why nip.io:</strong> Google-managed certificates require a real, publicly-resolvable domain. <code>nip.io</code> is a free wildcard-DNS service where <code>anything.&lt;IP&gt;.nip.io</code> resolves to <code>&lt;IP&gt;</code> — so you get valid managed TLS without registering a domain. If you later get a real domain, just swap the hostnames in the <code>ManagedCertificate</code> and <code>Ingress</code>/<code>oauth_callback_url</code>.</p>
+<p>All manifests referenced below live in <a href="../../deploy/expose"><code>deploy/expose/</code></a>.</p>
+<hr>
+<h2 id="prerequisites">Prerequisites</h2>
+<ul>
+<li>The stack from the <a href="02a-cluster-setup.html">deployment series</a> is running (GKE cluster, GPU node, vLLM, JupyterHub on internal LBs).</li>
+<li>You are on a Google <strong>Workspace / Cloud Identity</strong> org (needed for domain-restricted access).</li>
+<li><code>gcloud</code> and <code>kubectl</code> configured against the cluster (project <code>hdlab-elideng</code>, region <code>us-central1</code>).</li>
+<li>Roles: <code>roles/owner</code> or equivalent (to enable APIs, configure IAP/OAuth, reserve IPs, set IAM).</li>
+</ul>
+<hr>
+<h2 id="step-1-enable-apis">Step 1: Enable APIs</h2>
+<pre><code class="language-bash">
+gcloud services enable iap.googleapis.com compute.googleapis.com --project hdlab-elideng
+</code></pre>
+<hr>
+<h2 id="step-2-configure-the-oauth-consent-screen-one-time">Step 2: Configure the OAuth consent screen (one-time)</h2>
+<p>IAP and GoogleOAuthenticator both need an <strong>OAuth consent screen</strong> (a &quot;brand&quot;) on the project.</p>
+<ol>
+<li>Console → <strong>APIs &amp; Services → OAuth consent screen</strong>.</li>
+<li>User type <strong>Internal</strong> (Workspace org — only your domain can consent). Set an app name and support email. Save.</li>
+</ol>
+<p><em>(This step is simplest in the console. <code>gcloud iap oauth-brands create</code> exists but is restricted; the console is the reliable path.)</em></p>
+<hr>
+<h2 id="step-3-reserve-static-ips-and-compute-your-hostnames">Step 3: Reserve static IPs and compute your hostnames</h2>
+<p>Each Ingress needs a <strong>global</strong> static IP. Reserve both, then read their addresses:</p>
+<pre><code class="language-bash">
+gcloud compute addresses create jupyter-lb-ip --global --project hdlab-elideng
+gcloud compute addresses create vllm-lb-ip    --global --project hdlab-elideng
+
+JUPYTER_LB_IP=$(gcloud compute addresses describe jupyter-lb-ip --global --format=&#x27;value(address)&#x27; --project hdlab-elideng)
+INFER_LB_IP=$(gcloud compute addresses describe vllm-lb-ip    --global --format=&#x27;value(address)&#x27; --project hdlab-elideng)
+echo &quot;JupyterHub host: jupyter.${JUPYTER_LB_IP}.nip.io&quot;
+echo &quot;vLLM host:       infer.${INFER_LB_IP}.nip.io&quot;
+</code></pre>
+<p>Substitute the placeholders in the manifests (and set your Workspace domain):</p>
+<pre><code class="language-bash">
+export WORKSPACE_DOMAIN=yourco.com     # &lt;-- your Workspace domain
+
+sed -i \
+  -e &quot;s/&lt;JUPYTER_LB_IP&gt;/${JUPYTER_LB_IP}/g&quot; \
+  -e &quot;s/&lt;INFER_LB_IP&gt;/${INFER_LB_IP}/g&quot; \
+  -e &quot;s/&lt;WORKSPACE_DOMAIN&gt;/${WORKSPACE_DOMAIN}/g&quot; \
+  deploy/expose/jupyter-values-iap.yaml \
+  deploy/expose/jupyter-managedcert.yaml \
+  deploy/expose/vllm-managedcert.yaml
+</code></pre>
+<hr>
+<h2 id="step-4-create-oauth-clients-and-secrets">Step 4: Create OAuth clients and secrets</h2>
+<p>You need <strong>two</strong> OAuth 2.0 clients (both under the consent screen from Step 2):</p>
+<p><strong>(a) IAP OAuth client</strong> — used by IAP to gate JupyterHub. Console → <strong>APIs &amp; Services → Credentials → Create OAuth client ID → Web application</strong>. Note the client ID/secret, then create the k8s secret:</p>
+<pre><code class="language-bash">
+kubectl -n jupyter create secret generic jupyter-iap-oauth \
+  --from-literal=client_id=&lt;IAP_OAUTH_CLIENT_ID&gt; \
+  --from-literal=client_secret=&lt;IAP_OAUTH_CLIENT_SECRET&gt;
+</code></pre>
+<p><strong>(b) JupyterHub&#x27;s own OAuth client</strong> — used by <code>GoogleOAuthenticator</code>. Create another <strong>Web application</strong> client. Add this <strong>Authorized redirect URI</strong>:</p>
+<pre><code class="language-">
+https://jupyter.&lt;JUPYTER_LB_IP&gt;.nip.io/hub/oauth_callback
+</code></pre>
+<p>Put its client ID/secret into <code>deploy/expose/jupyter-values-iap.yaml</code> (the <code>GoogleOAuthenticator</code> block; the <code>sed</code> in Step 3 already filled the callback URL and domain).</p>
+<p><strong>(c) vLLM API key</strong> — generate a strong key and store it:</p>
+<pre><code class="language-bash">
+kubectl -n inference create secret generic vllm-api-key \
+  --from-literal=api-key=&quot;$(openssl rand -base64 32)&quot;
+# print it once to share with the team (store it in your secrets manager):
+kubectl -n inference get secret vllm-api-key -o jsonpath=&#x27;{.data.api-key}&#x27; | base64 -d; echo
+</code></pre>
+<blockquote>The <code>*.secret.example.yaml</code> files in <code>deploy/expose/</code> are templates only — create the real secrets with the commands above; don&#x27;t commit real values.</blockquote>
+<hr>
+<h2 id="step-5-expose-vllm-api-key-gated">Step 5: Expose vLLM (API-key gated)</h2>
+<pre><code class="language-bash">
+# Roll the API key into the running deployment (adds the VLLM_API_KEY env)
+kubectl -n inference apply -f deploy/inference/vllm-deployment.yaml
+kubectl -n inference rollout status deploy/qwen3-vllm
+
+# Switch the Service from internal LB to ClusterIP+NEG, and add the Ingress stack
+kubectl apply -f deploy/expose/vllm-service.yaml        # replaces vllm-service-internal
+kubectl apply -f deploy/expose/vllm-backendconfig.yaml
+kubectl apply -f deploy/expose/vllm-frontendconfig.yaml
+kubectl apply -f deploy/expose/vllm-managedcert.yaml
+kubectl apply -f deploy/expose/vllm-ingress.yaml
+</code></pre>
+<hr>
+<h2 id="step-6-expose-jupyterhub-iap-gated">Step 6: Expose JupyterHub (IAP gated)</h2>
+<pre><code class="language-bash">
+# Apply the IAP secret + backend config + Ingress stack
+kubectl apply -f deploy/expose/jupyter-iap-oauth.secret.example.yaml   # only if you didn&#x27;t create it in Step 4
+kubectl apply -f deploy/expose/jupyter-backendconfig.yaml
+kubectl apply -f deploy/expose/jupyter-frontendconfig.yaml
+kubectl apply -f deploy/expose/jupyter-managedcert.yaml
+
+# Reconfigure JupyterHub: ClusterIP proxy + GoogleOAuthenticator (overlay on base values)
+helm upgrade jhub jupyterhub/jupyterhub --namespace jupyter --version 4.4.0 \
+  -f deploy/jupyter/values.yaml \
+  -f deploy/expose/jupyter-values-iap.yaml \
+  --timeout 10m
+
+kubectl apply -f deploy/expose/jupyter-ingress.yaml
+</code></pre>
+<hr>
+<h2 id="step-7-grant-the-team-access-iap-iam">Step 7: Grant the team access (IAP IAM)</h2>
+<p>Grant your team the <strong>IAP-secured Web App User</strong> role on the JupyterHub backend service. Simplest is a Google group:</p>
+<pre><code class="language-bash">
+# Find the backend service that IAP created for the Ingress
+gcloud compute backend-services list --global --project hdlab-elideng
+
+# Grant the group access to it
+gcloud iap web add-iam-policy-binding \
+  --resource-type=backend-services \
+  --service=&lt;JUPYTER_BACKEND_SERVICE_NAME&gt; \
+  --member=&quot;group:ai-team@${WORKSPACE_DOMAIN}&quot; \
+  --role=&quot;roles/iap.httpsResourceAccessor&quot; \
+  --project hdlab-elideng
+</code></pre>
+<p>Add/remove teammates by managing that group — no cluster changes needed. (The vLLM endpoint isn&#x27;t IAP-gated; you control its access by who holds the API key.)</p>
+<hr>
+<h2 id="step-8-wait-then-verify">Step 8: Wait, then verify</h2>
+<p>Managed certs and the LB take time to provision (<strong>typically 10–60 minutes</strong> the first time).</p>
+<pre><code class="language-bash">
+# Certs must reach Active
+kubectl -n jupyter get managedcertificate jupyter-cert -o jsonpath=&#x27;{.status.certificateStatus}&#x27;; echo
+kubectl -n inference get managedcertificate vllm-cert   -o jsonpath=&#x27;{.status.certificateStatus}&#x27;; echo
+
+# Ingress IPs should match the reserved addresses
+kubectl -n jupyter get ingress jupyter-ingress
+kubectl -n inference get ingress vllm-ingress
+</code></pre>
+<p><strong>Test vLLM</strong> (from anywhere, once the cert is Active):</p>
+<pre><code class="language-bash">
+curl https://infer.${INFER_LB_IP}.nip.io/v1/models \
+  -H &quot;Authorization: Bearer &lt;THE_API_KEY&gt;&quot;
+</code></pre>
+<p>Team members use the OpenAI client unchanged:</p>
+<pre><code class="language-python">
+from openai import OpenAI
+client = OpenAI(base_url=&quot;https://infer.&lt;INFER_LB_IP&gt;.nip.io/v1&quot;, api_key=&quot;&lt;THE_API_KEY&gt;&quot;)
+print(client.chat.completions.create(
+    model=&quot;qwen3-32b&quot;,
+    messages=[{&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;hi&quot;}], max_tokens=16).choices[0].message.content)
+</code></pre>
+<p><strong>Test JupyterHub:</strong> browse to <code>https://jupyter.&lt;JUPYTER_LB_IP&gt;.nip.io</code> → Google sign-in (IAP) → JupyterHub (GoogleOAuthenticator) → profile page.</p>
+<hr>
+<h2 id="security-notes--gotchas">Security notes &amp; gotchas</h2>
+<ul>
+<li><strong>Managed-cert provisioning is not instant</strong> — it needs the Ingress live with the static IP attached and the host resolving (nip.io resolves immediately). If it&#x27;s stuck <code>Provisioning</code> for &gt;1 hour, confirm the Ingress has the reserved IP and the domain resolves to it.</li>
+<li><strong>vLLM is public with only an API key.</strong> Rotate the key if it leaks. For stronger protection add <strong><a href="https://cloud.google.com/armor">Cloud Armor</a></strong> to the vLLM backend (IP allowlist and/or rate limiting) via a <code>securityPolicy</code> in <code>vllm-backendconfig.yaml</code>.</li>
+<li><strong>JupyterHub identity trust:</strong> IAP gates <em>access</em>; GoogleOAuthenticator establishes <em>identity</em>. Users may see two Google prompts (IAP then JupyterHub), usually seamless with an existing session. To collapse to true single sign-on you can instead trust IAP&#x27;s signed <code>X-Goog-IAP-JWT-Assertion</code> header in a custom authenticator — deferred here because it needs JWT verification in the hub image.</li>
+<li><strong>The GPU node is DWS Flex-Start (7-day cap).</strong> The LBs, IAP, and certs stay up across node rotation, but the vLLM/notebook <strong>backends</strong> go unavailable while the node is being replaced (see <a href="02e-verify-teardown.html#step-10-node-rotation-and-the-7-day-expiry">Part 5 — node rotation</a>). Expect 502s during that window.</li>
+<li><strong>Don&#x27;t leave both an internal LB and the public Ingress on the same Service</strong> — <code>vllm-service.yaml</code> replaces <code>vllm-service-internal.yaml</code> (same name).</li>
+</ul>
+<h2 id="revert-to-internal-only">Revert to internal-only</h2>
+<pre><code class="language-bash">
+kubectl delete -f deploy/expose/jupyter-ingress.yaml -f deploy/expose/vllm-ingress.yaml
+kubectl delete -f deploy/expose/jupyter-managedcert.yaml -f deploy/expose/vllm-managedcert.yaml
+kubectl apply  -f deploy/inference/vllm-service-internal.yaml          # back to internal LB
+helm upgrade jhub jupyterhub/jupyterhub -n jupyter --version 4.4.0 \
+  -f deploy/jupyter/values.yaml --timeout 10m                          # base values (internal LB, no IAP)
+gcloud compute addresses delete jupyter-lb-ip vllm-lb-ip --global --project hdlab-elideng
+</code></pre>
+<hr>
+<p><strong>Related:</strong> <a href="01-architecture.html">Architecture Reference</a> · <a href="02a-cluster-setup.html">Deployment series</a> · <a href="03-inference-endpoint-user-guide.html">Inference User Guide</a> · <a href="04-jupyter-notebook-user-guide.html">Jupyter User Guide</a> · <a href="appendix-glossary.html">Glossary</a></p>
+</body>
+</html>

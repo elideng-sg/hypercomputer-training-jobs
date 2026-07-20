@@ -1,0 +1,15 @@
+# IAP ON for JupyterHub. References the IAP OAuth client secret (see
+# jupyter-iap-oauth.secret.example.yaml). Health check hits the hub.
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: jupyter-iap-backendconfig
+  namespace: jupyter
+spec:
+  iap:
+    enabled: true
+    oauthclientCredentials:
+      secretName: jupyter-iap-oauth
+  healthCheck:
+    type: HTTP
+    requestPath: /hub/health

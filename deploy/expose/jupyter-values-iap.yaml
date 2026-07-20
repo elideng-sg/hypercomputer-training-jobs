@@ -1,0 +1,29 @@
+# Helm values OVERLAY for exposing JupyterHub via a public HTTPS LB + IAP.
+# Apply on top of the base values:
+#   helm upgrade jhub jupyterhub/jupyterhub -n jupyter --version 4.4.0 \
+#     -f deploy/jupyter/values.yaml -f deploy/expose/jupyter-values-iap.yaml
+#
+# This turns the proxy Service into a ClusterIP behind the GKE Ingress (IAP does
+# the org-level Google sign-in at the edge) and replaces DummyAuthenticator with
+# GoogleOAuthenticator restricted to your Workspace domain (per-user identity +
+# home dirs). See docs/guides/05-remote-access-iap.md.
+hub:
+  config:
+    JupyterHub:
+      authenticator_class: google
+    GoogleOAuthenticator:
+      # Its OWN OAuth client (separate from the IAP OAuth client). Callback must
+      # match the nip.io host below and be registered on the client.
+      client_id: "<JUPYTER_OAUTH_CLIENT_ID>"
+      client_secret: "<JUPYTER_OAUTH_CLIENT_SECRET>"
+      oauth_callback_url: "https://jupyter.<JUPYTER_LB_IP>.nip.io/hub/oauth_callback"
+      hosted_domain:
+        - "<WORKSPACE_DOMAIN>"     # e.g. yourco.com  -> only this domain may log in
+      login_service: "Google"
+      allow_all: true              # allow any user within hosted_domain
+proxy:
+  service:
+    type: ClusterIP               # was Internal LoadBalancer; now behind the Ingress
+    annotations:
+      cloud.google.com/neg: '{"ingress": true}'
+      cloud.google.com/backend-config: '{"default":"jupyter-iap-backendconfig"}'

@@ -20,6 +20,13 @@ spec:
         env:
         - { name: HF_HOME, value: /hf-cache }
         # HF token not required - Qwen3-32B is ungated
+        # API key for the OpenAI-compatible server. Optional: when the secret is
+        # absent (internal-only deploy) vLLM runs unauthenticated as before. When
+        # present (public exposure, see deploy/expose/), clients must send it as
+        # `Authorization: Bearer <key>` / OpenAI client api_key=<key>.
+        - name: VLLM_API_KEY
+          valueFrom:
+            secretKeyRef: { name: vllm-api-key, key: api-key, optional: true }
         ports: [{ containerPort: 8000 }]
         resources:
           limits: { nvidia.com/gpu: "2", cpu: "24", memory: "200Gi" }

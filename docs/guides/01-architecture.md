@@ -460,6 +460,10 @@ This architecture guide provides the foundation for understanding the system. To
 - **[Inference Endpoint User Guide](03-inference-endpoint-user-guide.md)** — How to use the vLLM inference API (curl, Python, streaming, error handling)
 - **[Jupyter Notebook User Guide](04-jupyter-notebook-user-guide.md)** — How to log into JupyterHub, launch GPU notebooks, call the inference endpoint, and troubleshoot common issues
 
+**Share it with a team:**
+
+- **[Remote Access — HTTPS + IAP](05-remote-access-iap.md)** — Expose JupyterHub and the vLLM endpoint to teammates who can't reach the VPC directly (external HTTPS LBs, Identity-Aware Proxy for the UI, API key for the endpoint)
+
 **Reference:**
 
 - **[Glossary appendix](appendix-glossary.md)** — Plain-language definitions of every term used in these guides

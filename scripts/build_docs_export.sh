@@ -43,6 +43,7 @@ for md in \
   02e-verify-teardown \
   03-inference-endpoint-user-guide \
   04-jupyter-notebook-user-guide \
+  05-remote-access-iap \
   appendix-glossary
 do
   python3 "$EXPORTER" "$GUIDES/$md.md" -o "$EXPORT/$md.html"
