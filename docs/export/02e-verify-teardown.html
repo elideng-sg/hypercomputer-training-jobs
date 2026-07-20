@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deployment Part 5 — Verify, Rotate &amp;amp; Teardown</title>
+    <style>
+        body {
+            font-family: 'Arial', 'Helvetica', sans-serif;
+            font-size: 11pt;
+            line-height: 1.6;
+            color: #202124;
+            max-width: 8.5in;
+            margin: 1in auto;
+            padding: 0 1rem;
+            background-color: #ffffff;
+        }
+
+        h1 {
+            color: #1a73e8;
+            font-size: 20pt;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 8px;
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: bold;
+        }
+
+        h2 {
+            color: #1a73e8;
+            font-size: 15pt;
+            margin-top: 22px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #eeeeee;
+            padding-bottom: 4px;
+            font-weight: bold;
+        }
+
+        h3 {
+            color: #202124;
+            font-size: 13pt;
+            margin-top: 18px;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        h4 {
+            color: #5f6368;
+            font-size: 11.5pt;
+            margin-top: 14px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        h5 {
+            color: #5f6368;
+            font-size: 10.5pt;
+            margin-top: 12px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        h6 {
+            color: #5f6368;
+            font-size: 10pt;
+            margin-top: 10px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        p {
+            margin-bottom: 10px;
+        }
+
+        pre {
+            background-color: #f8f9fa;
+            border: 1px solid #dadce0;
+            border-radius: 6px;
+            padding: 12px;
+            font-family: 'Courier New', 'Consolas', monospace;
+            font-size: 9.5pt;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin-bottom: 14px;
+            overflow-x: auto;
+        }
+
+        code {
+            background-color: #f1f3f4;
+            color: #d93025;
+            font-family: 'Courier New', 'Consolas', monospace;
+            font-size: 9.5pt;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+
+        pre code {
+            background-color: transparent;
+            color: #202124;
+            padding: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 18px;
+            font-size: 10pt;
+        }
+
+        th {
+            background-color: #e8f0fe;
+            color: #1a73e8;
+            border: 1px solid #dadce0;
+            padding: 10px;
+            text-align: left;
+            font-weight: bold;
+        }
+
+        td {
+            border: 1px solid #dadce0;
+            padding: 9px;
+            vertical-align: top;
+        }
+
+        ul, ol {
+            margin-top: 4px;
+            margin-bottom: 12px;
+            padding-left: 24px;
+        }
+
+        li {
+            margin-bottom: 6px;
+        }
+
+        a {
+            color: #1a73e8;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        blockquote {
+            border-left: 4px solid #dadce0;
+            padding-left: 12px;
+            color: #5f6368;
+            margin: 12px 0;
+        }
+
+        hr {
+            border: 0;
+            border-top: 1px solid #dadce0;
+            margin: 22px 0;
+        }
+
+        /* SVG styling for embedded diagrams */
+        svg {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 16px auto;
+        }
+
+        /* Alert/callout boxes */
+        .admonition {
+            border-left: 4px solid #ea4335;
+            background-color: #fce8e6;
+            padding: 12px;
+            margin: 14px 0;
+            border-radius: 0 4px 4px 0;
+        }
+    </style>
+</head>
+<body>
+<h1 id="deployment-part-5--verify-rotate--teardown">Deployment Part 5 — Verify, Rotate &amp; Teardown</h1>
+<p><strong>Deployment series:</strong> <a href="02a-cluster-setup.html">1. Cluster Setup</a> → <a href="02b-gpu-nodepool-dws.html">2. GPU Node &amp; DWS</a> → <a href="02c-deploy-inference.html">3. Inference</a> → <a href="02d-deploy-jupyter.html">4. JupyterHub</a> → <strong>5. Verify &amp; Teardown</strong></p>
+<hr>
+<p><strong>Part 5 of the deployment series</strong> — the final part. Assumes you have completed <a href="02a-cluster-setup.html">Parts 1–4</a>.</p>
+<p>This part verifies the whole stack end-to-end, then covers day-2 operations: tearing down workloads while keeping the node held, the 7-day Flex-Start expiry and node rotation, durable (&gt;7-day) capacity, and full cleanup. It ends with troubleshooting, a command quick-reference, and cost estimates.</p>
+<hr>
+<h2 id="step-8-verify-the-whole-stack">Step 8: Verify the whole stack</h2>
+<h3 id="81-node-and-gpu-check">8.1 Node and GPU check</h3>
+<pre><code class="language-bash">
+kubectl get nodes -L cloud.google.com/gke-accelerator
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+NAME                                                  STATUS   ROLES    AGE   ACCELERATOR
+gke-hypercomputer-a3-default-pool-xxxx-yyyy           Ready    &lt;none&gt;   2h    &lt;none&gt;
+gke-hypercomputer-a3-a3-h100-dws-pool-16664d9c-hhp6   Ready    &lt;none&gt;   1h    nvidia-h100-80gb
+</code></pre>
+<h3 id="82-check-gpu-allocation">8.2 Check GPU allocation</h3>
+<pre><code class="language-bash">
+kubectl describe node &lt;gpu-node-name&gt; | grep -A10 &quot;Allocated resources&quot;
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+Allocated resources:
+  Resource           Requests        Limits
+  nvidia.com/gpu     3               3
+</code></pre>
+<p><strong>What this means:</strong> 3 of 8 GPUs are allocated:</p>
+<ul>
+<li><strong>2 GPUs</strong> — vLLM inference (tensor parallel)</li>
+<li><strong>1 GPU</strong> — a running GPU notebook (if you launched one)</li>
+<li><strong>5 GPUs remain</strong> for additional notebooks</li>
+</ul>
+<h3 id="83-check-vllm-health">8.3 Check vLLM health</h3>
+<pre><code class="language-bash">
+kubectl exec -n inference deploy/qwen3-vllm -- nvidia-smi --query-gpu=index,memory.used --format=csv
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+index, memory.used [MiB]
+0, 77583 MiB
+1, 77583 MiB
+</code></pre>
+<p><strong>What this means:</strong> GPUs 0 and 1 are loaded with the Qwen3-32B model (~77GB per GPU).</p>
+<h3 id="84-end-to-end-test-notebook--vllm">8.4 End-to-end test (notebook → vLLM)</h3>
+<ol>
+<li>Open a GPU notebook in JupyterHub</li>
+<li>Run the OpenAI client cell (from Step 7.6)</li>
+<li>Verify you get a response from <code>qwen3-32b</code></li>
+</ol>
+<p><strong>Success criteria:</strong> All three layers work:</p>
+<ul>
+<li>GPU node is up and healthy</li>
+<li>vLLM serves inference requests</li>
+<li>Notebooks can call vLLM and access GPUs</li>
+</ul>
+<hr>
+<h2 id="step-9-teardown-and-re-arm-holder">Step 9: Teardown and re-arm holder</h2>
+<p>When you&#x27;re done with the inference service but want to keep the GPU node for other work (or just to hold capacity during the 7-day window):</p>
+<h3 id="91-tear-down-vllm-and-re-arm-holder">9.1 Tear down vLLM and re-arm holder</h3>
+<pre><code class="language-bash">
+kubectl -n inference delete deploy qwen3-vllm
+kubectl -n default scale deploy/a3-holder-zone-a --replicas=1
+</code></pre>
+<p><strong>What this does:</strong></p>
+<ul>
+<li>Deletes the vLLM Deployment (pod terminates)</li>
+<li>Scales the holder back to 1 replica — it binds immediately (same node) and keeps the node from being reclaimed</li>
+<li><strong>House rule:</strong> Never leave the DWS GPU node idle/unheld (cost is not a concern; <strong>node reclaim is</strong>)</li>
+</ul>
+<p><strong>Verify holder is back:</strong></p>
+<pre><code class="language-bash">
+kubectl get pods -n default -l app=a3-holder-zone-a -o wide
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+NAME                                  READY   STATUS    RESTARTS   AGE   NODE
+a3-holder-zone-a-xxxxxxxxxx-yyyyy     1/1     Running   0          10s   gke-hypercomputer-a3-a3-h100-dws-pool-16664d9c-hhp6
+</code></pre>
+<h3 id="92-full-teardown-scale-to-zero-release-capacity">9.2 Full teardown (scale to zero, release capacity)</h3>
+<p>To <strong>give up the GPU node</strong> and return to 0 nodes (stop paying for H100 time):</p>
+<pre><code class="language-bash">
+# Delete all workloads on the GPU node
+kubectl -n inference delete deploy qwen3-vllm
+kubectl -n default delete deploy a3-holder-zone-a
+
+# Delete the ProvisioningRequest (releases the node)
+kubectl delete provisioningrequest a3-h100-req-zone-a -n default
+</code></pre>
+<p><strong>What this happens:</strong></p>
+<ul>
+<li>Deleting the ProvisioningRequest tells GKE to release the capacity</li>
+<li>The node will be terminated within ~5 minutes</li>
+<li>The node pool remains at 0 nodes (no cost until you re-provision)</li>
+</ul>
+<p><strong>Verify node is gone:</strong></p>
+<pre><code class="language-bash">
+kubectl get nodes -L cloud.google.com/gke-accelerator
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+NAME                                        STATUS   ROLES    AGE   ACCELERATOR
+gke-hypercomputer-a3-default-pool-xxxx-yyyy Ready    &lt;none&gt;   3h    &lt;none&gt;
+</code></pre>
+<p><strong>To re-provision later:</strong> Re-apply the DWS request and holder (Step 4).</p>
+<hr>
+<h2 id="step-10-node-rotation-and-the-7-day-expiry">Step 10: Node rotation and the 7-day expiry</h2>
+<h3 id="101-the-7-day-hard-cap">10.1 The 7-day hard cap</h3>
+<p>DWS Flex-Start nodes have a <strong>hard 7-day <code>maxRunDurationSeconds</code></strong>. No holder or trick extends it past 7 days. When the window expires (~2026-07-23 for the example node provisioned on 2026-07-16), GKE <strong>deletes the node</strong> and the ProvisioningRequest returns to <code>PROVISIONED=False</code>.</p>
+<p><strong>What happens to your workload:</strong></p>
+<ul>
+<li>The inference Deployment&#x27;s pod is <strong>evicted</strong></li>
+<li>The pod becomes <code>Pending</code> again (no node to schedule on)</li>
+<li><strong>If the PVC is ReadWriteOnce (single-node)</strong>, it stays in the same zone and will <strong>reattach</strong> if you provision a replacement node in that zone</li>
+<li><strong>Serving gap:</strong> Minutes to hours (depending on DWS capacity availability)</li>
+</ul>
+<p><strong>This is continuity, not zero-downtime.</strong></p>
+<h3 id="102-continuity-plan-single-replica-reschedule">10.2 Continuity plan: single-replica reschedule</h3>
+<p><strong>Days 5-6 before expiry:</strong></p>
+<ol>
+<li>Submit a <strong>new DWS request</strong> for a replacement node in the <strong>same zone</strong> (to minimize reattach latency)</li>
+<li>Deploy a holder for the new request (don&#x27;t touch the old one yet)</li>
+<li>Wait for the replacement node to provision</li>
+</ol>
+<p><strong>On day 7 (or when the old node expires):</strong></p>
+<ol>
+<li>The old node is terminated automatically (or cordon/drain it manually)</li>
+<li>The vLLM pod becomes <code>Pending</code></li>
+<li>Once the new node is <code>Ready</code>, the pod <strong>reschedules</strong> automatically and the PVC <strong>reattaches</strong></li>
+<li>Service resumes after model reload (~2-5 minutes)</li>
+</ol>
+<p><strong>Why the PVC reattaches:</strong> <code>ReadWriteOnce</code> Persistent Disks can only attach to one node at a time, but <strong>can reattach to a different node in the same zone</strong>. GKE handles this automatically. The cached model weights persist across the rotation.</p>
+<p><strong>Related:</strong> See <code>deploy/ops/node-rotation-runbook.md</code> in the repo for the full procedure, including the PDB caveat (a <code>minAvailable: 1</code> PDB on a single-replica Deployment <strong>blocks voluntary drain</strong> until you scale up or delete the PDB).</p>
+<h3 id="103-zero-downtime-overlap-future-enhancement">10.3 Zero-downtime overlap (future enhancement)</h3>
+<p>True <strong>zero-downtime rotation</strong> (2 replicas across two nodes during overlap) requires:</p>
+<ul>
+<li><strong>ReadWriteMany</strong> model cache (e.g., Filestore NFS) so the PVC can attach to both nodes</li>
+<li><strong>Pod anti-affinity</strong> to force replicas onto separate nodes</li>
+<li><strong>2 DWS requests</strong> active at once (2× H100 cost during overlap window)</li>
+</ul>
+<p><strong>This is not configured in the current deployment.</strong> The documented path is single-replica reschedule with a brief gap.</p>
+<h3 id="104-durable-capacity-7-days">10.4 Durable capacity (&gt;7 days)</h3>
+<p>For capacity that must live <strong>longer than 7 days</strong> (e.g., a 6-month lab):</p>
+<ol>
+<li><strong>Create a Compute Engine reservation</strong> (contact your GCP account team):</li>
+<pre><code class="language-bash">
+   gcloud compute reservations create a3-h100-res \
+     --project=$PROJECT_ID \
+     --zone=us-central1-a \
+     --require-specific-reservation \
+     --vm-count=3 \
+     --machine-type=a3-highgpu-8g \
+     --accelerator=type=nvidia-h100-80gb,count=8
+</code></pre>
+<li><strong>Create a standard (non-DWS) node pool</strong> that consumes the reservation:</li>
+<pre><code class="language-bash">
+   gcloud container node-pools create a3-h100-reserved-pool \
+     --cluster hypercomputer-a3-cluster \
+     --region us-central1 \
+     --machine-type a3-highgpu-8g \
+     --num-nodes 3 \
+     --min-nodes 3 \
+     --max-nodes 3 \
+     --node-locations us-central1-a \
+     --reservation-affinity specific \
+     --reservation a3-h100-res \
+     --accelerator type=nvidia-h100-80gb,count=8,gpu-driver-version=latest \
+     --node-labels cloud.google.com/gke-accelerator=nvidia-h100-80gb \
+     --node-taints nvidia.com/gpu=present:NoSchedule
+</code></pre>
+</ol>
+<p><strong>Key differences from DWS:</strong></p>
+<ul>
+<li><strong>No run-duration cap</strong> — nodes stay up indefinitely (or until you delete the pool/reservation)</li>
+<li><strong>Guaranteed capacity</strong> — no wait for provisioning (already reserved)</li>
+<li><strong>Higher cost</strong> — on-demand pricing, bills 24/7 whether used or not</li>
+<li><strong>No holder needed</strong> — <code>min-nodes=3</code> keeps the pool up always</li>
+</ul>
+<p><strong>See <code>lab/RESERVATIONS.md</code></strong> for the full guide, including why you should book all 3 nodes in <strong>one zone with COMPACT placement</strong> (for multi-node fabric work).</p>
+<p><strong>Migration:</strong> You <strong>cannot</strong> convert Flex-Start → reserved. Stand up the reserved pool separately and move workloads/checkpoints <strong>before</strong> the 7-day expiry, then release the Flex-Start request.</p>
+<hr>
+<h2 id="step-11-clean-up-everything">Step 11: Clean up everything</h2>
+<p>To <strong>delete the entire stack</strong> and stop all charges:</p>
+<pre><code class="language-bash">
+# Delete workloads
+kubectl delete namespace inference
+kubectl delete namespace jupyter
+kubectl delete provisioningrequest a3-h100-req-zone-a -n default
+kubectl delete deploy a3-holder-zone-a -n default
+
+# Delete the GPU node pool
+gcloud container node-pools delete a3-h100-dws-pool \
+  --cluster hypercomputer-a3-cluster \
+  --region us-central1 \
+  --project $PROJECT_ID \
+  --quiet
+
+# Delete the cluster
+gcloud container clusters delete hypercomputer-a3-cluster \
+  --region us-central1 \
+  --project $PROJECT_ID \
+  --quiet
+</code></pre>
+<p><strong>Time:</strong> ~10 minutes.</p>
+<p><strong>What this does:</strong></p>
+<ul>
+<li>Deletes all Kubernetes resources (namespaces, pods, services, PVCs)</li>
+<li>Deletes the GPU node pool (releases any provisioned nodes)</li>
+<li>Deletes the entire GKE cluster (control plane + default node pool)</li>
+<li><strong>Persistent Disks</strong> (PVCs) are deleted when their namespace is deleted (default <code>reclaimPolicy: Delete</code>)</li>
+</ul>
+<p><strong>Verify cleanup:</strong></p>
+<pre><code class="language-bash">
+gcloud container clusters list --project $PROJECT_ID
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+Listed 0 items.
+</code></pre>
+<hr>
+<h2 id="appendix-a-troubleshooting">Appendix A: Troubleshooting</h2>
+<table>
+<thead><tr>
+<th>Symptom</th>
+<th>Likely cause</th>
+<th>Fix</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>ProvisioningRequest stuck <code>ACCEPTED=True, PROVISIONED=False</code> for &gt;1 hour</td>
+<td>No H100 capacity in region</td>
+<td>Wait, or try a different region (see Step 1)</td>
+</tr>
+<tr>
+<td>GPU node provisions then vanishes ~10-15 min later</td>
+<td>Holder missing consume annotations</td>
+<td>Apply corrected <code>dws-holder.yaml</code> (Step 4.2) with both <code>autoscaling.x-k8s.io/*</code> annotations</td>
+</tr>
+<tr>
+<td>vLLM pod crash-loops &quot;Engine core initialization failed&quot;</td>
+<td>CUDA version mismatch (image CUDA 12.2+ on driver 12.0)</td>
+<td>Use <code>vllm/vllm-openai:v0.8.4</code> (Step 6.1)</td>
+</tr>
+<tr>
+<td>vLLM OOM / IPC errors</td>
+<td><code>/dev/shm</code> too small (64MB default)</td>
+<td>Add 16Gi <code>/dev/shm</code> emptyDir volume (Step 6.1)</td>
+</tr>
+<tr>
+<td>Notebook stuck <code>Pending</code></td>
+<td>GPU node full, or missing tolerations</td>
+<td>Check GPU allocation (Step 8.2); verify tolerations in <code>jupyter-values.yaml</code> (Step 7.2)</td>
+</tr>
+<tr>
+<td>Model re-downloads on every restart</td>
+<td>PVC not mounted / <code>HF_HOME</code> unset</td>
+<td>Verify <code>hf-cache</code> PVC + <code>HF_HOME=/hf-cache</code> in Deployment (Step 6.1)</td>
+</tr>
+<tr>
+<td>Can&#x27;t reach vLLM/JupyterHub from outside GCP</td>
+<td>Services are internal-only</td>
+<td>Expected (private IPs). Access via GCP VM in same VPC, or set up Cloud VPN/IAP</td>
+</tr>
+<tr>
+<td>DWS request never provisions (&gt;24 hours)</td>
+<td>Quota not approved, or no capacity</td>
+<td>Check quota (Step 1.1); contact GCP support for capacity/quota status</td>
+</tr>
+</tbody></table>
+<p><strong>Bug reports:</strong> See <code>bugfixes/</code> in the repo for documented issues and fixes:</p>
+<ul>
+<li><code>bugfixes/0001-dws-zone-requests-not-zone-pinned.md</code> — why zone selectors matter</li>
+<li><code>bugfixes/0002-dws-a3-node-reclaimed-after-10min.md</code> — the consumer holder pattern</li>
+</ul>
+<hr>
+<h2 id="appendix-b-command-quick-reference">Appendix B: Command quick reference</h2>
+<pre><code class="language-bash">
+# --- Project setup ---
+export PROJECT_ID=hdlab-elideng
+gcloud config set project $PROJECT_ID
+gcloud services enable compute.googleapis.com container.googleapis.com
+
+# --- Cluster access ---
+gcloud container clusters get-credentials hypercomputer-a3-cluster \
+  --region us-central1 --project $PROJECT_ID
+
+# --- DWS status ---
+kubectl get provisioningrequests -A
+kubectl get pods -n default -l app=a3-holder-zone-a -o wide
+
+# --- Inference service ---
+kubectl get pods -n inference -o wide
+kubectl logs -n inference -l app=qwen3-vllm -f
+kubectl get svc -n inference qwen3-vllm  # Get internal LB IP
+curl http://10.128.0.43:8000/v1/models
+
+# --- JupyterHub ---
+kubectl get pods -n jupyter
+kubectl get svc -n jupyter proxy-public  # Get internal LB IP
+
+# --- GPU check ---
+kubectl get nodes -L cloud.google.com/gke-accelerator
+kubectl exec -n inference deploy/qwen3-vllm -- nvidia-smi
+
+# --- Handoff holder -&gt; vLLM ---
+kubectl -n default scale deploy/a3-holder-zone-a --replicas=0
+
+# --- Teardown + re-arm holder ---
+kubectl -n inference delete deploy qwen3-vllm
+kubectl -n default scale deploy/a3-holder-zone-a --replicas=1
+
+# --- Full teardown (release node) ---
+kubectl delete provisioningrequest a3-h100-req-zone-a -n default
+kubectl delete deploy a3-holder-zone-a -n default
+</code></pre>
+<hr>
+<h2 id="appendix-c-cost-estimates-rough-as-of-2026-07">Appendix C: Cost estimates (rough, as of 2026-07)</h2>
+<table>
+<thead><tr>
+<th>Resource</th>
+<th>Cost (approx)</th>
+<th>Notes</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>GKE cluster (control plane)</td>
+<td>~$0.10/hr</td>
+<td>Regional cluster management fee</td>
+</tr>
+<tr>
+<td>Default node pool (3× e2-standard-4)</td>
+<td>~$0.40/hr</td>
+<td>System nodes (always-on)</td>
+</tr>
+<tr>
+<td><strong>A3 H100 node (a3-highgpu-8g)</strong></td>
+<td><strong>~$30-35/hr</strong></td>
+<td>8× H100 80GB (on-demand rate, DWS Flex-Start)</td>
+</tr>
+<tr>
+<td>Persistent Disk (150Gi SSD)</td>
+<td>~$25/month</td>
+<td>Model cache</td>
+</tr>
+<tr>
+<td>Internal LB (per LB)</td>
+<td>~$0.025/hr</td>
+<td>2 LBs (vLLM + JupyterHub)</td>
+</tr>
+</tbody></table>
+<p><strong>Key takeaway:</strong> The GPU node is <strong>&gt;95% of the cost</strong>. The 7-day cap (168 hours) = <strong>~$5,000-6,000</strong> for one uninterrupted week. Scale to zero when not in use.</p>
+<hr>
+<p>← Previous: <strong><a href="02d-deploy-jupyter.html">Part 4 — Deploy JupyterHub</a></strong></p>
+<p><strong>Deployment series:</strong> <a href="02a-cluster-setup.html">1. Cluster Setup</a> → <a href="02b-gpu-nodepool-dws.html">2. GPU Node &amp; DWS</a> → <a href="02c-deploy-inference.html">3. Inference</a> → <a href="02d-deploy-jupyter.html">4. JupyterHub</a> → <strong>5. Verify &amp; Teardown</strong></p>
+<p><strong>Related:</strong> <a href="01-architecture.html">Architecture Reference</a> · <a href="appendix-glossary.html">Glossary</a> · <a href="03-inference-endpoint-user-guide.html">Inference User Guide</a> · <a href="04-jupyter-notebook-user-guide.html">Jupyter User Guide</a> · <a href="../../lab/README.md">Lab IaC foundation</a> · <a href="../../lab/RESERVATIONS.md">Reservations (&gt;7 days)</a></p>
+</body>
+</html>

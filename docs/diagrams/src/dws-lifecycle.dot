@@ -1,0 +1,86 @@
+digraph dws_lifecycle {
+  labelloc="t";
+  fontsize=20;
+  fontname="Arial";
+  label="DWS Flex-Start Lifecycle: ProvisioningRequest -> Node -> Holder/Workload -> Reclaim";
+  rankdir=TB;
+  node [shape=box, style="rounded,filled", fontname="Arial", fontsize=11, fillcolor="#ffffff", color="#666666"];
+  edge [color="#333333", fontname="Arial", fontsize=11, penwidth=2];
+
+  // Timeline stages (kept on one horizontal rank)
+  s1 [label="ProvisioningRequest\nSubmitted\n\na3-h100-req-zone-a\npodSet: 1x a3-highgpu-8g\nStatus: Accepted\n(queued-provisioning.gke.io)", fillcolor="#fff9c4", color="#f57f17"];
+  s2 [label="Queue / Capacity Wait\n\nWaiting for H100\ncapacity in\nus-central1-a\n(Hours to days)\nStatus: Provisioning=False", fillcolor="#ffccbc", color="#d84315"];
+  s3 [label="Node Provisioned\n\ngke-...-hhp6\n8x H100 80GB\nReady, joined cluster\nStatus: Provisioned=True\n~10-min booking window starts", fillcolor="#c8e6c9", color="#2e7d32"];
+  s4 [label="10-Minute Booking Window\n\nPod with\nconsume-provisioning-request\nannotation MUST schedule\nOR node is reclaimed!\n(See bugfix 0002)", fillcolor="#fff3e0", color="#ff6f00"];
+  s5 [label="Running / Held\n\nHolder or workload\noccupies node\nsafe-to-evict: false\nNode stays up\n(up to 7-day cap)", fillcolor="#a5d6a7", color="#1b5e20"];
+  s6 [label="Reclaimed\n\n7-day cap reached\nNode deleted by GKE\nNo holder can\nprevent this", fillcolor="#ffcdd2", color="#b71c1c"];
+
+  { rank=same; s1; s2; s3; s4; s5; s6; }
+  s1 -> s2 [label="Wait", fontcolor="#666666"];
+  s2 -> s3 [label="Capacity!", fontcolor="#4caf50"];
+  s3 -> s4 [label="Must land pod!", fontcolor="#ff6f00"];
+  s4 -> s5 [label="Consumed!", fontcolor="#4caf50"];
+  s5 -> s6 [label="7 days max", fontcolor="#d84315"];
+
+  // Info boxes row
+  subgraph cluster_roles {
+    label="Key Roles and Annotations";
+    style="rounded,filled";
+    fillcolor="#f5f5f5";
+    color="#666666";
+    fontname="Arial";
+    fontsize=15;
+
+    holder [label=<
+      <table border="0" cellborder="0" cellspacing="1" cellpadding="1">
+        <tr><td align="center"><b>Capacity Holder Pod</b></td></tr>
+        <tr><td align="left">Purpose: Occupies node when no workload running (prevents reclaim)</td></tr>
+        <tr><td align="left"><b>Required annotations:</b></td></tr>
+        <tr><td align="left"><font face="monospace">autoscaling.x-k8s.io/consume-provisioning-request: a3-h100-req-zone-a</font></td></tr>
+        <tr><td align="left"><font face="monospace">autoscaling.x-k8s.io/provisioning-class-name: queued-provisioning.gke.io</font></td></tr>
+        <tr><td align="left"><font face="monospace">cluster-autoscaler.kubernetes.io/safe-to-evict: "false"</font></td></tr>
+      </table>
+    >, fillcolor="#ffffff", color="#666666"];
+
+    bugfix [label=<
+      <table border="0" cellborder="0" cellspacing="1" cellpadding="1">
+        <tr><td align="center"><font color="#f57f17"><b>Bugfix 0002 - Reclaim After 10min</b></font></td></tr>
+        <tr><td align="left"><font color="#d84315">Problem: Node provisioned then deleted ~15 minutes later</font></td></tr>
+        <tr><td align="left"><b>Root cause:</b> No pod consumed the ProvisioningRequest inside the 10-min booking window</td></tr>
+        <tr><td align="left"><b>Fix:</b> Deploy holder WITH consume-* annotations BEFORE request submitted (holder waits Pending, binds immediately when node provisions)</td></tr>
+      </table>
+    >, fillcolor="#fff9c4", color="#f57f17"];
+  }
+
+  subgraph cluster_houserule {
+    label="House Rule: Never Leave GPU Node Idle/Unheld";
+    style="rounded,filled";
+    fillcolor="#e3f2fd";
+    color="#1565c0";
+    fontcolor="#1565c0";
+    fontname="Arial";
+    fontsize=15;
+
+    houserule [label=<
+      <table border="0" cellborder="0" cellspacing="1" cellpadding="1">
+        <tr><td align="center"><b>The GPU node must ALWAYS have an occupying pod</b></td></tr>
+        <tr><td align="left"><b>When vLLM or real workload is running:</b> Holder scaled to 0 replicas (workload holds the node)</td></tr>
+        <tr><td align="left"><b>When no workload is running:</b> Holder IMMEDIATELY scaled to 1 replica (gap-free handoff)</td></tr>
+        <tr><td align="left"><b>Why:</b></td></tr>
+        <tr><td align="left">&#8226; H100 capacity is scarce - took hours/days to obtain</td></tr>
+        <tr><td align="left">&#8226; Idle/unheld node -&gt; autoscaler reclaims it -&gt; you lose the GPUs</td></tr>
+        <tr><td align="left">&#8226; Cost is not a concern (you pay for 7-day window regardless)</td></tr>
+      </table>
+    >, fillcolor="#ffffff", color="#1565c0"];
+  }
+
+  footer [shape=plaintext, style="", fillcolor="none", fontsize=11,
+          label="Current deployment: Node provisioned ~2026-07-16, expires ~2026-07-23 (7-day cap) | See deploy/ops/handoff.sh & rearm-holder.sh"];
+
+  // Layout: push info boxes below the timeline, footer at bottom
+  s2 -> holder [style=invis];
+  s4 -> bugfix [style=invis];
+  s5 -> houserule [style=invis];
+  holder -> footer [style=invis];
+  houserule -> footer [style=invis];
+}

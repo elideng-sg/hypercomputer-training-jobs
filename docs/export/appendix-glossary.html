@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Appendix — Glossary of Essential Concepts</title>
+    <style>
+        body {
+            font-family: 'Arial', 'Helvetica', sans-serif;
+            font-size: 11pt;
+            line-height: 1.6;
+            color: #202124;
+            max-width: 8.5in;
+            margin: 1in auto;
+            padding: 0 1rem;
+            background-color: #ffffff;
+        }
+
+        h1 {
+            color: #1a73e8;
+            font-size: 20pt;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 8px;
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: bold;
+        }
+
+        h2 {
+            color: #1a73e8;
+            font-size: 15pt;
+            margin-top: 22px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #eeeeee;
+            padding-bottom: 4px;
+            font-weight: bold;
+        }
+
+        h3 {
+            color: #202124;
+            font-size: 13pt;
+            margin-top: 18px;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        h4 {
+            color: #5f6368;
+            font-size: 11.5pt;
+            margin-top: 14px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        h5 {
+            color: #5f6368;
+            font-size: 10.5pt;
+            margin-top: 12px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        h6 {
+            color: #5f6368;
+            font-size: 10pt;
+            margin-top: 10px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        p {
+            margin-bottom: 10px;
+        }
+
+        pre {
+            background-color: #f8f9fa;
+            border: 1px solid #dadce0;
+            border-radius: 6px;
+            padding: 12px;
+            font-family: 'Courier New', 'Consolas', monospace;
+            font-size: 9.5pt;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin-bottom: 14px;
+            overflow-x: auto;
+        }
+
+        code {
+            background-color: #f1f3f4;
+            color: #d93025;
+            font-family: 'Courier New', 'Consolas', monospace;
+            font-size: 9.5pt;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+
+        pre code {
+            background-color: transparent;
+            color: #202124;
+            padding: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 18px;
+            font-size: 10pt;
+        }
+
+        th {
+            background-color: #e8f0fe;
+            color: #1a73e8;
+            border: 1px solid #dadce0;
+            padding: 10px;
+            text-align: left;
+            font-weight: bold;
+        }
+
+        td {
+            border: 1px solid #dadce0;
+            padding: 9px;
+            vertical-align: top;
+        }
+
+        ul, ol {
+            margin-top: 4px;
+            margin-bottom: 12px;
+            padding-left: 24px;
+        }
+
+        li {
+            margin-bottom: 6px;
+        }
+
+        a {
+            color: #1a73e8;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        blockquote {
+            border-left: 4px solid #dadce0;
+            padding-left: 12px;
+            color: #5f6368;
+            margin: 12px 0;
+        }
+
+        hr {
+            border: 0;
+            border-top: 1px solid #dadce0;
+            margin: 22px 0;
+        }
+
+        /* SVG styling for embedded diagrams */
+        svg {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 16px auto;
+        }
+
+        /* Alert/callout boxes */
+        .admonition {
+            border-left: 4px solid #ea4335;
+            background-color: #fce8e6;
+            padding: 12px;
+            margin: 14px 0;
+            border-radius: 0 4px 4px 0;
+        }
+    </style>
+</head>
+<body>
+<h1 id="appendix--glossary-of-essential-concepts">Appendix — Glossary of Essential Concepts</h1>
+<p><strong>Audience:</strong> Anyone reading the AI-infrastructure guides who is new to GPUs, Google Cloud, or Kubernetes.</p>
+<p>This appendix defines every technical term used across the guides, in plain language. You do <strong>not</strong> need to read it top to bottom — the guides link here on first use of each term, so you can jump to a definition and jump back. Terms are grouped into four categories:</p>
+<ul>
+<li><a href="#gpu-and-hardware-terms">GPU and hardware terms</a></li>
+<li><a href="#google-cloud-and-kubernetes-terms">Google Cloud and Kubernetes terms</a></li>
+<li><a href="#dws-and-gpu-provisioning-terms">DWS and GPU provisioning terms</a></li>
+<li><a href="#software-and-model-terms">Software and model terms</a></li>
+</ul>
+<hr>
+<h2 id="gpu-and-hardware-terms">GPU and hardware terms</h2>
+<h4 id="gpu">GPU</h4>
+<p>Graphics Processing Unit — a specialized processor with thousands of small cores optimized for the massively parallel math (matrix multiplications) that neural networks need. Modern large language models (LLMs) run on GPUs, not CPUs, because a CPU would be orders of magnitude too slow for the computations required.</p>
+<h4 id="h100">H100</h4>
+<p>NVIDIA&#x27;s Hopper-generation data-center GPU. Our variant is the <strong>H100 80GB HBM3</strong>, which has approximately 81,559 MiB of high-bandwidth memory. Big models like <a href="#qwen3-32b">Qwen3-32B</a> need this much memory to load the model weights and process requests.</p>
+<h4 id="hbm">HBM</h4>
+<p>High-Bandwidth Memory — the fast memory physically stacked on the GPU chip. When we say &quot;80GB H100,&quot; the 80GB refers to HBM capacity. Model weights and the data being processed (activations) live in this memory.</p>
+<h4 id="nvlink-and-nvswitch">NVLink and NVSwitch</h4>
+<p>NVIDIA&#x27;s high-speed GPU-to-GPU interconnect technology. Inside a single 8-GPU machine, <strong>NVLink</strong> connects GPUs directly and <strong>NVSwitch</strong> is the crossbar switch that lets all 8 GPUs communicate with each other at full bandwidth. This makes splitting a model across multiple GPUs on the <em>same</em> machine very fast (see <a href="#tensor-parallelism">tensor parallelism</a>).</p>
+<h4 id="a3-machine">A3 machine</h4>
+<p>Google Cloud&#x27;s &quot;A3 High&quot; machine type (<code>a3-highgpu-8g</code>): one virtual machine (VM) with <strong>8× H100 80GB</strong> GPUs all wired together with <a href="#nvlink-and-nvswitch">NVLink and NVSwitch</a>. This is the single GPU machine at the center of this architecture.</p>
+<h4 id="cuda">CUDA</h4>
+<p>NVIDIA&#x27;s software platform and driver stack that lets programs use GPUs. Software is compiled against a <strong>CUDA version</strong>; the GPU <strong>driver</strong> installed on the machine must support that CUDA version or newer. Version mismatches can cause crashes — this is a real issue in this deployment (see the CUDA-version constraint in the <a href="02c-deploy-inference.html">Inference deployment guide</a>).</p>
+<h4 id="dcgm">DCGM</h4>
+<p>Data Center GPU Manager — NVIDIA&#x27;s tool for monitoring GPU health, temperature, clock speeds, memory errors, and telemetry. Used in validation tests to confirm GPUs are healthy before handing them to workloads.</p>
+<h4 id="nccl">NCCL</h4>
+<p>NVIDIA Collective Communications Library — a library for multi-GPU and multi-node communication. An &quot;all-reduce&quot; test (exchanging data between all GPUs) verifies that GPUs can communicate over <a href="#nvlink-and-nvswitch">NVLink</a> without errors.</p>
+<h4 id="tensor-parallelism">Tensor parallelism</h4>
+<p>A technique for running a model that&#x27;s too large or too slow for a single GPU by <strong>splitting each layer&#x27;s weight matrices across multiple GPUs</strong>. The GPUs then compute in lockstep, exchanging partial results over <a href="#nvlink-and-nvswitch">NVLink</a>. Our system uses <code>--tensor-parallel-size 2</code>, so <a href="#qwen3-32b">Qwen3-32B</a> is split across 2 of the 8 H100s.</p>
+<hr>
+<h2 id="google-cloud-and-kubernetes-terms">Google Cloud and Kubernetes terms</h2>
+<h4 id="gcp">GCP</h4>
+<p>Google Cloud Platform — Google&#x27;s cloud computing platform that provides virtual machines, storage, networking, and managed services.</p>
+<h4 id="vpc">VPC</h4>
+<p>Virtual Private Cloud — the private network your cloud resources live in. Resources in a VPC can communicate privately using internal IP addresses (like <code>10.128.x.x</code> in our deployment). Internal load balancer IPs are only reachable from inside the VPC, not from the public internet.</p>
+<h4 id="region-and-zone">Region and zone</h4>
+<p>A <strong>region</strong> is a geographic area (like <code>us-central1</code> for Iowa, USA) containing multiple <strong>zones</strong> (independent data centers like <code>us-central1-a</code>, <code>us-central1-b</code>, etc.). Resources in the same zone can communicate with the lowest latency.</p>
+<h4 id="gke">GKE</h4>
+<p>Google Kubernetes Engine — Google&#x27;s managed <a href="#kubernetes">Kubernetes</a> service. Google runs the control plane (the master nodes that schedule everything); you declare what you want (pods, services, deployments) and GKE schedules it onto worker nodes.</p>
+<h4 id="kubernetes">Kubernetes</h4>
+<p>An open-source platform (often abbreviated <strong>K8s</strong>) for automating deployment, scaling, and management of containerized applications. Think of it as an operating system for the cluster: you tell it what to run, and it figures out where and how.</p>
+<h4 id="node">Node</h4>
+<p>One machine (virtual machine) that belongs to the cluster and runs workloads (<a href="#pod">pods</a>). Our GPU node is a single <a href="#a3-machine">A3 machine</a> with 8 H100 GPUs.</p>
+<h4 id="node-pool">Node pool</h4>
+<p>A group of identical <a href="#node">nodes</a> that GKE manages as a unit. A node pool can autoscale (add or remove nodes based on demand). Ours is <code>a3-h100-dws-pool</code>, which contains one A3 GPU node.</p>
+<h4 id="pod">Pod</h4>
+<p>The smallest deployable unit in Kubernetes: one or more <a href="#container">containers</a> that are scheduled together on a <a href="#node">node</a> and share networking and storage. The vLLM inference server runs as a pod; each user&#x27;s Jupyter notebook also runs as a separate pod.</p>
+<h4 id="container">Container</h4>
+<p>A lightweight, standalone package of software that includes the application code, runtime, libraries, and dependencies. Containers are isolated from each other and from the host system. Docker is the most common container technology; Kubernetes orchestrates containers via <a href="#pod">pods</a>.</p>
+<h4 id="namespace">Namespace</h4>
+<p>A logical partition of the cluster for organizing and isolating workloads. We use three namespaces:</p>
+<ul>
+<li><code>inference</code> — for the vLLM inference service</li>
+<li><code>jupyter</code> — for JupyterHub and notebook pods</li>
+<li><code>default</code> — for the <a href="#capacity-holder">capacity holder</a></li>
+</ul>
+<h4 id="deployment">Deployment</h4>
+<p>A Kubernetes object that keeps a specified number of identical <a href="#pod">pod</a> replicas running and handles rollouts and rollbacks. If a pod crashes, the Deployment automatically creates a new one to replace it.</p>
+<h4 id="service">Service</h4>
+<p>A stable network endpoint in front of one or more <a href="#pod">pods</a>. Even if pods are recreated (new IP addresses), the Service IP stays the same. A <a href="#loadbalancer-internal">LoadBalancer</a> Service gets an IP address that clients can connect to.</p>
+<h4 id="loadbalancer-internal">LoadBalancer (internal)</h4>
+<p>A type of Kubernetes <a href="#service">Service</a> that gets a load balancer IP address. With the <code>Internal</code> annotation on GCP, it gets a <strong>private</strong> IP address reachable only inside the <a href="#vpc">VPC</a> (not from the public internet). Both our services (vLLM and JupyterHub) use internal load balancers so they&#x27;re only accessible from within the private network.</p>
+<h4 id="pvc-and-persistent-disk">PVC and Persistent Disk</h4>
+<p>A <strong>PersistentVolumeClaim (PVC)</strong> is a request for durable storage that outlives a <a href="#pod">pod</a>. When a pod is deleted and recreated, data on a PVC persists. A PVC is backed by a <strong>GCP Persistent Disk</strong> (a network-attached SSD or HDD). We use a PVC to cache the downloaded <a href="#qwen3-32b">Qwen3-32B</a> model weights (60+ GB) so pod restarts don&#x27;t re-download the model.</p>
+<h4 id="helm">Helm</h4>
+<p>Kubernetes&#x27; package manager. A <strong>Helm chart</strong> is a pre-packaged application (like JupyterHub) and a <strong><code>values.yaml</code></strong> file is the configuration you provide to customize it. Helm lets you deploy complex applications with a single command.</p>
+<hr>
+<h2 id="dws-and-gpu-provisioning-terms">DWS and GPU provisioning terms</h2>
+<h4 id="dws-flex-start">DWS Flex-Start</h4>
+<p><strong>Dynamic Workload Scheduler (DWS) — Flex-Start mode</strong> — a Google Cloud mechanism for obtaining scarce GPU capacity. You submit a request, and GKE provisions the GPU <a href="#node">node</a> <strong>when capacity becomes available</strong> (you wait in a queue). Once provisioned, the node is held for up to a <strong>hard 7-day maximum run duration</strong>. Flex-Start is cheaper and easier to obtain than on-demand or reserved GPUs, but the trade-offs are:</p>
+<ul>
+<li>You <strong>wait</strong> for capacity (hours to days)</li>
+<li>The node has a <strong>7-day cap</strong> (no trick extends it)</li>
+<li>It&#x27;s still expensive while running (you&#x27;re just getting allocated capacity, not discounted capacity)</li>
+</ul>
+<h4 id="provisioningrequest">ProvisioningRequest</h4>
+<p>The Kubernetes object that <a href="#dws-flex-start">DWS</a> uses to request capacity. A <a href="#pod">pod</a> must actively <strong>consume</strong> the request (via specific annotations) to claim the node once it arrives, or GKE will reclaim the node after about 10 minutes (see the reclaim-bug story in the <a href="01-architecture.html#3-how-gpus-are-obtained--dws-flex-start">DWS section of the Architecture Reference</a>).</p>
+<h4 id="capacity-holder">Capacity holder</h4>
+<p>A tiny placeholder pod (using the <code>pause</code> container, which does nothing but sleep) that occupies the GPU <a href="#node">node</a> to prevent GKE from scaling it away when no real workload is running. <strong>House rule:</strong> never leave the DWS GPU node idle and unheld — always re-arm the holder immediately after tearing down a workload, to avoid losing the scarce GPU node.</p>
+<h4 id="taint-and-toleration">Taint and toleration</h4>
+<p>A <strong>taint</strong> marks a <a href="#node">node</a> so that ordinary <a href="#pod">pods</a> avoid it; a pod with a matching <strong>toleration</strong> is allowed to schedule there. GPU and DWS nodes are tainted so only GPU-aware pods (those that explicitly request GPUs) land on them. This prevents non-GPU pods from wasting the expensive GPU node.</p>
+<h4 id="nodeselector">nodeSelector</h4>
+<p>A rule in a <a href="#pod">pod</a> specification to pick <a href="#node">nodes</a> by label. For example, <code>cloud.google.com/gke-accelerator: nvidia-h100-80gb</code> targets the H100 node. Only nodes with that label will be considered for scheduling this pod.</p>
+<hr>
+<h2 id="software-and-model-terms">Software and model terms</h2>
+<h4 id="vllm">vLLM</h4>
+<p>A high-throughput open-source LLM inference server. It loads a model from Hugging Face and exposes an <a href="#openai-compatible-api">OpenAI-compatible</a> HTTP API (<code>/v1/models</code>, <code>/v1/chat/completions</code>). This means existing code written for OpenAI&#x27;s API can work with a self-hosted model by just changing the base URL.</p>
+<h4 id="qwen3-32b">Qwen3-32B</h4>
+<p>The approximately 32-billion-parameter open-weights language model we&#x27;re serving. It&#x27;s available on Hugging Face without access restrictions (ungated), so no API token is needed to download it.</p>
+<h4 id="openai-compatible-api">OpenAI-compatible API</h4>
+<p>An HTTP API that mimics OpenAI&#x27;s endpoints and JSON schema. This lets the official <code>openai</code> Python client (or simple <code>curl</code> commands) talk to a self-hosted model as if it were OpenAI&#x27;s service.</p>
+<h4 id="jupyterhub">JupyterHub</h4>
+<p>A multi-user Jupyter notebook environment. A <strong>hub</strong> authenticates users and spawns a private notebook server <a href="#pod">pod</a> for each user. Our JupyterHub offers two profiles: a CPU-only profile (no GPU) and a GPU profile that requests 1 H100 GPU and lands on the <a href="#a3-machine">A3 node</a>.</p>
+<h4 id="jupyter-notebook">Jupyter notebook</h4>
+<p>An interactive computing environment (think: web-based Python REPL with saved state) where you can write and execute code, visualize data, and document your work all in one document. Popular for data science and machine learning experimentation.</p>
+<h4 id="pdb">PDB</h4>
+<p>PodDisruptionBudget — a Kubernetes rule that limits how many replicas of a workload can be voluntarily evicted (removed) at once. This protects availability during node maintenance or upgrades. Our inference service has a PDB requiring at least 1 pod to be running, so GKE won&#x27;t drain the node if it would take down the only vLLM pod.</p>
+<hr>
+<p><strong>Back to the guides:</strong> <a href="01-architecture.html">Architecture Reference</a> · <a href="02a-cluster-setup.html">Deployment (start here)</a> · <a href="03-inference-endpoint-user-guide.html">Inference User Guide</a> · <a href="04-jupyter-notebook-user-guide.html">Jupyter User Guide</a></p>
+</body>
+</html>
