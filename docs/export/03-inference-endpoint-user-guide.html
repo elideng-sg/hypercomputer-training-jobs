@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inference Endpoint User Guide — Qwen3-32B via vLLM</title>
+    <style>
+        body {
+            font-family: 'Arial', 'Helvetica', sans-serif;
+            font-size: 11pt;
+            line-height: 1.6;
+            color: #202124;
+            max-width: 8.5in;
+            margin: 1in auto;
+            padding: 0 1rem;
+            background-color: #ffffff;
+        }
+
+        h1 {
+            color: #1a73e8;
+            font-size: 20pt;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 8px;
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: bold;
+        }
+
+        h2 {
+            color: #1a73e8;
+            font-size: 15pt;
+            margin-top: 22px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #eeeeee;
+            padding-bottom: 4px;
+            font-weight: bold;
+        }
+
+        h3 {
+            color: #202124;
+            font-size: 13pt;
+            margin-top: 18px;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        h4 {
+            color: #5f6368;
+            font-size: 11.5pt;
+            margin-top: 14px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        h5 {
+            color: #5f6368;
+            font-size: 10.5pt;
+            margin-top: 12px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        h6 {
+            color: #5f6368;
+            font-size: 10pt;
+            margin-top: 10px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        p {
+            margin-bottom: 10px;
+        }
+
+        pre {
+            background-color: #f8f9fa;
+            border: 1px solid #dadce0;
+            border-radius: 6px;
+            padding: 12px;
+            font-family: 'Courier New', 'Consolas', monospace;
+            font-size: 9.5pt;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin-bottom: 14px;
+            overflow-x: auto;
+        }
+
+        code {
+            background-color: #f1f3f4;
+            color: #d93025;
+            font-family: 'Courier New', 'Consolas', monospace;
+            font-size: 9.5pt;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+
+        pre code {
+            background-color: transparent;
+            color: #202124;
+            padding: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 18px;
+            font-size: 10pt;
+        }
+
+        th {
+            background-color: #e8f0fe;
+            color: #1a73e8;
+            border: 1px solid #dadce0;
+            padding: 10px;
+            text-align: left;
+            font-weight: bold;
+        }
+
+        td {
+            border: 1px solid #dadce0;
+            padding: 9px;
+            vertical-align: top;
+        }
+
+        ul, ol {
+            margin-top: 4px;
+            margin-bottom: 12px;
+            padding-left: 24px;
+        }
+
+        li {
+            margin-bottom: 6px;
+        }
+
+        a {
+            color: #1a73e8;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        blockquote {
+            border-left: 4px solid #dadce0;
+            padding-left: 12px;
+            color: #5f6368;
+            margin: 12px 0;
+        }
+
+        hr {
+            border: 0;
+            border-top: 1px solid #dadce0;
+            margin: 22px 0;
+        }
+
+        /* SVG styling for embedded diagrams */
+        svg {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 16px auto;
+        }
+
+        /* Alert/callout boxes */
+        .admonition {
+            border-left: 4px solid #ea4335;
+            background-color: #fce8e6;
+            padding: 12px;
+            margin: 14px 0;
+            border-radius: 0 4px 4px 0;
+        }
+    </style>
+</head>
+<body>
+<h1 id="inference-endpoint-user-guide--qwen3-32b-via-vllm">Inference Endpoint User Guide — Qwen3-32B via vLLM</h1>
+<p><strong>Audience:</strong> Engineers and technical staff who want to use the Qwen3-32B inference endpoint for generating text, answering questions, or building applications.</p>
+<p><strong>What this guide covers:</strong> How to call the vLLM inference API (curl, Python, streaming), understand the endpoint&#x27;s capabilities, and troubleshoot common issues.</p>
+<p><strong>Prerequisites:</strong> Basic familiarity with REST APIs and Python. No GPU or Kubernetes knowledge required.</p>
+<blockquote><strong>New to the terminology?</strong> Terms like vLLM, Qwen3-32B, and OpenAI-compatible API are defined in the <strong><a href="appendix-glossary.html">Glossary appendix</a></strong>.</blockquote>
+<hr>
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#1-what-the-endpoint-is">What the Endpoint Is</a></li>
+<li><a href="#2-how-to-reach-the-endpoint">How to Reach the Endpoint</a></li>
+<li><a href="#3-list-available-models">List Available Models</a></li>
+<li><a href="#4-chat-completion-with-curl">Chat Completion with curl</a></li>
+<li><a href="#5-chat-completion-with-python-openai-sdk">Chat Completion with Python OpenAI SDK</a></li>
+<li><a href="#6-streaming-responses">Streaming Responses</a></li>
+<li><a href="#7-common-parameters">Common Parameters</a></li>
+<li><a href="#8-using-from-a-jupyter-notebook">Using from a Jupyter Notebook</a></li>
+<li><a href="#9-troubleshooting">Troubleshooting</a></li>
+</ol>
+<hr>
+<h2 id="1-what-the-endpoint-is">1. What the Endpoint Is</h2>
+<p>The inference endpoint is a <strong>vLLM</strong> server that serves the <strong>Qwen3-32B</strong> language model (a 32-billion-parameter open-weights model) via an <strong>OpenAI-compatible API</strong>.</p>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+ "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- Generated by graphviz version 2.43.0 (0)
+ -->
+<!-- Title: inference_flow Pages: 1 -->
+<svg width="1683pt" height="670pt"
+ viewBox="0.00 0.00 1683.00 670.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 666)">
+<title>inference_flow</title>
+<polygon fill="white" stroke="transparent" points="-4,4 -4,-666 1679,-666 1679,4 -4,4"/>
+<text text-anchor="middle" x="837.5" y="-642" font-family="Arial" font-size="20.00">Inference Request Flow: Client &#45;&gt; vLLM (Qwen3&#45;32B) &#45;&gt; Tensor&#45;Parallel H100s</text>
+<g id="clust1" class="cluster">
+<title>cluster_vllm</title>
+<path fill="#fff3e0" stroke="#ff6f00" d="M1082.5,-8C1082.5,-8 1663,-8 1663,-8 1669,-8 1675,-14 1675,-20 1675,-20 1675,-376 1675,-376 1675,-382 1669,-388 1663,-388 1663,-388 1082.5,-388 1082.5,-388 1076.5,-388 1070.5,-382 1070.5,-376 1070.5,-376 1070.5,-20 1070.5,-20 1070.5,-14 1076.5,-8 1082.5,-8"/>
+<text text-anchor="middle" x="1372.75" y="-372" font-family="Arial" font-size="15.00">vLLM Pod (ns: inference)</text>
+</g>
+<g id="clust2" class="cluster">
+<title>cluster_gpus</title>
+<path fill="#ffcc80" stroke="#bf360c" d="M1448,-16C1448,-16 1655,-16 1655,-16 1661,-16 1667,-22 1667,-28 1667,-28 1667,-343 1667,-343 1667,-349 1661,-355 1655,-355 1655,-355 1448,-355 1448,-355 1442,-355 1436,-349 1436,-343 1436,-343 1436,-28 1436,-28 1436,-22 1442,-16 1448,-16"/>
+<text text-anchor="middle" x="1551.5" y="-340.6" font-family="Arial" font-size="13.00">2x NVIDIA H100 80GB GPUs</text>
+<text text-anchor="middle" x="1551.5" y="-326.6" font-family="Arial" font-size="13.00">(Connected via NVLink on A3 node)</text>
+</g>
+<!-- client -->
+<g id="node1" class="node">
+<title>client</title>
+<path fill="#ffffff" stroke="#666666" d="M374,-516C374,-516 272,-516 272,-516 266,-516 260,-510 260,-504 260,-504 260,-454 260,-454 260,-448 266,-442 272,-442 272,-442 374,-442 374,-442 380,-442 386,-448 386,-454 386,-454 386,-504 386,-504 386,-510 380,-516 374,-516"/>
+<text text-anchor="middle" x="323" y="-502.4" font-family="Arial" font-size="12.00">Client</text>
+<text text-anchor="middle" x="323" y="-475.4" font-family="Arial" font-size="12.00">OpenAI Python SDK</text>
+<text text-anchor="middle" x="323" y="-462.4" font-family="Arial" font-size="12.00">or curl</text>
+<text text-anchor="middle" x="323" y="-449.4" font-family="Arial" font-size="12.00">(inside VPC)</text>
+</g>
+<!-- request -->
+<g id="node2" class="node">
+<title>request</title>
+<path fill="#f5f5f5" stroke="#666666" d="M927,-614C927,-614 764,-614 764,-614 758,-614 752,-608 752,-602 752,-602 752,-492 752,-492 752,-486 758,-480 764,-480 764,-480 927,-480 927,-480 933,-480 939,-486 939,-492 939,-492 939,-602 939,-602 939,-608 933,-614 927,-614"/>
+<text text-anchor="start" x="807.5" y="-601.2" font-family="Arial" font-weight="bold" font-size="11.00">POST Request</text>
+<text text-anchor="start" x="761.5" y="-586.2" font-family="monospace" font-size="11.00">POST /v1/chat/completions</text>
+<text text-anchor="start" x="761.5" y="-572.2" font-family="monospace" font-size="11.00">{</text>
+<text text-anchor="start" x="761.5" y="-558.2" font-family="monospace" font-size="11.00"> &#160;&quot;model&quot;: &quot;qwen3&#45;32b&quot;,</text>
+<text text-anchor="start" x="761.5" y="-544.2" font-family="monospace" font-size="11.00"> &#160;&quot;messages&quot;: [</text>
+<text text-anchor="start" x="761.5" y="-530.2" font-family="monospace" font-size="11.00"> &#160;&#160;&#160;{&quot;role&quot;: &quot;user&quot;,</text>
+<text text-anchor="start" x="761.5" y="-516.2" font-family="monospace" font-size="11.00"> &#160;&#160;&#160;&#160;&quot;content&quot;: &quot;...&quot;}],</text>
+<text text-anchor="start" x="761.5" y="-502.2" font-family="monospace" font-size="11.00"> &#160;&quot;max_tokens&quot;: 128</text>
+<text text-anchor="start" x="761.5" y="-488.2" font-family="monospace" font-size="11.00">}</text>
+</g>
+<!-- client&#45;&gt;request -->
+<!-- lb -->
+<g id="node4" class="node">
+<title>lb</title>
+<path fill="#4caf50" stroke="#2e7d32" d="M908,-458C908,-458 783,-458 783,-458 777,-458 771,-452 771,-446 771,-446 771,-402 771,-402 771,-396 777,-390 783,-390 783,-390 908,-390 908,-390 914,-390 920,-396 920,-402 920,-402 920,-446 920,-446 920,-452 914,-458 908,-458"/>
+<text text-anchor="middle" x="845.5" y="-445.2" font-family="Arial" font-size="11.00" fill="#ffffff">Internal LoadBalancer</text>
+<text text-anchor="middle" x="845.5" y="-433.2" font-family="Arial" font-size="11.00" fill="#ffffff">Service: qwen3&#45;vllm</text>
+<text text-anchor="middle" x="845.5" y="-421.2" font-family="Arial" font-size="11.00" fill="#ffffff">IP: 10.128.0.43:8000</text>
+<text text-anchor="middle" x="845.5" y="-409.2" font-family="Arial" font-size="11.00" fill="#ffffff">DNS: qwen3&#45;vllm.inference</text>
+<text text-anchor="middle" x="845.5" y="-397.2" font-family="Arial" font-size="11.00" fill="#ffffff">.svc.cluster.local:8000</text>
+</g>
+<!-- client&#45;&gt;lb -->
+<g id="edge1" class="edge">
+<title>client&#45;&gt;lb</title>
+<path fill="none" stroke="#333333" stroke-width="2" d="M386.01,-472.45C479.27,-462.59 655.85,-443.93 760.56,-432.87"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="2" points="761.2,-436.32 770.77,-431.79 760.46,-429.36 761.2,-436.32"/>
+<text text-anchor="middle" x="699" y="-444" font-family="Arial" font-size="10.00">HTTP :8000</text>
+</g>
+<!-- response -->
+<g id="node3" class="node">
+<title>response</title>
+<path fill="#f5f5f5" stroke="#4caf50" d="M1278.5,-632C1278.5,-632 1135.5,-632 1135.5,-632 1129.5,-632 1123.5,-626 1123.5,-620 1123.5,-620 1123.5,-482 1123.5,-482 1123.5,-476 1129.5,-470 1135.5,-470 1135.5,-470 1278.5,-470 1278.5,-470 1284.5,-470 1290.5,-476 1290.5,-482 1290.5,-482 1290.5,-620 1290.5,-620 1290.5,-626 1284.5,-632 1278.5,-632"/>
+<text text-anchor="start" x="1181" y="-619.2" font-family="Arial" font-weight="bold" font-size="11.00" fill="#4caf50">Response</text>
+<text text-anchor="start" x="1133" y="-604.2" font-family="monospace" font-size="11.00">{</text>
+<text text-anchor="start" x="1133" y="-590.2" font-family="monospace" font-size="11.00"> &#160;&quot;choices&quot;: [{</text>
+<text text-anchor="start" x="1133" y="-576.2" font-family="monospace" font-size="11.00"> &#160;&#160;&#160;&quot;message&quot;: {</text>
+<text text-anchor="start" x="1133" y="-562.2" font-family="monospace" font-size="11.00"> &#160;&#160;&#160;&#160;&#160;&quot;role&quot;: &quot;asst&quot;,</text>
+<text text-anchor="start" x="1133" y="-548.2" font-family="monospace" font-size="11.00"> &#160;&#160;&#160;&#160;&#160;&quot;content&quot;: &quot;...&quot;</text>
+<text text-anchor="start" x="1133" y="-534.2" font-family="monospace" font-size="11.00"> &#160;&#160;&#160;}</text>
+<text text-anchor="start" x="1133" y="-520.2" font-family="monospace" font-size="11.00"> &#160;}],</text>
+<text text-anchor="start" x="1133" y="-506.2" font-family="monospace" font-size="11.00"> &#160;&quot;usage&quot;: {...}</text>
+<text text-anchor="start" x="1133" y="-492.2" font-family="monospace" font-size="11.00">}</text>
+<text text-anchor="start" x="1161" y="-478.2" font-family="Arial" font-size="11.00" fill="#4caf50">OpenAI&#45;compatible</text>
+</g>
+<!-- request&#45;&gt;response -->
+<!-- lb&#45;&gt;client -->
+<g id="edge7" class="edge">
+<title>lb&#45;&gt;client</title>
+<path fill="none" stroke="#4caf50" stroke-width="2" d="M770.81,-420.96C758.52,-420.56 745.9,-420.22 734,-420 702.89,-419.44 695,-417.33 664,-420 570.7,-428.04 464.57,-448.25 396.07,-462.78"/>
+<polygon fill="#4caf50" stroke="#4caf50" stroke-width="2" points="395.29,-459.37 386.24,-464.88 396.76,-466.22 395.29,-459.37"/>
+<text text-anchor="middle" x="699" y="-423" font-family="Arial" font-size="10.00" fill="#4caf50">JSON response</text>
+</g>
+<!-- note -->
+<g id="node5" class="node">
+<title>note</title>
+<path fill="#e3f2fd" stroke="#1565c0" d="M1324,-452C1324,-452 1090,-452 1090,-452 1084,-452 1078,-446 1078,-440 1078,-440 1078,-408 1078,-408 1078,-402 1084,-396 1090,-396 1090,-396 1324,-396 1324,-396 1330,-396 1336,-402 1336,-408 1336,-408 1336,-440 1336,-440 1336,-446 1330,-452 1324,-452"/>
+<text text-anchor="middle" x="1207" y="-439.2" font-family="Arial" font-size="11.00">Tensor Parallelism (TP=2)</text>
+<text text-anchor="middle" x="1207" y="-427.2" font-family="Arial" font-size="11.00">Each layer&#39;s weight matrices are split column&#45;wise</text>
+<text text-anchor="middle" x="1207" y="-415.2" font-family="Arial" font-size="11.00">across the 2 GPUs. Both compute in lockstep,</text>
+<text text-anchor="middle" x="1207" y="-403.2" font-family="Arial" font-size="11.00">exchanging partial results over NVLink every layer.</text>
+</g>
+<!-- lb&#45;&gt;note -->
+<!-- vllm_server -->
+<g id="node6" class="node">
+<title>vllm_server</title>
+<path fill="#ffe0b2" stroke="#e65100" d="M1323.5,-304C1323.5,-304 1090.5,-304 1090.5,-304 1084.5,-304 1078.5,-298 1078.5,-292 1078.5,-292 1078.5,-212 1078.5,-212 1078.5,-206 1084.5,-200 1090.5,-200 1090.5,-200 1323.5,-200 1323.5,-200 1329.5,-200 1335.5,-206 1335.5,-212 1335.5,-212 1335.5,-292 1335.5,-292 1335.5,-298 1329.5,-304 1323.5,-304"/>
+<text text-anchor="middle" x="1207" y="-291.2" font-family="Arial" font-size="11.00">vLLM Server</text>
+<text text-anchor="middle" x="1207" y="-279.2" font-family="Arial" font-size="11.00">Image: vllm/vllm&#45;openai:v0.8.4</text>
+<text text-anchor="middle" x="1207" y="-267.2" font-family="Arial" font-size="11.00">Model: Qwen/Qwen3&#45;32B (~32B params)</text>
+<text text-anchor="middle" x="1207" y="-255.2" font-family="Arial" font-size="11.00">&#45;&#45;tensor&#45;parallel&#45;size 2</text>
+<text text-anchor="middle" x="1207" y="-243.2" font-family="Arial" font-size="11.00">&#45;&#45;max&#45;model&#45;len 32768</text>
+<text text-anchor="middle" x="1207" y="-231.2" font-family="Arial" font-size="11.00">&#45;&#45;gpu&#45;memory&#45;utilization 0.90</text>
+<text text-anchor="middle" x="1207" y="-219.2" font-family="Arial" font-size="11.00">Requests: 2x nvidia.com/gpu</text>
+<text text-anchor="middle" x="1207" y="-207.2" font-family="Arial" font-size="11.00">(Model split across 2 H100s via tensor parallelism)</text>
+</g>
+<!-- lb&#45;&gt;vllm_server -->
+<g id="edge2" class="edge">
+<title>lb&#45;&gt;vllm_server</title>
+<path fill="none" stroke="#333333" stroke-width="2" d="M917.96,-389.81C958.98,-370.19 1011.99,-344.82 1061.34,-321.21"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="2" points="1062.99,-324.3 1070.5,-316.83 1059.97,-317.99 1062.99,-324.3"/>
+<text text-anchor="middle" x="1008.5" y="-371" font-family="Arial" font-size="10.00">Routes to pod</text>
+</g>
+<!-- vllm_server&#45;&gt;lb -->
+<g id="edge6" class="edge">
+<title>vllm_server&#45;&gt;lb</title>
+<path fill="none" stroke="#4caf50" stroke-width="2" d="M1078.47,-265.16C1037.77,-273.2 993.78,-286.15 957,-307 924.54,-325.4 895.88,-356.44 875.88,-381.93"/>
+<polygon fill="#4caf50" stroke="#4caf50" stroke-width="2" points="873.01,-379.92 869.7,-389.99 878.56,-384.18 873.01,-379.92"/>
+<text text-anchor="middle" x="1008.5" y="-310" font-family="Arial" font-size="10.00" fill="#4caf50">Token stream response</text>
+</g>
+<!-- gpu0 -->
+<g id="node7" class="node">
+<title>gpu0</title>
+<path fill="#ff9800" stroke="#bf360c" d="M1602,-142C1602,-142 1501,-142 1501,-142 1495,-142 1489,-136 1489,-130 1489,-130 1489,-36 1489,-36 1489,-30 1495,-24 1501,-24 1501,-24 1602,-24 1602,-24 1608,-24 1614,-30 1614,-36 1614,-36 1614,-130 1614,-130 1614,-136 1608,-142 1602,-142"/>
+<text text-anchor="middle" x="1551.5" y="-130" font-family="Arial" font-size="10.00" fill="#000000">GPU 0</text>
+<text text-anchor="middle" x="1551.5" y="-119" font-family="Arial" font-size="10.00" fill="#000000">H100 80GB</text>
+<text text-anchor="middle" x="1551.5" y="-108" font-family="Arial" font-size="10.00" fill="#000000">Memory used:</text>
+<text text-anchor="middle" x="1551.5" y="-97" font-family="Arial" font-size="10.00" fill="#000000">~77,583 MiB</text>
+<text text-anchor="middle" x="1551.5" y="-86" font-family="Arial" font-size="10.00" fill="#000000">Loads:</text>
+<text text-anchor="middle" x="1551.5" y="-75" font-family="Arial" font-size="10.00" fill="#000000">&#45; Half of model weights</text>
+<text text-anchor="middle" x="1551.5" y="-64" font-family="Arial" font-size="10.00" fill="#000000">&#45; KV cache</text>
+<text text-anchor="middle" x="1551.5" y="-53" font-family="Arial" font-size="10.00" fill="#000000">&#45; Activations</text>
+<text text-anchor="middle" x="1551.5" y="-42" font-family="Arial" font-size="10.00" fill="#000000">Computes:</text>
+<text text-anchor="middle" x="1551.5" y="-31" font-family="Arial" font-size="10.00" fill="#000000">Partial matmuls per layer</text>
+</g>
+<!-- vllm_server&#45;&gt;gpu0 -->
+<g id="edge3" class="edge">
+<title>vllm_server&#45;&gt;gpu0</title>
+<path fill="none" stroke="#e65100" stroke-width="2" d="M1313.56,-199.92C1349.32,-182.27 1389.6,-162.39 1426.65,-144.11"/>
+<polygon fill="#e65100" stroke="#e65100" stroke-width="2" points="1428.58,-147.06 1436,-139.5 1425.49,-140.78 1428.58,-147.06"/>
+<text text-anchor="middle" x="1386" y="-191" font-family="Arial" font-size="10.00">Tensor&#45;parallel</text>
+<text text-anchor="middle" x="1386" y="-180" font-family="Arial" font-size="10.00">computation</text>
+</g>
+<!-- gpu1 -->
+<g id="node8" class="node">
+<title>gpu1</title>
+<path fill="#ff9800" stroke="#bf360c" d="M1602,-311C1602,-311 1501,-311 1501,-311 1495,-311 1489,-305 1489,-299 1489,-299 1489,-205 1489,-205 1489,-199 1495,-193 1501,-193 1501,-193 1602,-193 1602,-193 1608,-193 1614,-199 1614,-205 1614,-205 1614,-299 1614,-299 1614,-305 1608,-311 1602,-311"/>
+<text text-anchor="middle" x="1551.5" y="-299" font-family="Arial" font-size="10.00" fill="#000000">GPU 1</text>
+<text text-anchor="middle" x="1551.5" y="-288" font-family="Arial" font-size="10.00" fill="#000000">H100 80GB</text>
+<text text-anchor="middle" x="1551.5" y="-277" font-family="Arial" font-size="10.00" fill="#000000">Memory used:</text>
+<text text-anchor="middle" x="1551.5" y="-266" font-family="Arial" font-size="10.00" fill="#000000">~77,583 MiB</text>
+<text text-anchor="middle" x="1551.5" y="-255" font-family="Arial" font-size="10.00" fill="#000000">Loads:</text>
+<text text-anchor="middle" x="1551.5" y="-244" font-family="Arial" font-size="10.00" fill="#000000">&#45; Other half of weights</text>
+<text text-anchor="middle" x="1551.5" y="-233" font-family="Arial" font-size="10.00" fill="#000000">&#45; KV cache</text>
+<text text-anchor="middle" x="1551.5" y="-222" font-family="Arial" font-size="10.00" fill="#000000">&#45; Activations</text>
+<text text-anchor="middle" x="1551.5" y="-211" font-family="Arial" font-size="10.00" fill="#000000">Computes:</text>
+<text text-anchor="middle" x="1551.5" y="-200" font-family="Arial" font-size="10.00" fill="#000000">Partial matmuls per layer</text>
+</g>
+<!-- vllm_server&#45;&gt;gpu1 -->
+<g id="edge4" class="edge">
+<title>vllm_server&#45;&gt;gpu1</title>
+<path fill="none" stroke="#e65100" stroke-width="2" d="M1335.53,-252C1365.01,-252 1396.34,-252 1425.7,-252"/>
+<polygon fill="#e65100" stroke="#e65100" stroke-width="2" points="1426,-255.5 1436,-252 1426,-248.5 1426,-255.5"/>
+</g>
+<!-- gpu0&#45;&gt;gpu1 -->
+<g id="edge5" class="edge">
+<title>gpu0&#45;&gt;gpu1</title>
+<path fill="none" stroke="#bf360c" stroke-width="2" d="M1551.5,-152.29C1551.5,-162.3 1551.5,-172.61 1551.5,-182.62"/>
+<polygon fill="#bf360c" stroke="#bf360c" stroke-width="2" points="1555,-152.11 1551.5,-142.11 1548,-152.11 1555,-152.11"/>
+<polygon fill="#bf360c" stroke="#bf360c" stroke-width="2" points="1548,-182.93 1551.5,-192.93 1555,-182.93 1548,-182.93"/>
+<text text-anchor="middle" x="1532" y="-176" font-family="Arial" font-size="10.00">NVLink</text>
+<text text-anchor="middle" x="1532" y="-165" font-family="Arial" font-size="10.00">Exchange</text>
+<text text-anchor="middle" x="1532" y="-154" font-family="Arial" font-size="10.00">partial results</text>
+</g>
+<!-- footer -->
+<g id="node9" class="node">
+<title>footer</title>
+<text text-anchor="middle" x="323" y="-549.2" font-family="Arial" font-size="11.00">6 remaining H100s available for Jupyter GPU notebooks | vLLM PVC (hf&#45;cache, 150Gi) caches model weights to avoid re&#45;download</text>
+</g>
+</g>
+</svg>
+
+<p><strong>Figure 1: Inference request flow.</strong> A user sends an HTTP request (curl or Python OpenAI client) to the internal load balancer. The request routes to the vLLM pod running on an A3 node with H100 GPUs. The pod processes the request using 2 GPUs in tensor-parallel mode and returns the generated text.</p>
+<h3 id="key-details">Key details</h3>
+<ul>
+<li><strong>Model served:</strong> <code>Qwen/Qwen3-32B</code> (from Hugging Face, ungated)</li>
+<li><strong>Model name to use in API calls:</strong> <code>qwen3-32b</code></li>
+<li><strong>API compatibility:</strong> OpenAI-compatible <code>/v1/chat/completions</code> and <code>/v1/models</code> endpoints</li>
+<li><strong>Internal load balancer IP:</strong> <code>10.128.0.43:8000</code></li>
+<li><strong>In-cluster DNS name:</strong> <code>qwen3-vllm.inference.svc.cluster.local:8000</code></li>
+<li><strong>Maximum context length:</strong> 32,768 tokens</li>
+<li><strong>API key:</strong> Not required (vLLM ignores the <code>api_key</code> field by default; use <code>&quot;none&quot;</code> or any placeholder)</li>
+</ul>
+<h3 id="important-vpc-internal-only">Important: VPC-internal only</h3>
+<p>The endpoint is <strong>not publicly accessible</strong>. It uses an internal load balancer, so you can only reach it from:</p>
+<ul>
+<li>Inside the VPC (from a VM, container, or service in the same GCP network)</li>
+<li>From a Jupyter notebook running in-cluster (see <a href="#8-using-from-a-jupyter-notebook">Section 8</a>)</li>
+<li>From your laptop via <code>kubectl port-forward</code> (see <a href="#2-how-to-reach-the-endpoint">Section 2</a>)</li>
+</ul>
+<hr>
+<h2 id="2-how-to-reach-the-endpoint">2. How to Reach the Endpoint</h2>
+<h3 id="a-from-inside-the-vpc">(a) From inside the VPC</h3>
+<p>If you&#x27;re running on a VM or container inside the VPC, use the load balancer IP directly:</p>
+<pre><code class="language-">
+http://10.128.0.43:8000
+</code></pre>
+<h3 id="b-from-a-jupyter-notebook-in-cluster">(b) From a Jupyter notebook in-cluster</h3>
+<p>Notebooks running in the JupyterHub environment (namespace <code>jupyter</code>) can use the in-cluster DNS name:</p>
+<pre><code class="language-">
+http://qwen3-vllm.inference.svc.cluster.local:8000
+</code></pre>
+<p>See <a href="#8-using-from-a-jupyter-notebook">Section 8</a> for a complete notebook example.</p>
+<h3 id="c-from-your-laptop-outside-the-vpc">(c) From your laptop (outside the VPC)</h3>
+<p>If you&#x27;re developing from your laptop and need to test the endpoint, use <code>kubectl port-forward</code>:</p>
+<pre><code class="language-bash">
+# Forward local port 8000 to the vLLM service in the cluster
+kubectl -n inference port-forward svc/qwen3-vllm 8000:8000
+</code></pre>
+<p>Leave this running in a terminal, then use <code>http://localhost:8000</code> in your code or curl commands.</p>
+<p><strong>Note:</strong> You&#x27;ll need cluster credentials configured:</p>
+<pre><code class="language-bash">
+gcloud container clusters get-credentials hypercomputer-a3-cluster \
+  --region us-central1 --project hdlab-elideng
+</code></pre>
+<hr>
+<h2 id="3-list-available-models">3. List Available Models</h2>
+<p>To see the model(s) served by the endpoint:</p>
+<pre><code class="language-bash">
+curl http://10.128.0.43:8000/v1/models
+</code></pre>
+<p><strong>Sample output:</strong></p>
+<pre><code class="language-json">
+{
+  &quot;object&quot;: &quot;list&quot;,
+  &quot;data&quot;: [
+    {
+      &quot;id&quot;: &quot;qwen3-32b&quot;,
+      &quot;object&quot;: &quot;model&quot;,
+      &quot;created&quot;: 1784284247,
+      &quot;owned_by&quot;: &quot;vllm&quot;,
+      &quot;root&quot;: &quot;Qwen/Qwen3-32B&quot;,
+      &quot;max_model_len&quot;: 32768
+    }
+  ]
+}
+</code></pre>
+<p>The <code>id</code> field (<code>&quot;qwen3-32b&quot;</code>) is the model name you&#x27;ll use in chat completion requests.</p>
+<hr>
+<h2 id="4-chat-completion-with-curl">4. Chat Completion with curl</h2>
+<h3 id="basic-request">Basic request</h3>
+<pre><code class="language-bash">
+curl http://10.128.0.43:8000/v1/chat/completions \
+  -H &#x27;Content-Type: application/json&#x27; \
+  -d &#x27;{
+    &quot;model&quot;: &quot;qwen3-32b&quot;,
+    &quot;messages&quot;: [
+      {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Explain tensor parallelism in one sentence.&quot;}
+    ],
+    &quot;max_tokens&quot;: 64
+  }&#x27;
+</code></pre>
+<h3 id="sample-json-response">Sample JSON response</h3>
+<pre><code class="language-json">
+{
+  &quot;id&quot;: &quot;chatcmpl-971f5573976c4b7ca0aecc292c892e86&quot;,
+  &quot;object&quot;: &quot;chat.completion&quot;,
+  &quot;model&quot;: &quot;qwen3-32b&quot;,
+  &quot;choices&quot;: [
+    {
+      &quot;index&quot;: 0,
+      &quot;message&quot;: {
+        &quot;role&quot;: &quot;assistant&quot;,
+        &quot;content&quot;: &quot;&lt;think&gt;\nOkay, the user wants me to explain tensor parallelism in one sentence. Tensor parallelism is a technique where a large neural network model is split across multiple GPUs by dividing the weight matrices of each layer, allowing the GPUs to compute in parallel and exchange partial results over high-speed interconnects like NVLink.\n&lt;/think&gt;\n\nTensor parallelism is a technique that splits a model&#x27;s weight matrices across multiple GPUs so they compute in lockstep and exchange partial results, enabling faster inference for large models.&quot;
+      },
+      &quot;finish_reason&quot;: &quot;stop&quot;
+    }
+  ],
+  &quot;usage&quot;: {
+    &quot;prompt_tokens&quot;: 15,
+    &quot;total_tokens&quot;: 79,
+    &quot;completion_tokens&quot;: 64
+  }
+}
+</code></pre>
+<p><strong>Note on Qwen3 <code>&lt;think&gt;</code> tags:</strong> Qwen3-32B often includes reasoning in <code>&lt;think&gt;</code> tags before the final answer. This is expected behavior. You can parse out the final answer or adjust your prompt to request concise responses.</p>
+<hr>
+<h2 id="5-chat-completion-with-python-openai-sdk">5. Chat Completion with Python OpenAI SDK</h2>
+<p>Install the OpenAI client if you haven&#x27;t already:</p>
+<pre><code class="language-bash">
+pip install openai
+</code></pre>
+<h3 id="basic-example">Basic example</h3>
+<pre><code class="language-python">
+from openai import OpenAI
+
+# Initialize the client (use localhost:8000 if port-forwarding from your laptop)
+client = OpenAI(
+    base_url=&quot;http://10.128.0.43:8000/v1&quot;,
+    api_key=&quot;none&quot;  # vLLM ignores this; required by SDK but any value works
+)
+
+# Send a chat completion request
+response = client.chat.completions.create(
+    model=&quot;qwen3-32b&quot;,
+    messages=[
+        {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is 2+2?&quot;}
+    ],
+    max_tokens=20
+)
+
+# Print the assistant&#x27;s reply
+print(response.choices[0].message.content)
+</code></pre>
+<p><strong>Sample output:</strong></p>
+<pre><code class="language-">
+&lt;think&gt;
+Okay, so I need to figure out what 2 plus 2 is. Let me
+</code></pre>
+<p>(Truncated at <code>max_tokens=20</code>. Increase <code>max_tokens</code> for longer responses.)</p>
+<h3 id="adding-a-system-prompt">Adding a system prompt</h3>
+<pre><code class="language-python">
+response = client.chat.completions.create(
+    model=&quot;qwen3-32b&quot;,
+    messages=[
+        {&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: &quot;You are a helpful assistant. Be concise.&quot;},
+        {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is tensor parallelism?&quot;}
+    ],
+    max_tokens=128
+)
+
+print(response.choices[0].message.content)
+</code></pre>
+<h3 id="multi-turn-conversation">Multi-turn conversation</h3>
+<pre><code class="language-python">
+messages = [
+    {&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: &quot;You are a helpful assistant.&quot;},
+    {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is the capital of France?&quot;},
+]
+
+response = client.chat.completions.create(
+    model=&quot;qwen3-32b&quot;,
+    messages=messages,
+    max_tokens=64
+)
+
+# Add assistant&#x27;s reply to history
+messages.append({
+    &quot;role&quot;: &quot;assistant&quot;,
+    &quot;content&quot;: response.choices[0].message.content
+})
+
+# Continue the conversation
+messages.append({&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is its population?&quot;})
+
+response = client.chat.completions.create(
+    model=&quot;qwen3-32b&quot;,
+    messages=messages,
+    max_tokens=64
+)
+
+print(response.choices[0].message.content)
+</code></pre>
+<hr>
+<h2 id="6-streaming-responses">6. Streaming Responses</h2>
+<p>For long responses, you can stream tokens as they&#x27;re generated instead of waiting for the complete response:</p>
+<pre><code class="language-python">
+from openai import OpenAI
+
+client = OpenAI(
+    base_url=&quot;http://10.128.0.43:8000/v1&quot;,
+    api_key=&quot;none&quot;
+)
+
+stream = client.chat.completions.create(
+    model=&quot;qwen3-32b&quot;,
+    messages=[
+        {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Write a short story about a robot learning to paint.&quot;}
+    ],
+    max_tokens=256,
+    stream=True  # Enable streaming
+)
+
+for chunk in stream:
+    if chunk.choices[0].delta.content is not None:
+        print(chunk.choices[0].delta.content, end=&quot;&quot;, flush=True)
+
+print()  # Newline at the end
+</code></pre>
+<p><strong>Sample output:</strong></p>
+<pre><code class="language-">
+&lt;think&gt;
+Okay, so I need to write a short story about a robot learning to paint...
+&lt;/think&gt;
+
+Once upon a time, in a quiet studio...
+</code></pre>
+<p>Tokens appear as they&#x27;re generated, providing a better user experience for interactive applications.</p>
+<hr>
+<h2 id="7-common-parameters">7. Common Parameters</h2>
+<p>Here are the most commonly used parameters for the <code>/v1/chat/completions</code> endpoint:</p>
+<table>
+<thead><tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>model</code></td>
+<td>string</td>
+<td><em>required</em></td>
+<td>Model name. Use <code>&quot;qwen3-32b&quot;</code>.</td>
+</tr>
+<tr>
+<td><code>messages</code></td>
+<td>array</td>
+<td><em>required</em></td>
+<td>List of message objects with <code>role</code> (<code>&quot;system&quot;</code>, <code>&quot;user&quot;</code>, <code>&quot;assistant&quot;</code>) and <code>content</code>.</td>
+</tr>
+<tr>
+<td><code>max_tokens</code></td>
+<td>integer</td>
+<td>(unlimited)</td>
+<td>Maximum number of tokens to generate. Cap this to control response length and latency.</td>
+</tr>
+<tr>
+<td><code>temperature</code></td>
+<td>float</td>
+<td>1.0</td>
+<td>Sampling temperature. Lower (e.g., 0.2) = more deterministic. Higher (e.g., 1.5) = more creative/random.</td>
+</tr>
+<tr>
+<td><code>top_p</code></td>
+<td>float</td>
+<td>1.0</td>
+<td>Nucleus sampling. Keep top tokens whose cumulative probability is <code>top_p</code>. Use 0.9 for slightly more focused responses.</td>
+</tr>
+<tr>
+<td><code>stream</code></td>
+<td>boolean</td>
+<td>false</td>
+<td>If <code>true</code>, stream response tokens as they&#x27;re generated (see <a href="#6-streaming-responses">Section 6</a>).</td>
+</tr>
+<tr>
+<td><code>stop</code></td>
+<td>string or array</td>
+<td>null</td>
+<td>Stop generation when these tokens are encountered (e.g., <code>[&quot;&lt;/think&gt;&quot;]</code> to stop at the end of reasoning).</td>
+</tr>
+</tbody></table>
+<h3 id="example-with-multiple-parameters">Example with multiple parameters</h3>
+<pre><code class="language-python">
+response = client.chat.completions.create(
+    model=&quot;qwen3-32b&quot;,
+    messages=[
+        {&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: &quot;You are a concise assistant.&quot;},
+        {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Explain GPUs.&quot;}
+    ],
+    max_tokens=100,
+    temperature=0.7,
+    top_p=0.9
+)
+
+print(response.choices[0].message.content)
+</code></pre>
+<hr>
+<h2 id="8-using-from-a-jupyter-notebook">8. Using from a Jupyter Notebook</h2>
+<p>If you&#x27;re working in a Jupyter notebook spawned by the in-cluster JupyterHub (see the <a href="04-jupyter-notebook-user-guide.html">Jupyter Notebook User Guide</a>), you can call the inference endpoint using the in-cluster DNS name.</p>
+<p><strong>Example notebook:</strong> See <code>deploy/jupyter/examples/call_vllm.ipynb</code> for a working example.</p>
+<h3 id="in-a-notebook-cell">In a notebook cell</h3>
+<pre><code class="language-python">
+from openai import OpenAI
+
+client = OpenAI(
+    base_url=&quot;http://qwen3-vllm.inference.svc.cluster.local:8000/v1&quot;,
+    api_key=&quot;none&quot;
+)
+
+response = client.chat.completions.create(
+    model=&quot;qwen3-32b&quot;,
+    messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello, how are you?&quot;}],
+    max_tokens=64
+)
+
+print(response.choices[0].message.content)
+</code></pre>
+<p><strong>Why use the DNS name instead of the IP?</strong> The DNS name (<code>qwen3-vllm.inference.svc.cluster.local</code>) works across Kubernetes namespaces and will continue to work even if the load balancer IP changes.</p>
+<hr>
+<h2 id="9-troubleshooting">9. Troubleshooting</h2>
+<h3 id="problem-connection-refused-or-timeout">Problem: Connection refused or timeout</h3>
+<p><strong>Symptoms:</strong></p>
+<pre><code class="language-">
+requests.exceptions.ConnectionError: (&#x27;Connection aborted.&#x27;, ConnectionRefusedError(111, &#x27;Connection refused&#x27;))
+</code></pre>
+<p>or</p>
+<pre><code class="language-">
+curl: (7) Failed to connect to 10.128.0.43 port 8000: Connection refused
+</code></pre>
+<p><strong>Possible causes and fixes:</strong></p>
+<table>
+<thead><tr>
+<th>Cause</th>
+<th>How to check</th>
+<th>Fix</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>You&#x27;re outside the VPC</td>
+<td>Check if you&#x27;re on a laptop or external machine</td>
+<td>Use <code>kubectl port-forward</code> (see <a href="#c-from-your-laptop-outside-the-vpc">Section 2c</a>)</td>
+</tr>
+<tr>
+<td>vLLM pod is down</td>
+<td><code>kubectl -n inference get pods -l app=qwen3-vllm</code></td>
+<td>Wait for pod to become <code>Running</code> and <code>Ready</code>, or check pod logs: <code>kubectl -n inference logs -l app=qwen3-vllm</code></td>
+</tr>
+<tr>
+<td>Wrong IP or port</td>
+<td>Verify you&#x27;re using <code>10.128.0.43:8000</code> (inside VPC) or <code>localhost:8000</code> (with port-forward)</td>
+<td>Double-check the URL in your code</td>
+</tr>
+</tbody></table>
+<h3 id="problem-model-not-found-or-404-error">Problem: &quot;Model not found&quot; or 404 error</h3>
+<p><strong>Symptoms:</strong></p>
+<pre><code class="language-json">
+{&quot;error&quot;: &quot;Model not found: qwen3-32B&quot;}
+</code></pre>
+<p><strong>Cause:</strong> The model name is case-sensitive. The correct name is <code>qwen3-32b</code> (lowercase &quot;b&quot;).</p>
+<p><strong>Fix:</strong> Use <code>&quot;qwen3-32b&quot;</code> in the <code>model</code> field.</p>
+<pre><code class="language-python">
+# Wrong
+response = client.chat.completions.create(model=&quot;qwen3-32B&quot;, ...)
+
+# Correct
+response = client.chat.completions.create(model=&quot;qwen3-32b&quot;, ...)
+</code></pre>
+<h3 id="problem-slow-first-token-ttft">Problem: Slow first token (TTFT)</h3>
+<p><strong>Symptoms:</strong> First response from the model takes 5-10+ seconds, but subsequent requests are faster.</p>
+<p><strong>Cause:</strong> Cold start. The vLLM server may need to warm up the model or allocate GPU memory on the first request after a pod restart.</p>
+<p><strong>Fix:</strong> This is expected behavior. Subsequent requests will have much lower latency (typically &lt;1s for short prompts). For production, consider keeping the pod &quot;warm&quot; with periodic health checks or a low-rate background request.</p>
+<h3 id="problem-context-length-exceeded">Problem: Context length exceeded</h3>
+<p><strong>Symptoms:</strong></p>
+<pre><code class="language-json">
+{&quot;error&quot;: &quot;Input too long: ... tokens exceeds maximum context length of 32768&quot;}
+</code></pre>
+<p><strong>Cause:</strong> The sum of your prompt tokens and <code>max_tokens</code> exceeds the model&#x27;s maximum context length of <strong>32,768 tokens</strong>.</p>
+<p><strong>Fix:</strong></p>
+<ul>
+<li>Reduce the length of your prompt (fewer messages, shorter content)</li>
+<li>Reduce <code>max_tokens</code> to leave more room for the prompt</li>
+<li>Summarize or truncate conversation history in multi-turn chats</li>
+</ul>
+<p><strong>Rough estimate:</strong> 1 token ≈ 4 characters (or 0.75 words) in English. A 10,000-character prompt is approximately 2,500 tokens.</p>
+<h3 id="problem-response-is-truncated-or-incomplete">Problem: Response is truncated or incomplete</h3>
+<p><strong>Symptoms:</strong> The response ends abruptly; <code>finish_reason</code> is <code>&quot;length&quot;</code> instead of <code>&quot;stop&quot;</code>.</p>
+<p><strong>Cause:</strong> The response hit the <code>max_tokens</code> limit before the model finished generating.</p>
+<p><strong>Fix:</strong> Increase <code>max_tokens</code> in your request:</p>
+<pre><code class="language-python">
+response = client.chat.completions.create(
+    model=&quot;qwen3-32b&quot;,
+    messages=[...],
+    max_tokens=512  # Increase from default
+)
+</code></pre>
+<h3 id="problem-unexpected-think-tags-in-output">Problem: Unexpected <code>&lt;think&gt;</code> tags in output</h3>
+<p><strong>Symptoms:</strong> The model includes reasoning in <code>&lt;think&gt;...&lt;/think&gt;</code> tags before the final answer.</p>
+<p><strong>Cause:</strong> Qwen3-32B is trained to show its reasoning process. This is <strong>expected behavior</strong>, not a bug.</p>
+<p><strong>Fix (option 1):</strong> Parse out the content after <code>&lt;/think&gt;</code>:</p>
+<pre><code class="language-python">
+content = response.choices[0].message.content
+if &quot;&lt;/think&gt;&quot; in content:
+    content = content.split(&quot;&lt;/think&gt;&quot;, 1)[1].strip()
+print(content)
+</code></pre>
+<p><strong>Fix (option 2):</strong> Add a system prompt requesting concise responses:</p>
+<pre><code class="language-python">
+messages = [
+    {&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: &quot;Answer directly without showing reasoning.&quot;},
+    {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is 2+2?&quot;}
+]
+</code></pre>
+<p><strong>Fix (option 3):</strong> Use <code>stop=[&quot;&lt;/think&gt;&quot;]</code> to stop generation immediately after reasoning (though you&#x27;ll lose the final answer).</p>
+<hr>
+<h2 id="related-guides">Related Guides</h2>
+<ul>
+<li><strong><a href="01-architecture.html">Architecture Reference</a></strong> — Understand the full system: GKE cluster, GPU nodes, vLLM deployment, and networking</li>
+<li><strong><a href="04-jupyter-notebook-user-guide.html">Jupyter Notebook User Guide</a></strong> — Log into JupyterHub, launch GPU notebooks, and call the inference endpoint from a notebook</li>
+<li><strong><a href="02a-cluster-setup.html">Deployment from Scratch (Part 1 — start here)</a></strong> — The five-part series to deploy this infrastructure from a fresh GCP project</li>
+<li><strong><a href="appendix-glossary.html">Glossary appendix</a></strong> — Plain-language definitions of every term used in these guides</li>
+</ul>
+<hr>
+<p><strong>Document version:</strong> 2026-07-20</p>
+<p><strong>Endpoint details:</strong> vLLM v0.8.4 serving Qwen3-32B at <code>10.128.0.43:8000</code> (internal LB, VPC-only access)</p>
+</body>
+</html>

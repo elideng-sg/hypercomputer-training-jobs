@@ -1,0 +1,94 @@
+digraph jupyter_flow {
+  labelloc="t";
+  fontsize=20;
+  fontname="Arial";
+  label="JupyterHub Flow: User Login -> GPU Notebook Spawn -> vLLM API Call";
+  rankdir=TB;
+  compound=true;
+  node [shape=box, style="rounded,filled", fontname="Arial", fontsize=11, fillcolor="#ffffff", color="#666666"];
+  edge [color="#333333", fontname="Arial", fontsize=10, penwidth=2];
+
+  user [label="User\nBrowser\n(inside VPC)\nhttp://10.128.15.234", fontsize=12];
+  jh_lb [label="Internal LoadBalancer\nproxy-public service\nIP: 10.128.15.234:80\n(ns: jupyter)", fillcolor="#4caf50", color="#2e7d32", fontcolor="#ffffff"];
+  hub [label="JupyterHub Hub\nHelm: jupyterhub 4.4.0\nJupyterHub 5.5.0\n(ns: jupyter)\nDummyAuthenticator: demo2026", fillcolor="#ff9800", color="#e65100"];
+  login [label="Login Form\nUsername: (any)\nPassword: demo2026\n(Demo only - use OAuth\nfor production)", fillcolor="#f5f5f5", color="#666666"];
+
+  code_example [label=<
+    <table border="0" cellborder="0" cellspacing="0" cellpadding="1">
+      <tr><td align="center"><font color="#1565c0"><b>Example: Call vLLM from Notebook</b></font></td></tr>
+      <tr><td align="left"><font face="monospace">from openai import OpenAI</font></td></tr>
+      <tr><td align="left"><font face="monospace">client = OpenAI(base_url=</font></td></tr>
+      <tr><td align="left"><font face="monospace">  "http://qwen3-vllm.inference</font></td></tr>
+      <tr><td align="left"><font face="monospace">  .svc.cluster.local:8000/v1",</font></td></tr>
+      <tr><td align="left"><font face="monospace">  api_key="none")</font></td></tr>
+      <tr><td align="left"><font face="monospace">resp = client.chat.completions...</font></td></tr>
+    </table>
+  >, fillcolor="#e3f2fd", color="#1565c0"];
+
+  subgraph cluster_profile {
+    label="Profile Selection";
+    style="rounded,filled";
+    fillcolor="#fff9c4";
+    color="#f57f17";
+    fontname="Arial";
+    fontsize=14;
+    cpu [label="CPU (no GPU)\nDefault profile\n4 CPU / 16G RAM", fillcolor="#e0e0e0", color="#666666", fontsize=10];
+    gpu_profile [label="GPU (1x H100)\nPyTorch CUDA12\n1x nvidia.com/gpu", fillcolor="#ffcc80", color="#e65100", fontsize=10];
+  }
+
+  spawn [label="Hub Spawns Notebook Pod\nImage: quay.io/jupyter/\npytorch-notebook:cuda12-latest\nRequests: nvidia.com/gpu: \"1\"\nNodeSelector: nvidia-h100-80gb\nTolerations: gpu + gke-queued",
+         fillcolor="#ffe0b2", color="#e65100"];
+
+  subgraph cluster_a3node {
+    label="A3 Node: gke-hypercomputer-a3-a3-h100-dws-pool-...-hhp6 (8x H100 80GB)";
+    style="rounded,filled";
+    fillcolor="#fff3e0";
+    color="#ff6f00";
+    fontname="Arial";
+    fontsize=15;
+
+    subgraph cluster_nbpod {
+      label="GPU Notebook Pod (ns: jupyter)\njupyter-<username>";
+      style="rounded,filled";
+      fillcolor="#ffcc80";
+      color="#e65100";
+      fontsize=12;
+      nb_gpu0 [label="GPU 0 (1x H100)\nnvidia-smi shows H100 80GB", fillcolor="#ff9800", color="#bf360c", fontcolor="#ffffff", fontsize=10];
+      nb_home [label="Persistent Home (20Gi PVC)\npremium-rwo, per-user", fillcolor="#d1c4e9", color="#512da8", fontsize=10];
+      nb_code [label="Code runs in notebook:\ntorch.cuda.is_available() -> True\nCall vLLM endpoint ->", fillcolor="#e0e0e0", color="#666666", fontsize=10];
+    }
+
+    subgraph cluster_vllmpod {
+      label="vLLM Pod (ns: inference)";
+      style="rounded,filled";
+      fillcolor="#ffcc80";
+      color="#e65100";
+      fontsize=12;
+      vllm_gpus [label="GPU 0 + GPU 1 (2x H100)\nQwen3-32B, TP=2\n~77GB each", fillcolor="#ff9800", color="#bf360c", fontcolor="#ffffff", fontsize=10];
+      vllm_dns [label="Cluster DNS endpoint:\nqwen3-vllm.inference\n.svc.cluster.local:8000\n(cross-namespace DNS works:\njupyter -> inference)\nOpenAI-compatible API", fillcolor="#e0e0e0", color="#666666", fontsize=10];
+    }
+
+    remaining [label="Remaining GPUs\n(up to ~6 H100s available)\nFor:\n- More GPU notebooks\n- Training jobs\n- Other GPU workloads\nWhen idle:\nHolder pod (ns: default)\na3-holder-zone-a requests\nall 8 GPUs to prevent\nnode reclaim\n(currently: 0 replicas\nsince vLLM holds node)",
+               style="rounded,filled,dashed", fillcolor="#e0e0e0", color="#666666", fontsize=10];
+  }
+
+  footer [shape=plaintext, style="", fillcolor="none", fontsize=11,
+          label="First GPU notebook spawn: 2-3 min (image pull) | Subsequent spawns: <30s | See deploy/jupyter/examples/*.ipynb for example notebooks"];
+
+  { rank=same; user; jh_lb; hub; login; code_example; }
+
+  user -> jh_lb [label="HTTP :80"];
+  jh_lb -> hub [label="Routes"];
+  hub -> login [style=invis];
+  login -> code_example [style=invis];
+
+  hub -> cpu [style=invis];
+  gpu_profile -> spawn [label="User selects GPU", color="#e65100", fontcolor="#e65100"];
+  spawn -> nb_gpu0 [label="Schedules to A3 node", color="#ff6f00", fontcolor="#ff6f00", lhead=cluster_nbpod];
+
+  nb_code -> vllm_dns [label="HTTP", color="#4caf50", fontcolor="#4caf50"];
+  vllm_dns -> nb_code [label="Response", color="#4caf50", fontcolor="#4caf50"];
+
+  nb_home -> footer [style=invis];
+  remaining -> footer [style=invis];
+}

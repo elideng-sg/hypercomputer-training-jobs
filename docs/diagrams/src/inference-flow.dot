@@ -1,0 +1,89 @@
+digraph inference_flow {
+  labelloc="t";
+  fontsize=20;
+  fontname="Arial";
+  label="Inference Request Flow: Client -> vLLM (Qwen3-32B) -> Tensor-Parallel H100s";
+  rankdir=LR;
+  compound=true;
+  node [shape=box, style="rounded,filled", fontname="Arial", fontsize=11, fillcolor="#ffffff", color="#666666"];
+  edge [color="#333333", fontname="Arial", fontsize=10, penwidth=2];
+
+  client [label="Client\n\nOpenAI Python SDK\nor curl\n(inside VPC)", fontsize=12];
+
+  request [label=<
+    <table border="0" cellborder="0" cellspacing="0" cellpadding="1">
+      <tr><td align="center"><b>POST Request</b></td></tr>
+      <tr><td align="left"><font face="monospace">POST /v1/chat/completions</font></td></tr>
+      <tr><td align="left"><font face="monospace">{</font></td></tr>
+      <tr><td align="left"><font face="monospace">  "model": "qwen3-32b",</font></td></tr>
+      <tr><td align="left"><font face="monospace">  "messages": [</font></td></tr>
+      <tr><td align="left"><font face="monospace">    {"role": "user",</font></td></tr>
+      <tr><td align="left"><font face="monospace">     "content": "..."}],</font></td></tr>
+      <tr><td align="left"><font face="monospace">  "max_tokens": 128</font></td></tr>
+      <tr><td align="left"><font face="monospace">}</font></td></tr>
+    </table>
+  >, fillcolor="#f5f5f5", color="#666666"];
+
+  response [label=<
+    <table border="0" cellborder="0" cellspacing="0" cellpadding="1">
+      <tr><td align="center"><font color="#4caf50"><b>Response</b></font></td></tr>
+      <tr><td align="left"><font face="monospace">{</font></td></tr>
+      <tr><td align="left"><font face="monospace">  "choices": [{</font></td></tr>
+      <tr><td align="left"><font face="monospace">    "message": {</font></td></tr>
+      <tr><td align="left"><font face="monospace">      "role": "asst",</font></td></tr>
+      <tr><td align="left"><font face="monospace">      "content": "..."</font></td></tr>
+      <tr><td align="left"><font face="monospace">    }</font></td></tr>
+      <tr><td align="left"><font face="monospace">  }],</font></td></tr>
+      <tr><td align="left"><font face="monospace">  "usage": {...}</font></td></tr>
+      <tr><td align="left"><font face="monospace">}</font></td></tr>
+      <tr><td align="center"><font color="#4caf50">OpenAI-compatible</font></td></tr>
+    </table>
+  >, fillcolor="#f5f5f5", color="#4caf50"];
+
+  lb [label="Internal LoadBalancer\nService: qwen3-vllm\nIP: 10.128.0.43:8000\nDNS: qwen3-vllm.inference\n.svc.cluster.local:8000",
+      fillcolor="#4caf50", color="#2e7d32", fontcolor="#ffffff"];
+
+  note [label="Tensor Parallelism (TP=2)\nEach layer's weight matrices are split column-wise\nacross the 2 GPUs. Both compute in lockstep,\nexchanging partial results over NVLink every layer.",
+        fillcolor="#e3f2fd", color="#1565c0"];
+
+  subgraph cluster_vllm {
+    label="vLLM Pod (ns: inference)";
+    style="rounded,filled";
+    fillcolor="#fff3e0";
+    color="#ff6f00";
+    fontname="Arial";
+    fontsize=15;
+
+    vllm_server [label="vLLM Server\nImage: vllm/vllm-openai:v0.8.4\nModel: Qwen/Qwen3-32B (~32B params)\n--tensor-parallel-size 2\n--max-model-len 32768\n--gpu-memory-utilization 0.90\nRequests: 2x nvidia.com/gpu\n(Model split across 2 H100s via tensor parallelism)",
+                 fillcolor="#ffe0b2", color="#e65100"];
+
+    subgraph cluster_gpus {
+      label="2x NVIDIA H100 80GB GPUs\n(Connected via NVLink on A3 node)";
+      style="rounded,filled";
+      fillcolor="#ffcc80";
+      color="#bf360c";
+      fontsize=13;
+
+      gpu0 [label="GPU 0\nH100 80GB\nMemory used:\n~77,583 MiB\nLoads:\n- Half of model weights\n- KV cache\n- Activations\nComputes:\nPartial matmuls per layer",
+            fillcolor="#ff9800", color="#bf360c", fontcolor="#000000", fontsize=10];
+      gpu1 [label="GPU 1\nH100 80GB\nMemory used:\n~77,583 MiB\nLoads:\n- Other half of weights\n- KV cache\n- Activations\nComputes:\nPartial matmuls per layer",
+            fillcolor="#ff9800", color="#bf360c", fontcolor="#000000", fontsize=10];
+    }
+  }
+
+  footer [shape=plaintext, style="", fillcolor="none", fontsize=11,
+          label="6 remaining H100s available for Jupyter GPU notebooks | vLLM PVC (hf-cache, 150Gi) caches model weights to avoid re-download"];
+
+  client -> lb [label="HTTP :8000"];
+  lb -> vllm_server [label="Routes to pod", lhead=cluster_vllm];
+  vllm_server -> gpu0 [label="Tensor-parallel\ncomputation", color="#e65100", lhead=cluster_gpus];
+  vllm_server -> gpu1 [color="#e65100", lhead=cluster_gpus];
+  gpu0 -> gpu1 [dir=both, label="NVLink\nExchange\npartial results", color="#bf360c", constraint=false];
+
+  vllm_server -> lb [label="Token stream response", color="#4caf50", fontcolor="#4caf50", constraint=false];
+  lb -> client [label="JSON response", color="#4caf50", fontcolor="#4caf50", constraint=false];
+
+  client -> request [style=invis];
+  request -> response [style=invis];
+  lb -> note [style=invis];
+}

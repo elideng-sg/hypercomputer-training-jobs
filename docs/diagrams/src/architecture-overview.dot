@@ -1,0 +1,111 @@
+digraph architecture_overview {
+  labelloc="t";
+  fontsize=20;
+  fontname="Arial";
+  label="Architecture Overview: GKE + DWS H100 -> vLLM + JupyterHub";
+  rankdir=TB;
+  compound=true;
+  nodesep=0.4;
+  ranksep=0.6;
+  node [shape=box, style="rounded,filled", fontname="Arial", fontsize=11, fillcolor="#ffffff", color="#666666"];
+  edge [color="#333333", fontname="Arial", fontsize=10];
+
+  subgraph cluster_project {
+    label="GCP Project: hdlab-elideng (Region: us-central1)";
+    style="rounded,filled";
+    fillcolor="#e8f0fe";
+    color="#1a73e8";
+    fontcolor="#1a73e8";
+    fontname="Arial";
+    fontsize=14;
+
+    subgraph cluster_vpc {
+      label="VPC-internal Network (10.128.0.0/16)";
+      style="rounded,filled";
+      fillcolor="#f0f4ff";
+      color="#1a73e8";
+      fontcolor="#1a73e8";
+      fontsize=13;
+
+      users [label="VPC-internal Users\n(clients, notebooks,\nOpenAI SDK)", fontsize=12, style="rounded,filled", fillcolor="#ffffff"];
+      inf_lb [label="Inference LB\n10.128.0.43:8000\n(Internal)", style="rounded,filled", fillcolor="#4caf50", color="#2e7d32", fontcolor="#ffffff"];
+      jh_lb [label="JupyterHub LB\n10.128.15.234:80\n(Internal)", style="rounded,filled", fillcolor="#4caf50", color="#2e7d32", fontcolor="#ffffff"];
+
+      subgraph cluster_gke {
+        label="GKE Cluster: hypercomputer-a3-cluster";
+        style="rounded,filled";
+        fillcolor="#ffffff";
+        color="#1a73e8";
+        fontcolor="#1a73e8";
+        fontsize=13;
+
+        subgraph cluster_system {
+          label="Node Pool: system\n(e2-standard, CPU-only, always-on)";
+          style="rounded,filled";
+          fillcolor="#f5f5f5";
+          color="#666666";
+          fontcolor="#000000";
+          fontsize=12;
+
+          hub [label="JupyterHub hub/proxy\n(ns: jupyter)", fillcolor="#e0e0e0"];
+          kueue [label="Kueue", fillcolor="#e0e0e0"];
+          dcgm [label="DCGM", fillcolor="#e0e0e0"];
+          sysworkloads [label="System workloads", fillcolor="#e0e0e0"];
+        }
+
+        subgraph cluster_a3pool {
+          label="Node Pool: a3-h100-dws-pool\n(a3-highgpu-8g, DWS Flex-Start, autoscale 0->N)\nTaints: nvidia.com/gpu + cloud.google.com/gke-queued";
+          style="rounded,filled";
+          fillcolor="#fff3e0";
+          color="#ff6f00";
+          fontcolor="#000000";
+          fontsize=12;
+
+          subgraph cluster_a3node {
+            label="A3 Node: gke-hypercomputer-a3-a3-h100-dws-pool-...-hhp6\n(zone: us-central1-a, 8x H100 80GB, NVLink/NVSwitch)\nLabel: cloud.google.com/gke-accelerator=nvidia-h100-80gb";
+            style="rounded,filled";
+            fillcolor="#ffe0b2";
+            color="#ff6f00";
+            fontcolor="#000000";
+            fontsize=11;
+
+            vllm [label="vLLM Pod (ns: inference)\nQwen3-32B\nv0.8.4, TP=2\nUses 2 H100s (~77GB each)", style="rounded,filled", fillcolor="#ffcc80", color="#e65100"];
+            jupyter [label="Jupyter Notebook Pods (ns: jupyter)\nPyTorch CUDA12\nGPU profile: 1x H100\nUses up to ~6 H100s (per-user notebooks)", style="rounded,filled", fillcolor="#ffcc80", color="#e65100"];
+            holder [label="Capacity Holder: a3-holder-zone-a\n(ns: default, pause pod with consume-provisioning-request)\nRequests 8 GPUs when vLLM not running (currently: 0 replicas)\nPrevents idle reclaim during 7-day DWS window", style="rounded,filled,dashed", fillcolor="#e0e0e0", color="#666666"];
+
+            subgraph cluster_pvc {
+              label="Persistent Disks";
+              style="rounded,filled";
+              fillcolor="#d1c4e9";
+              color="#512da8";
+              fontsize=11;
+              pvc_hf [label="hf-cache PVC (150Gi)", fillcolor="#b39ddb", color="#512da8", fontsize=10];
+              pvc_home [label="User home PVCs (20Gi ea.)", fillcolor="#b39ddb", color="#512da8", fontsize=10];
+            }
+
+            subgraph cluster_dws {
+              label="DWS Provisioning";
+              style="rounded,filled";
+              fillcolor="#fff9c4";
+              color="#f57f17";
+              fontsize=11;
+              provreq [label="ProvisioningRequest:\na3-h100-req-zone-a", fillcolor="#fff59d", color="#f57f17", fontsize=10];
+              computeeng [label="-> Compute Engine capacity", fillcolor="#fff59d", color="#f57f17", fontsize=10];
+            }
+          }
+        }
+      }
+    }
+  }
+
+  footer [shape=plaintext, style="", fillcolor="none", fontsize=11,
+          label="7-day DWS Flex-Start cap (expires ~2026-07-23) | House rule: never leave GPU node idle/unheld"];
+
+  users -> inf_lb;
+  users -> jh_lb;
+  inf_lb -> vllm [lhead=cluster_a3node];
+  jh_lb -> hub;
+  hub -> jupyter [style=dashed, color="#666666"];
+  provreq -> computeeng [style=invis];
+  pvc_hf -> pvc_home [style=invis];
+}

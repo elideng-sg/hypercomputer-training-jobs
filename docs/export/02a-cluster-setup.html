@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deployment Part 1 — Cluster Setup (Project, Quota, GKE)</title>
+    <style>
+        body {
+            font-family: 'Arial', 'Helvetica', sans-serif;
+            font-size: 11pt;
+            line-height: 1.6;
+            color: #202124;
+            max-width: 8.5in;
+            margin: 1in auto;
+            padding: 0 1rem;
+            background-color: #ffffff;
+        }
+
+        h1 {
+            color: #1a73e8;
+            font-size: 20pt;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 8px;
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: bold;
+        }
+
+        h2 {
+            color: #1a73e8;
+            font-size: 15pt;
+            margin-top: 22px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #eeeeee;
+            padding-bottom: 4px;
+            font-weight: bold;
+        }
+
+        h3 {
+            color: #202124;
+            font-size: 13pt;
+            margin-top: 18px;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        h4 {
+            color: #5f6368;
+            font-size: 11.5pt;
+            margin-top: 14px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        h5 {
+            color: #5f6368;
+            font-size: 10.5pt;
+            margin-top: 12px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        h6 {
+            color: #5f6368;
+            font-size: 10pt;
+            margin-top: 10px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        p {
+            margin-bottom: 10px;
+        }
+
+        pre {
+            background-color: #f8f9fa;
+            border: 1px solid #dadce0;
+            border-radius: 6px;
+            padding: 12px;
+            font-family: 'Courier New', 'Consolas', monospace;
+            font-size: 9.5pt;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin-bottom: 14px;
+            overflow-x: auto;
+        }
+
+        code {
+            background-color: #f1f3f4;
+            color: #d93025;
+            font-family: 'Courier New', 'Consolas', monospace;
+            font-size: 9.5pt;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+
+        pre code {
+            background-color: transparent;
+            color: #202124;
+            padding: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 18px;
+            font-size: 10pt;
+        }
+
+        th {
+            background-color: #e8f0fe;
+            color: #1a73e8;
+            border: 1px solid #dadce0;
+            padding: 10px;
+            text-align: left;
+            font-weight: bold;
+        }
+
+        td {
+            border: 1px solid #dadce0;
+            padding: 9px;
+            vertical-align: top;
+        }
+
+        ul, ol {
+            margin-top: 4px;
+            margin-bottom: 12px;
+            padding-left: 24px;
+        }
+
+        li {
+            margin-bottom: 6px;
+        }
+
+        a {
+            color: #1a73e8;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        blockquote {
+            border-left: 4px solid #dadce0;
+            padding-left: 12px;
+            color: #5f6368;
+            margin: 12px 0;
+        }
+
+        hr {
+            border: 0;
+            border-top: 1px solid #dadce0;
+            margin: 22px 0;
+        }
+
+        /* SVG styling for embedded diagrams */
+        svg {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 16px auto;
+        }
+
+        /* Alert/callout boxes */
+        .admonition {
+            border-left: 4px solid #ea4335;
+            background-color: #fce8e6;
+            padding: 12px;
+            margin: 14px 0;
+            border-radius: 0 4px 4px 0;
+        }
+    </style>
+</head>
+<body>
+<h1 id="deployment-part-1--cluster-setup-project-quota-gke">Deployment Part 1 — Cluster Setup (Project, Quota, GKE)</h1>
+<p><strong>Deployment series:</strong> <strong>1. Cluster Setup</strong> → <a href="02b-gpu-nodepool-dws.html">2. GPU Node &amp; DWS</a> → <a href="02c-deploy-inference.html">3. Inference</a> → <a href="02d-deploy-jupyter.html">4. JupyterHub</a> → <a href="02e-verify-teardown.html">5. Verify &amp; Teardown</a></p>
+<hr>
+<p><strong>Audience:</strong> Technical engineers who are <strong>new to GPUs and Google Cloud</strong> but comfortable with the command line and basic Kubernetes concepts. This is <strong>Part 1</strong> of a five-part series that walks through deploying the complete stack from zero: GKE cluster, H100 GPUs via DWS, vLLM inference (Qwen3-32B), and JupyterHub with GPU notebooks.</p>
+<blockquote><strong>New to the terminology?</strong> Terms like GKE, DWS, node pool, and tensor parallelism are defined in the <strong><a href="appendix-glossary.html">Glossary appendix</a></strong>.</blockquote>
+<p><strong>What the full series deploys:</strong></p>
+<ul>
+<li>A regional GKE cluster in Google Cloud</li>
+<li>An 8× H100 GPU node (A3 machine) provisioned through Dynamic Workload Scheduler (DWS)</li>
+<li>vLLM serving Qwen3-32B via an OpenAI-compatible API (internal endpoint)</li>
+<li>JupyterHub providing GPU-enabled Jupyter notebooks</li>
+<li>All infrastructure managed declaratively through manifests and scripts</li>
+</ul>
+<p><strong>Time to complete (full series):</strong> ~2-3 hours, including waiting for DWS capacity (minutes to hours depending on regional GPU availability).</p>
+<p><strong>This part (Part 1)</strong> covers prerequisites, project setup, GPU quota, and creating the regional GKE cluster.</p>
+<hr>
+<h2 id="prerequisites--concepts">Prerequisites &amp; Concepts</h2>
+<h3 id="what-you-need">What you need</h3>
+<p><strong>1. Google Cloud Project with billing enabled</strong></p>
+<ul>
+<li>A GCP project you have <code>Editor</code> or <code>Owner</code> permissions on</li>
+<li>Billing account linked to the project (GPUs incur significant cost)</li>
+<li>Budget alerts recommended (H100 nodes are ~$30/hour)</li>
+</ul>
+<p><strong>2. Local tools installed</strong></p>
+<pre><code class="language-bash">
+# Google Cloud SDK (gcloud)
+curl https://sdk.cloud.google.com | bash
+exec -l $SHELL
+gcloud --version
+
+# kubectl (Kubernetes CLI)
+gcloud components install kubectl
+kubectl version --client
+
+# Helm (Kubernetes package manager, for JupyterHub)
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+helm version
+</code></pre>
+<p><strong>3. IAM permissions</strong></p>
+<p>You need permission to:</p>
+<ul>
+<li>Enable APIs</li>
+<li>Create GKE clusters, node pools, and networking resources</li>
+<li>Create Persistent Disks and Services (LoadBalancers)</li>
+</ul>
+<p>Minimum recommended role: <strong><code>roles/editor</code></strong> on the project.</p>
+<h3 id="what-were-building-3-sentence-overview">What we&#x27;re building (3-sentence overview)</h3>
+<p>You will deploy a <strong>regional GKE cluster</strong> with a <strong>GPU node pool</strong> that provisions an <strong>8× H100 machine</strong> on demand through DWS (Dynamic Workload Scheduler — Google&#x27;s mechanism for obtaining scarce GPU capacity). The GPU node will run a <strong>vLLM inference server</strong> (using 2 of 8 H100s) serving the Qwen3-32B language model, and a <strong>JupyterHub</strong> instance that lets users launch GPU notebooks (consuming the remaining GPUs). All services are private (internal load balancers, no public internet exposure).</p>
+<p><strong>Key architectural insight:</strong> DWS Flex-Start gives you access to scarce H100 GPUs without reserving them 24/7, but enforces a hard <strong>7-day maximum runtime</strong>. A <strong>capacity holder</strong> keeps the node from being reclaimed during that window when no real workload is running.</p>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+ "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- Generated by graphviz version 2.43.0 (0)
+ -->
+<!-- Title: gke_node_pools Pages: 1 -->
+<svg width="824pt" height="445pt"
+ viewBox="0.00 0.00 824.00 445.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 441)">
+<title>gke_node_pools</title>
+<polygon fill="white" stroke="transparent" points="-4,4 -4,-441 820,-441 820,4 -4,4"/>
+<text text-anchor="middle" x="408" y="-417" font-family="Arial" font-size="20.00">GKE Cluster Node Pools: System (CPU) vs. A3 H100 (GPU/DWS)</text>
+<g id="clust1" class="cluster">
+<title>cluster_cluster</title>
+<path fill="#e8f0fe" stroke="#1a73e8" d="M20,-8C20,-8 796,-8 796,-8 802,-8 808,-14 808,-20 808,-20 808,-387 808,-387 808,-393 802,-399 796,-399 796,-399 20,-399 20,-399 14,-399 8,-393 8,-387 8,-387 8,-20 8,-20 8,-14 14,-8 20,-8"/>
+<text text-anchor="middle" x="408" y="-383" font-family="Arial" font-size="15.00" fill="#1a73e8">Cluster: hypercomputer&#45;a3&#45;cluster (us&#45;central1, project: hdlab&#45;elideng)</text>
+</g>
+<g id="clust2" class="cluster">
+<title>cluster_system</title>
+<path fill="#f5f5f5" stroke="#666666" d="M486,-89C486,-89 788,-89 788,-89 794,-89 800,-95 800,-101 800,-101 800,-345 800,-345 800,-351 794,-357 788,-357 788,-357 486,-357 486,-357 480,-357 474,-351 474,-345 474,-345 474,-101 474,-101 474,-95 480,-89 486,-89"/>
+<text text-anchor="middle" x="637" y="-340.2" font-family="Arial" font-size="16.00" fill="#000000">Node Pool: system</text>
+</g>
+<g id="clust3" class="cluster">
+<title>cluster_a3</title>
+<path fill="#fff3e0" stroke="#ff6f00" d="M28,-80C28,-80 454,-80 454,-80 460,-80 466,-86 466,-92 466,-92 466,-354 466,-354 466,-360 460,-366 454,-366 454,-366 28,-366 28,-366 22,-366 16,-360 16,-354 16,-354 16,-92 16,-92 16,-86 22,-80 28,-80"/>
+<text text-anchor="middle" x="241" y="-349.2" font-family="Arial" font-size="16.00" fill="#000000">Node Pool: a3&#45;h100&#45;dws&#45;pool</text>
+</g>
+<!-- system_cfg -->
+<g id="node1" class="node">
+<title>system_cfg</title>
+<path fill="#ffffff" stroke="#666666" d="M780,-323C780,-323 494,-323 494,-323 488,-323 482,-317 482,-311 482,-311 482,-109 482,-109 482,-103 488,-97 494,-97 494,-97 780,-97 780,-97 786,-97 792,-103 792,-109 792,-109 792,-311 792,-311 792,-317 786,-323 780,-323"/>
+<text text-anchor="start" x="600.5" y="-307.2" font-family="Arial" font-weight="bold" font-size="11.00">Configuration</text>
+<text text-anchor="start" x="494" y="-289.2" font-family="Arial" font-weight="bold" font-size="11.00">Machine Type:</text>
+<text text-anchor="start" x="570" y="-289.2" font-family="Arial" font-size="11.00"> e2&#45;standard (CPU&#45;only)</text>
+<text text-anchor="start" x="494" y="-271.2" font-family="Arial" font-weight="bold" font-size="11.00">Scaling:</text>
+<text text-anchor="start" x="537" y="-271.2" font-family="Arial" font-size="11.00"> Always&#45;on (not autoscaled); Min/Max: 3&#45;3 nodes</text>
+<text text-anchor="start" x="494" y="-253.2" font-family="Arial" font-weight="bold" font-size="11.00">GPUs:</text>
+<text text-anchor="start" x="528" y="-253.2" font-family="Arial" font-size="11.00"> None</text>
+<text text-anchor="start" x="494" y="-235.2" font-family="Arial" font-weight="bold" font-size="11.00">Labels:</text>
+<text text-anchor="start" x="533" y="-235.2" font-family="Arial" font-size="11.00"> Standard system labels</text>
+<text text-anchor="start" x="494" y="-217.2" font-family="Arial" font-weight="bold" font-size="11.00">Taints:</text>
+<text text-anchor="start" x="530" y="-217.2" font-family="Arial" font-size="11.00"> None (accepts all workloads)</text>
+<text text-anchor="start" x="494" y="-199.2" font-family="Arial" font-weight="bold" font-size="11.00">Workloads:</text>
+<text text-anchor="start" x="494" y="-180.2" font-family="Arial" font-size="11.00">• JupyterHub hub + proxy</text>
+<text text-anchor="start" x="494" y="-162.2" font-family="Arial" font-size="11.00">• Kueue admission controller</text>
+<text text-anchor="start" x="494" y="-144.2" font-family="Arial" font-size="11.00">• DCGM monitoring</text>
+<text text-anchor="start" x="494" y="-126.2" font-family="Arial" font-size="11.00">• System controllers</text>
+<text text-anchor="start" x="494" y="-109.2" font-family="Arial" font-weight="bold" font-size="11.00">Provisioning:</text>
+<text text-anchor="start" x="565" y="-109.2" font-family="Arial" font-size="11.00"> Standard (on&#45;demand); No run&#45;duration cap</text>
+</g>
+<!-- note -->
+<g id="node3" class="node">
+<title>note</title>
+<path fill="#fff9c4" stroke="#f57f17" d="M761.5,-52C761.5,-52 54.5,-52 54.5,-52 48.5,-52 42.5,-46 42.5,-40 42.5,-40 42.5,-28 42.5,-28 42.5,-22 48.5,-16 54.5,-16 54.5,-16 761.5,-16 761.5,-16 767.5,-16 773.5,-22 773.5,-28 773.5,-28 773.5,-40 773.5,-40 773.5,-46 767.5,-52 761.5,-52"/>
+<text text-anchor="middle" x="408" y="-31.2" font-family="Arial" font-size="11.00">DWS Flex&#45;Start: 7&#45;day max run duration | 10&#45;min booking window after provisioning | Requires consuming pod with autoscaling.x&#45;k8s.io/* annotations</text>
+</g>
+<!-- system_cfg&#45;&gt;note -->
+<!-- a3_cfg -->
+<g id="node2" class="node">
+<title>a3_cfg</title>
+<path fill="#ffffff" stroke="#ff6f00" d="M446,-332C446,-332 36,-332 36,-332 30,-332 24,-326 24,-320 24,-320 24,-100 24,-100 24,-94 30,-88 36,-88 36,-88 446,-88 446,-88 452,-88 458,-94 458,-100 458,-100 458,-320 458,-320 458,-326 452,-332 446,-332"/>
+<text text-anchor="start" x="204.5" y="-316.2" font-family="Arial" font-weight="bold" font-size="11.00">Configuration</text>
+<text text-anchor="start" x="36" y="-298.2" font-family="Arial" font-weight="bold" font-size="11.00">Machine Type:</text>
+<text text-anchor="start" x="112" y="-298.2" font-family="Arial" font-size="11.00"> a3&#45;highgpu&#45;8g (8x H100 80GB); NVLink/NVSwitch interconnect</text>
+<text text-anchor="start" x="36" y="-280.2" font-family="Arial" font-weight="bold" font-size="11.00">Scaling:</text>
+<text text-anchor="start" x="79" y="-280.2" font-family="Arial" font-size="11.00"> </text>
+<text text-anchor="start" x="83" y="-280.2" font-family="Arial" font-size="11.00" fill="#ff6f00">DWS Flex&#45;Start autoscale 0&#45;&gt;N</text>
+<text text-anchor="start" x="36" y="-261.2" font-family="Arial" font-size="11.00">Currently: 1 node (expires ~2026&#45;07&#45;23); can scale to 0 or provision more on&#45;demand</text>
+<text text-anchor="start" x="36" y="-244.2" font-family="Arial" font-weight="bold" font-size="11.00">GPUs:</text>
+<text text-anchor="start" x="70" y="-244.2" font-family="Arial" font-size="11.00"> </text>
+<text text-anchor="start" x="74" y="-244.2" font-family="Arial" font-size="11.00" fill="#e65100">8x NVIDIA H100 80GB HBM3 per node</text>
+<text text-anchor="start" x="265" y="-244.2" font-family="Arial" font-size="11.00">; ~81,559 MiB per GPU</text>
+<text text-anchor="start" x="36" y="-226.2" font-family="Arial" font-weight="bold" font-size="11.00">Labels:</text>
+<text text-anchor="start" x="75" y="-226.2" font-family="Arial" font-size="11.00"> cloud.google.com/gke&#45;accelerator: nvidia&#45;h100&#45;80gb</text>
+<text text-anchor="start" x="36" y="-208.2" font-family="Arial" font-weight="bold" font-size="11.00">Taints:</text>
+<text text-anchor="start" x="36" y="-189.2" font-family="Arial" font-size="11.00" fill="#ff6f00">• nvidia.com/gpu:NoSchedule</text>
+<text text-anchor="start" x="36" y="-172.2" font-family="Arial" font-size="11.00" fill="#ff6f00">• cloud.google.com/gke&#45;queued:NoSchedule</text>
+<text text-anchor="start" x="250" y="-172.2" font-family="Arial" font-size="11.00"> (pods must tolerate both)</text>
+<text text-anchor="start" x="36" y="-154.2" font-family="Arial" font-weight="bold" font-size="11.00">Workloads:</text>
+<text text-anchor="start" x="36" y="-135.2" font-family="Arial" font-size="11.00">• vLLM (2 GPUs, tensor&#45;parallel)</text>
+<text text-anchor="start" x="36" y="-117.2" font-family="Arial" font-size="11.00">• Jupyter GPU notebooks (up to ~6 GPUs)</text>
+<text text-anchor="start" x="36" y="-99.2" font-family="Arial" font-size="11.00">• Holder pod (8 GPUs when idle)</text>
+</g>
+<!-- a3_cfg&#45;&gt;note -->
+</g>
+</svg>
+
+<p><strong>Figure 1: Node pool architecture.</strong> The cluster has two pools: a system pool (CPU nodes, always-on) and the GPU pool (DWS-provisioned, 0-1 nodes). The GPU node is tainted so only GPU-aware workloads schedule there.</p>
+<hr>
+<h2 id="step-0-set-up-your-project">Step 0: Set up your project</h2>
+<h3 id="01-configure-gcloud-cli">0.1 Configure gcloud CLI</h3>
+<pre><code class="language-bash">
+# Set your project ID (replace with your project)
+export PROJECT_ID=hdlab-elideng
+gcloud config set project $PROJECT_ID
+gcloud config set compute/region us-central1
+
+# Authenticate if needed
+gcloud auth login
+gcloud auth application-default login
+</code></pre>
+<p><strong>What this does:</strong> Configures the <code>gcloud</code> command-line tool to use your project and default region. All subsequent commands will target this project.</p>
+<h3 id="02-enable-required-apis">0.2 Enable required APIs</h3>
+<pre><code class="language-bash">
+gcloud services enable \
+  compute.googleapis.com \
+  container.googleapis.com \
+  iam.googleapis.com \
+  cloudresourcemanager.googleapis.com \
+  --project $PROJECT_ID
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+Operation &quot;operations/...&quot; finished successfully.
+</code></pre>
+<p><strong>What this does:</strong> Activates the Google Cloud APIs needed to create VMs (Compute Engine), GKE clusters, and IAM resources. This is a prerequisite for any infrastructure work.</p>
+<p><strong>Why these APIs:</strong></p>
+<ul>
+<li><code>compute.googleapis.com</code> — for VMs, disks, networking</li>
+<li><code>container.googleapis.com</code> — for GKE</li>
+<li><code>iam.googleapis.com</code> — for service account permissions</li>
+<li><code>cloudresourcemanager.googleapis.com</code> — for project-level operations</li>
+</ul>
+<hr>
+<h2 id="step-1-request-gpu-quota">Step 1: Request GPU quota</h2>
+<p><strong>Critical:</strong> Default quotas are <strong>insufficient</strong> for H100 GPUs. You must request quota increases before creating the node pool.</p>
+<h3 id="11-check-current-quota">1.1 Check current quota</h3>
+<pre><code class="language-bash">
+gcloud compute regions describe us-central1 \
+  --project $PROJECT_ID \
+  --format=&quot;table(quotas.metric,quotas.limit)&quot; \
+  | grep -E &quot;NVIDIA_H100|CPUS&quot;
+</code></pre>
+<p><strong>Expected output (before requesting):</strong></p>
+<pre><code class="language-">
+quotas.metric                  quotas.limit
+NVIDIA_H100_GPUS               0.0
+CPUS                           24.0
+</code></pre>
+<h3 id="12-request-h100-quota-increase">1.2 Request H100 quota increase</h3>
+<p><strong>For DWS Flex-Start (our path):</strong></p>
+<ul>
+<li>Metric: <code>NVIDIA_H100_GPUS</code></li>
+<li>Region: <code>us-central1</code></li>
+<li>New limit: <strong>8</strong> (one A3 node = 8× H100)</li>
+</ul>
+<p><strong>How to request:</strong></p>
+<ol>
+<li>Go to <a href="https://console.cloud.google.com/iam-admin/quotas">Quotas page</a></li>
+<li>Filter: <code>NVIDIA_H100_GPUS</code>, region <code>us-central1</code></li>
+<li>Select the quota, click <strong>Edit Quotas</strong></li>
+<li>Request <strong>8 GPUs</strong></li>
+<li>Provide business justification: &quot;AI model inference testing&quot;</li>
+</ol>
+<p><strong>Processing time:</strong> Typically 1-2 business days for H100s (scarce capacity; approval not guaranteed). For faster experimentation, consider <strong>L4</strong> or <strong>A100</strong> GPUs (more widely available).</p>
+<p><strong>Why DWS Flex-Start:</strong> H100 capacity is extremely scarce. DWS Flex-Start lets you request capacity and GKE provisions it when available, with a <strong>7-day maximum runtime</strong>. This is easier to get approved than on-demand reservations. For longer-lived capacity (&gt;7 days), see <code>lab/RESERVATIONS.md</code> in the repo.</p>
+<hr>
+<h2 id="step-2-create-the-gke-cluster">Step 2: Create the GKE cluster</h2>
+<h3 id="21-create-a-regional-cluster">2.1 Create a regional cluster</h3>
+<pre><code class="language-bash">
+gcloud container clusters create hypercomputer-a3-cluster \
+  --region us-central1 \
+  --release-channel regular \
+  --machine-type e2-standard-4 \
+  --num-nodes 1 \
+  --enable-autoscaling \
+  --min-nodes 1 \
+  --max-nodes 3 \
+  --enable-stackdriver-kubernetes \
+  --scopes cloud-platform \
+  --project $PROJECT_ID
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+Creating cluster hypercomputer-a3-cluster...done.
+Created [https://container.googleapis.com/v1/projects/hdlab-elideng/zones/us-central1/clusters/hypercomputer-a3-cluster].
+kubeconfig entry generated for hypercomputer-a3-cluster.
+NAME                        LOCATION       MASTER_VERSION  NUM_NODES  STATUS
+hypercomputer-a3-cluster    us-central1    1.30.x-gke.y    3          RUNNING
+</code></pre>
+<p><strong>Time:</strong> ~5-10 minutes.</p>
+<p><strong>What this does:</strong></p>
+<ul>
+<li>Creates a <strong>regional</strong> (multi-zone) cluster in <code>us-central1</code></li>
+<li>Creates the <strong>default node pool</strong> (CPU nodes, <code>e2-standard-4</code>, 1 node per zone = 3 total)</li>
+<li>Enables autoscaling (1-3 nodes) for cost efficiency</li>
+<li>Uses <code>regular</code> release channel (stable updates)</li>
+<li>Grants <code>cloud-platform</code> scope (full API access for nodes)</li>
+</ul>
+<p><strong>Why regional:</strong> Higher availability (control plane and nodes span 3 zones). If one zone fails, workloads can move to others. GPU node pools can be zone-specific within the regional cluster.</p>
+<h3 id="22-get-cluster-credentials">2.2 Get cluster credentials</h3>
+<pre><code class="language-bash">
+gcloud container clusters get-credentials hypercomputer-a3-cluster \
+  --region us-central1 \
+  --project $PROJECT_ID
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+Fetching cluster endpoint and auth data.
+kubeconfig entry generated for hypercomputer-a3-cluster.
+</code></pre>
+<p><strong>Verify access:</strong></p>
+<pre><code class="language-bash">
+kubectl get nodes
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+NAME                                                  STATUS   ROLES    AGE   VERSION
+gke-hypercomputer-a3-default-pool-xxxx-yyyy           Ready    &lt;none&gt;   5m    v1.30.x-gke.y
+gke-hypercomputer-a3-default-pool-xxxx-zzzz           Ready    &lt;none&gt;   5m    v1.30.x-gke.y
+gke-hypercomputer-a3-default-pool-xxxx-aaaa           Ready    &lt;none&gt;   5m    v1.30.x-gke.y
+</code></pre>
+<p><strong>What this does:</strong> Downloads cluster credentials and configures <code>kubectl</code> to point at your new cluster. All subsequent <code>kubectl</code> commands will target this cluster.</p>
+<hr>
+<p>Next: <strong><a href="02b-gpu-nodepool-dws.html">Part 2 — GPU Node Pool &amp; DWS</a></strong> →</p>
+<p><strong>Deployment series:</strong> <strong>1. Cluster Setup</strong> → <a href="02b-gpu-nodepool-dws.html">2. GPU Node &amp; DWS</a> → <a href="02c-deploy-inference.html">3. Inference</a> → <a href="02d-deploy-jupyter.html">4. JupyterHub</a> → <a href="02e-verify-teardown.html">5. Verify &amp; Teardown</a></p>
+<p><strong>Related:</strong> <a href="01-architecture.html">Architecture Reference</a> · <a href="appendix-glossary.html">Glossary</a> · <a href="03-inference-endpoint-user-guide.html">Inference User Guide</a> · <a href="04-jupyter-notebook-user-guide.html">Jupyter User Guide</a> · <a href="../../lab/README.md">Lab IaC foundation</a> · <a href="../../lab/RESERVATIONS.md">Reservations (&gt;7 days)</a></p>
+</body>
+</html>

@@ -1,0 +1,78 @@
+digraph gke_node_pools {
+  labelloc="t";
+  fontsize=20;
+  fontname="Arial";
+  label="GKE Cluster Node Pools: System (CPU) vs. A3 H100 (GPU/DWS)";
+  rankdir=TB;
+  node [shape=box, style="rounded,filled", fontname="Arial", fontsize=11, fillcolor="#ffffff", color="#666666"];
+  edge [color="#333333", fontname="Arial", fontsize=10];
+
+  subgraph cluster_cluster {
+    label="Cluster: hypercomputer-a3-cluster (us-central1, project: hdlab-elideng)";
+    style="rounded,filled";
+    fillcolor="#e8f0fe";
+    color="#1a73e8";
+    fontcolor="#1a73e8";
+    fontname="Arial";
+    fontsize=15;
+
+    subgraph cluster_system {
+      label="Node Pool: system";
+      style="rounded,filled";
+      fillcolor="#f5f5f5";
+      color="#666666";
+      fontcolor="#000000";
+      fontsize=16;
+
+      system_cfg [label=<
+        <table border="0" cellborder="0" cellspacing="2" cellpadding="2">
+          <tr><td align="center"><b>Configuration</b></td></tr>
+          <tr><td align="left"><b>Machine Type:</b> e2-standard (CPU-only)</td></tr>
+          <tr><td align="left"><b>Scaling:</b> Always-on (not autoscaled); Min/Max: 3-3 nodes</td></tr>
+          <tr><td align="left"><b>GPUs:</b> None</td></tr>
+          <tr><td align="left"><b>Labels:</b> Standard system labels</td></tr>
+          <tr><td align="left"><b>Taints:</b> None (accepts all workloads)</td></tr>
+          <tr><td align="left"><b>Workloads:</b></td></tr>
+          <tr><td align="left">&#8226; JupyterHub hub + proxy</td></tr>
+          <tr><td align="left">&#8226; Kueue admission controller</td></tr>
+          <tr><td align="left">&#8226; DCGM monitoring</td></tr>
+          <tr><td align="left">&#8226; System controllers</td></tr>
+          <tr><td align="left"><b>Provisioning:</b> Standard (on-demand); No run-duration cap</td></tr>
+        </table>
+      >, fillcolor="#ffffff", color="#666666"];
+    }
+
+    subgraph cluster_a3 {
+      label="Node Pool: a3-h100-dws-pool";
+      style="rounded,filled";
+      fillcolor="#fff3e0";
+      color="#ff6f00";
+      fontcolor="#000000";
+      fontsize=16;
+
+      a3_cfg [label=<
+        <table border="0" cellborder="0" cellspacing="2" cellpadding="2">
+          <tr><td align="center"><b>Configuration</b></td></tr>
+          <tr><td align="left"><b>Machine Type:</b> a3-highgpu-8g (8x H100 80GB); NVLink/NVSwitch interconnect</td></tr>
+          <tr><td align="left"><b>Scaling:</b> <font color="#ff6f00">DWS Flex-Start autoscale 0-&gt;N</font></td></tr>
+          <tr><td align="left">Currently: 1 node (expires ~2026-07-23); can scale to 0 or provision more on-demand</td></tr>
+          <tr><td align="left"><b>GPUs:</b> <font color="#e65100">8x NVIDIA H100 80GB HBM3 per node</font>; ~81,559 MiB per GPU</td></tr>
+          <tr><td align="left"><b>Labels:</b> cloud.google.com/gke-accelerator: nvidia-h100-80gb</td></tr>
+          <tr><td align="left"><b>Taints:</b></td></tr>
+          <tr><td align="left"><font color="#ff6f00">&#8226; nvidia.com/gpu:NoSchedule</font></td></tr>
+          <tr><td align="left"><font color="#ff6f00">&#8226; cloud.google.com/gke-queued:NoSchedule</font> (pods must tolerate both)</td></tr>
+          <tr><td align="left"><b>Workloads:</b></td></tr>
+          <tr><td align="left">&#8226; vLLM (2 GPUs, tensor-parallel)</td></tr>
+          <tr><td align="left">&#8226; Jupyter GPU notebooks (up to ~6 GPUs)</td></tr>
+          <tr><td align="left">&#8226; Holder pod (8 GPUs when idle)</td></tr>
+        </table>
+      >, fillcolor="#ffffff", color="#ff6f00"];
+    }
+
+    note [shape=box, style="rounded,filled", fillcolor="#fff9c4", color="#f57f17", fontsize=11,
+          label="DWS Flex-Start: 7-day max run duration | 10-min booking window after provisioning | Requires consuming pod with autoscaling.x-k8s.io/* annotations"];
+  }
+
+  system_cfg -> note [style=invis];
+  a3_cfg -> note [style=invis];
+}

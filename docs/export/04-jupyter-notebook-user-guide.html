@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jupyter Notebook User Guide — GPU-Powered Notebooks</title>
+    <style>
+        body {
+            font-family: 'Arial', 'Helvetica', sans-serif;
+            font-size: 11pt;
+            line-height: 1.6;
+            color: #202124;
+            max-width: 8.5in;
+            margin: 1in auto;
+            padding: 0 1rem;
+            background-color: #ffffff;
+        }
+
+        h1 {
+            color: #1a73e8;
+            font-size: 20pt;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 8px;
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: bold;
+        }
+
+        h2 {
+            color: #1a73e8;
+            font-size: 15pt;
+            margin-top: 22px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #eeeeee;
+            padding-bottom: 4px;
+            font-weight: bold;
+        }
+
+        h3 {
+            color: #202124;
+            font-size: 13pt;
+            margin-top: 18px;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        h4 {
+            color: #5f6368;
+            font-size: 11.5pt;
+            margin-top: 14px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        h5 {
+            color: #5f6368;
+            font-size: 10.5pt;
+            margin-top: 12px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        h6 {
+            color: #5f6368;
+            font-size: 10pt;
+            margin-top: 10px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        p {
+            margin-bottom: 10px;
+        }
+
+        pre {
+            background-color: #f8f9fa;
+            border: 1px solid #dadce0;
+            border-radius: 6px;
+            padding: 12px;
+            font-family: 'Courier New', 'Consolas', monospace;
+            font-size: 9.5pt;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin-bottom: 14px;
+            overflow-x: auto;
+        }
+
+        code {
+            background-color: #f1f3f4;
+            color: #d93025;
+            font-family: 'Courier New', 'Consolas', monospace;
+            font-size: 9.5pt;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+
+        pre code {
+            background-color: transparent;
+            color: #202124;
+            padding: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 18px;
+            font-size: 10pt;
+        }
+
+        th {
+            background-color: #e8f0fe;
+            color: #1a73e8;
+            border: 1px solid #dadce0;
+            padding: 10px;
+            text-align: left;
+            font-weight: bold;
+        }
+
+        td {
+            border: 1px solid #dadce0;
+            padding: 9px;
+            vertical-align: top;
+        }
+
+        ul, ol {
+            margin-top: 4px;
+            margin-bottom: 12px;
+            padding-left: 24px;
+        }
+
+        li {
+            margin-bottom: 6px;
+        }
+
+        a {
+            color: #1a73e8;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        blockquote {
+            border-left: 4px solid #dadce0;
+            padding-left: 12px;
+            color: #5f6368;
+            margin: 12px 0;
+        }
+
+        hr {
+            border: 0;
+            border-top: 1px solid #dadce0;
+            margin: 22px 0;
+        }
+
+        /* SVG styling for embedded diagrams */
+        svg {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 16px auto;
+        }
+
+        /* Alert/callout boxes */
+        .admonition {
+            border-left: 4px solid #ea4335;
+            background-color: #fce8e6;
+            padding: 12px;
+            margin: 14px 0;
+            border-radius: 0 4px 4px 0;
+        }
+    </style>
+</head>
+<body>
+<h1 id="jupyter-notebook-user-guide--gpu-powered-notebooks">Jupyter Notebook User Guide — GPU-Powered Notebooks</h1>
+<p><strong>Audience:</strong> Engineers, data scientists, and technical staff who want to use Jupyter notebooks with GPU support for AI/ML experimentation and development.</p>
+<p><strong>What this guide covers:</strong> How to log into JupyterHub, choose a GPU or CPU profile, verify GPU access, call the inference endpoint, install packages, manage persistence, and troubleshoot common issues.</p>
+<p><strong>Prerequisites:</strong> Basic familiarity with Jupyter notebooks and Python. No GPU or Kubernetes knowledge required.</p>
+<blockquote><strong>New to the terminology?</strong> Terms like JupyterHub, H100, and tensor parallelism are defined in the <strong><a href="appendix-glossary.html">Glossary appendix</a></strong>.</blockquote>
+<hr>
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#1-what-jupyterhub-is">What JupyterHub Is</a></li>
+<li><a href="#2-log-in">Log In</a></li>
+<li><a href="#3-choose-a-profile">Choose a Profile</a></li>
+<li><a href="#4-launch-and-verify-gpu-access">Launch and Verify GPU Access</a></li>
+<li><a href="#5-call-the-inference-endpoint-from-your-notebook">Call the Inference Endpoint from Your Notebook</a></li>
+<li><a href="#6-install-packages-and-do-aiml-work">Install Packages and Do AI/ML Work</a></li>
+<li><a href="#7-persistence--what-survives-restarts">Persistence — What Survives Restarts</a></li>
+<li><a href="#8-shut-down-your-server">Shut Down Your Server</a></li>
+<li><a href="#9-troubleshooting">Troubleshooting</a></li>
+</ol>
+<hr>
+<h2 id="1-what-jupyterhub-is">1. What JupyterHub Is</h2>
+<p><strong>JupyterHub</strong> is a multi-user Jupyter notebook environment. Instead of running Jupyter locally on your laptop, you log into a shared hub that spawns a private notebook server for you in the cloud.</p>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+ "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- Generated by graphviz version 2.43.0 (0)
+ -->
+<!-- Title: jupyter_flow Pages: 1 -->
+<svg width="1360pt" height="755pt"
+ viewBox="0.00 0.00 1359.50 755.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 751)">
+<title>jupyter_flow</title>
+<polygon fill="white" stroke="transparent" points="-4,4 -4,-751 1355.5,-751 1355.5,4 -4,4"/>
+<text text-anchor="middle" x="675.75" y="-727" font-family="Arial" font-size="20.00">JupyterHub Flow: User Login &#45;&gt; GPU Notebook Spawn &#45;&gt; vLLM API Call</text>
+<g id="clust1" class="cluster">
+<title>cluster_profile</title>
+<path fill="#fff9c4" stroke="#f57f17" d="M389,-504C389,-504 595,-504 595,-504 601,-504 607,-510 607,-516 607,-516 607,-572 607,-572 607,-578 601,-584 595,-584 595,-584 389,-584 389,-584 383,-584 377,-578 377,-572 377,-572 377,-516 377,-516 377,-510 383,-504 389,-504"/>
+<text text-anchor="middle" x="492" y="-568.8" font-family="Arial" font-size="14.00">Profile Selection</text>
+</g>
+<g id="clust2" class="cluster">
+<title>cluster_a3node</title>
+<path fill="#fff3e0" stroke="#ff6f00" d="M20,-8C20,-8 652,-8 652,-8 658,-8 664,-14 664,-20 664,-20 664,-336 664,-336 664,-342 658,-348 652,-348 652,-348 20,-348 20,-348 14,-348 8,-342 8,-336 8,-336 8,-20 8,-20 8,-14 14,-8 20,-8"/>
+<text text-anchor="middle" x="336" y="-332" font-family="Arial" font-size="15.00">A3 Node: gke&#45;hypercomputer&#45;a3&#45;a3&#45;h100&#45;dws&#45;pool&#45;...&#45;hhp6 (8x H100 80GB)</text>
+</g>
+<g id="clust3" class="cluster">
+<title>cluster_nbpod</title>
+<path fill="#ffcc80" stroke="#e65100" d="M28,-211C28,-211 502,-211 502,-211 508,-211 514,-217 514,-223 514,-223 514,-290 514,-290 514,-296 508,-302 502,-302 502,-302 28,-302 28,-302 22,-302 16,-296 16,-290 16,-290 16,-223 16,-223 16,-217 22,-211 28,-211"/>
+<text text-anchor="middle" x="265" y="-288.4" font-family="Arial" font-size="12.00">GPU Notebook Pod (ns: jupyter)</text>
+<text text-anchor="middle" x="265" y="-275.4" font-family="Arial" font-size="12.00">jupyter&#45;&lt;username&gt;</text>
+</g>
+<g id="clust4" class="cluster">
+<title>cluster_vllmpod</title>
+<path fill="#ffcc80" stroke="#e65100" d="M41,-16C41,-16 339,-16 339,-16 345,-16 351,-22 351,-28 351,-28 351,-115 351,-115 351,-121 345,-127 339,-127 339,-127 41,-127 41,-127 35,-127 29,-121 29,-115 29,-115 29,-28 29,-28 29,-22 35,-16 41,-16"/>
+<text text-anchor="middle" x="190" y="-113.4" font-family="Arial" font-size="12.00">vLLM Pod (ns: inference)</text>
+</g>
+<!-- user -->
+<g id="node1" class="node">
+<title>user</title>
+<path fill="#ffffff" stroke="#666666" d="M217,-694C217,-694 119,-694 119,-694 113,-694 107,-688 107,-682 107,-682 107,-646 107,-646 107,-640 113,-634 119,-634 119,-634 217,-634 217,-634 223,-634 229,-640 229,-646 229,-646 229,-682 229,-682 229,-688 223,-694 217,-694"/>
+<text text-anchor="middle" x="168" y="-680.4" font-family="Arial" font-size="12.00">User</text>
+<text text-anchor="middle" x="168" y="-667.4" font-family="Arial" font-size="12.00">Browser</text>
+<text text-anchor="middle" x="168" y="-654.4" font-family="Arial" font-size="12.00">(inside VPC)</text>
+<text text-anchor="middle" x="168" y="-641.4" font-family="Arial" font-size="12.00">http://10.128.15.234</text>
+</g>
+<!-- jh_lb -->
+<g id="node2" class="node">
+<title>jh_lb</title>
+<path fill="#4caf50" stroke="#2e7d32" d="M400,-692C400,-692 302,-692 302,-692 296,-692 290,-686 290,-680 290,-680 290,-648 290,-648 290,-642 296,-636 302,-636 302,-636 400,-636 400,-636 406,-636 412,-642 412,-648 412,-648 412,-680 412,-680 412,-686 406,-692 400,-692"/>
+<text text-anchor="middle" x="351" y="-679.2" font-family="Arial" font-size="11.00" fill="#ffffff">Internal LoadBalancer</text>
+<text text-anchor="middle" x="351" y="-667.2" font-family="Arial" font-size="11.00" fill="#ffffff">proxy&#45;public service</text>
+<text text-anchor="middle" x="351" y="-655.2" font-family="Arial" font-size="11.00" fill="#ffffff">IP: 10.128.15.234:80</text>
+<text text-anchor="middle" x="351" y="-643.2" font-family="Arial" font-size="11.00" fill="#ffffff">(ns: jupyter)</text>
+</g>
+<!-- user&#45;&gt;jh_lb -->
+<g id="edge1" class="edge">
+<title>user&#45;&gt;jh_lb</title>
+<path fill="none" stroke="#333333" stroke-width="2" d="M229.19,-664C245.37,-664 262.97,-664 279.63,-664"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="2" points="279.87,-667.5 289.87,-664 279.87,-660.5 279.87,-667.5"/>
+<text text-anchor="middle" x="259.5" y="-670" font-family="Arial" font-size="10.00">HTTP :80</text>
+</g>
+<!-- hub -->
+<g id="node3" class="node">
+<title>hub</title>
+<path fill="#ff9800" stroke="#e65100" d="M624.5,-698C624.5,-698 473.5,-698 473.5,-698 467.5,-698 461.5,-692 461.5,-686 461.5,-686 461.5,-642 461.5,-642 461.5,-636 467.5,-630 473.5,-630 473.5,-630 624.5,-630 624.5,-630 630.5,-630 636.5,-636 636.5,-642 636.5,-642 636.5,-686 636.5,-686 636.5,-692 630.5,-698 624.5,-698"/>
+<text text-anchor="middle" x="549" y="-685.2" font-family="Arial" font-size="11.00">JupyterHub Hub</text>
+<text text-anchor="middle" x="549" y="-673.2" font-family="Arial" font-size="11.00">Helm: jupyterhub 4.4.0</text>
+<text text-anchor="middle" x="549" y="-661.2" font-family="Arial" font-size="11.00">JupyterHub 5.5.0</text>
+<text text-anchor="middle" x="549" y="-649.2" font-family="Arial" font-size="11.00">(ns: jupyter)</text>
+<text text-anchor="middle" x="549" y="-637.2" font-family="Arial" font-size="11.00">DummyAuthenticator: demo2026</text>
+</g>
+<!-- jh_lb&#45;&gt;hub -->
+<g id="edge2" class="edge">
+<title>jh_lb&#45;&gt;hub</title>
+<path fill="none" stroke="#333333" stroke-width="2" d="M412.02,-664C424.43,-664 437.77,-664 451.09,-664"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="2" points="451.25,-667.5 461.25,-664 451.25,-660.5 451.25,-667.5"/>
+<text text-anchor="middle" x="436.75" y="-670" font-family="Arial" font-size="10.00">Routes</text>
+</g>
+<!-- login -->
+<g id="node4" class="node">
+<title>login</title>
+<path fill="#f5f5f5" stroke="#666666" d="M793.5,-698C793.5,-698 684.5,-698 684.5,-698 678.5,-698 672.5,-692 672.5,-686 672.5,-686 672.5,-642 672.5,-642 672.5,-636 678.5,-630 684.5,-630 684.5,-630 793.5,-630 793.5,-630 799.5,-630 805.5,-636 805.5,-642 805.5,-642 805.5,-686 805.5,-686 805.5,-692 799.5,-698 793.5,-698"/>
+<text text-anchor="middle" x="739" y="-685.2" font-family="Arial" font-size="11.00">Login Form</text>
+<text text-anchor="middle" x="739" y="-673.2" font-family="Arial" font-size="11.00">Username: (any)</text>
+<text text-anchor="middle" x="739" y="-661.2" font-family="Arial" font-size="11.00">Password: demo2026</text>
+<text text-anchor="middle" x="739" y="-649.2" font-family="Arial" font-size="11.00">(Demo only &#45; use OAuth</text>
+<text text-anchor="middle" x="739" y="-637.2" font-family="Arial" font-size="11.00">for production)</text>
+</g>
+<!-- hub&#45;&gt;login -->
+<!-- cpu -->
+<g id="node6" class="node">
+<title>cpu</title>
+<path fill="#e0e0e0" stroke="#666666" d="M586.5,-553C586.5,-553 511.5,-553 511.5,-553 505.5,-553 499.5,-547 499.5,-541 499.5,-541 499.5,-524 499.5,-524 499.5,-518 505.5,-512 511.5,-512 511.5,-512 586.5,-512 586.5,-512 592.5,-512 598.5,-518 598.5,-524 598.5,-524 598.5,-541 598.5,-541 598.5,-547 592.5,-553 586.5,-553"/>
+<text text-anchor="middle" x="549" y="-541" font-family="Arial" font-size="10.00">CPU (no GPU)</text>
+<text text-anchor="middle" x="549" y="-530" font-family="Arial" font-size="10.00">Default profile</text>
+<text text-anchor="middle" x="549" y="-519" font-family="Arial" font-size="10.00">4 CPU / 16G RAM</text>
+</g>
+<!-- hub&#45;&gt;cpu -->
+<!-- code_example -->
+<g id="node5" class="node">
+<title>code_example</title>
+<path fill="#e3f2fd" stroke="#1565c0" d="M1070.5,-717C1070.5,-717 853.5,-717 853.5,-717 847.5,-717 841.5,-711 841.5,-705 841.5,-705 841.5,-623 841.5,-623 841.5,-617 847.5,-611 853.5,-611 853.5,-611 1070.5,-611 1070.5,-611 1076.5,-611 1082.5,-617 1082.5,-623 1082.5,-623 1082.5,-705 1082.5,-705 1082.5,-711 1076.5,-717 1070.5,-717"/>
+<text text-anchor="start" x="869.5" y="-704.2" font-family="Arial" font-weight="bold" font-size="11.00" fill="#1565c0">Example: Call vLLM from Notebook</text>
+<text text-anchor="start" x="851" y="-689.2" font-family="monospace" font-size="11.00">from openai import OpenAI</text>
+<text text-anchor="start" x="851" y="-675.2" font-family="monospace" font-size="11.00">client = OpenAI(base_url=</text>
+<text text-anchor="start" x="851" y="-661.2" font-family="monospace" font-size="11.00"> &#160;&quot;http://qwen3&#45;vllm.inference</text>
+<text text-anchor="start" x="851" y="-647.2" font-family="monospace" font-size="11.00"> &#160;.svc.cluster.local:8000/v1&quot;,</text>
+<text text-anchor="start" x="851" y="-633.2" font-family="monospace" font-size="11.00"> &#160;api_key=&quot;none&quot;)</text>
+<text text-anchor="start" x="851" y="-619.2" font-family="monospace" font-size="11.00">resp = client.chat.completions...</text>
+</g>
+<!-- login&#45;&gt;code_example -->
+<!-- gpu_profile -->
+<g id="node7" class="node">
+<title>gpu_profile</title>
+<path fill="#ffcc80" stroke="#e65100" d="M469,-553C469,-553 397,-553 397,-553 391,-553 385,-547 385,-541 385,-541 385,-524 385,-524 385,-518 391,-512 397,-512 397,-512 469,-512 469,-512 475,-512 481,-518 481,-524 481,-524 481,-541 481,-541 481,-547 475,-553 469,-553"/>
+<text text-anchor="middle" x="433" y="-541" font-family="Arial" font-size="10.00">GPU (1x H100)</text>
+<text text-anchor="middle" x="433" y="-530" font-family="Arial" font-size="10.00">PyTorch CUDA12</text>
+<text text-anchor="middle" x="433" y="-519" font-family="Arial" font-size="10.00">1x nvidia.com/gpu</text>
+</g>
+<!-- spawn -->
+<g id="node8" class="node">
+<title>spawn</title>
+<path fill="#ffe0b2" stroke="#e65100" d="M507,-465C507,-465 359,-465 359,-465 353,-465 347,-459 347,-453 347,-453 347,-397 347,-397 347,-391 353,-385 359,-385 359,-385 507,-385 507,-385 513,-385 519,-391 519,-397 519,-397 519,-453 519,-453 519,-459 513,-465 507,-465"/>
+<text text-anchor="middle" x="433" y="-452.2" font-family="Arial" font-size="11.00">Hub Spawns Notebook Pod</text>
+<text text-anchor="middle" x="433" y="-440.2" font-family="Arial" font-size="11.00">Image: quay.io/jupyter/</text>
+<text text-anchor="middle" x="433" y="-428.2" font-family="Arial" font-size="11.00">pytorch&#45;notebook:cuda12&#45;latest</text>
+<text text-anchor="middle" x="433" y="-416.2" font-family="Arial" font-size="11.00">Requests: nvidia.com/gpu: &quot;1&quot;</text>
+<text text-anchor="middle" x="433" y="-404.2" font-family="Arial" font-size="11.00">NodeSelector: nvidia&#45;h100&#45;80gb</text>
+<text text-anchor="middle" x="433" y="-392.2" font-family="Arial" font-size="11.00">Tolerations: gpu + gke&#45;queued</text>
+</g>
+<!-- gpu_profile&#45;&gt;spawn -->
+<g id="edge6" class="edge">
+<title>gpu_profile&#45;&gt;spawn</title>
+<path fill="none" stroke="#e65100" stroke-width="2" d="M433,-511.66C433,-501.39 433,-488.35 433,-475.57"/>
+<polygon fill="#e65100" stroke="#e65100" stroke-width="2" points="436.5,-475.42 433,-465.42 429.5,-475.42 436.5,-475.42"/>
+<text text-anchor="middle" x="473.5" y="-486" font-family="Arial" font-size="10.00" fill="#e65100">User selects GPU</text>
+</g>
+<!-- nb_gpu0 -->
+<g id="node9" class="node">
+<title>nb_gpu0</title>
+<path fill="#ff9800" stroke="#bf360c" d="M494,-257.5C494,-257.5 372,-257.5 372,-257.5 366,-257.5 360,-251.5 360,-245.5 360,-245.5 360,-233.5 360,-233.5 360,-227.5 366,-221.5 372,-221.5 372,-221.5 494,-221.5 494,-221.5 500,-221.5 506,-227.5 506,-233.5 506,-233.5 506,-245.5 506,-245.5 506,-251.5 500,-257.5 494,-257.5"/>
+<text text-anchor="middle" x="433" y="-242.5" font-family="Arial" font-size="10.00" fill="#ffffff">GPU 0 (1x H100)</text>
+<text text-anchor="middle" x="433" y="-231.5" font-family="Arial" font-size="10.00" fill="#ffffff">nvidia&#45;smi shows H100 80GB</text>
+</g>
+<!-- spawn&#45;&gt;nb_gpu0 -->
+<g id="edge7" class="edge">
+<title>spawn&#45;&gt;nb_gpu0</title>
+<path fill="none" stroke="#ff6f00" stroke-width="2" d="M433,-384.63C433,-363.48 433,-336.75 433,-312.06"/>
+<polygon fill="#ff6f00" stroke="#ff6f00" stroke-width="2" points="436.5,-312 433,-302 429.5,-312 436.5,-312"/>
+<text text-anchor="middle" x="481" y="-359" font-family="Arial" font-size="10.00" fill="#ff6f00">Schedules to A3 node</text>
+</g>
+<!-- nb_home -->
+<g id="node10" class="node">
+<title>nb_home</title>
+<path fill="#d1c4e9" stroke="#512da8" d="M329.5,-257.5C329.5,-257.5 210.5,-257.5 210.5,-257.5 204.5,-257.5 198.5,-251.5 198.5,-245.5 198.5,-245.5 198.5,-233.5 198.5,-233.5 198.5,-227.5 204.5,-221.5 210.5,-221.5 210.5,-221.5 329.5,-221.5 329.5,-221.5 335.5,-221.5 341.5,-227.5 341.5,-233.5 341.5,-233.5 341.5,-245.5 341.5,-245.5 341.5,-251.5 335.5,-257.5 329.5,-257.5"/>
+<text text-anchor="middle" x="270" y="-242.5" font-family="Arial" font-size="10.00">Persistent Home (20Gi PVC)</text>
+<text text-anchor="middle" x="270" y="-231.5" font-family="Arial" font-size="10.00">premium&#45;rwo, per&#45;user</text>
+</g>
+<!-- footer -->
+<g id="node15" class="node">
+<title>footer</title>
+<text text-anchor="middle" x="1012" y="-58.2" font-family="Arial" font-size="11.00">First GPU notebook spawn: 2&#45;3 min (image pull) | Subsequent spawns: &lt;30s | See deploy/jupyter/examples/*.ipynb for example notebooks</text>
+</g>
+<!-- nb_home&#45;&gt;footer -->
+<!-- nb_code -->
+<g id="node11" class="node">
+<title>nb_code</title>
+<path fill="#e0e0e0" stroke="#666666" d="M168,-260C168,-260 36,-260 36,-260 30,-260 24,-254 24,-248 24,-248 24,-231 24,-231 24,-225 30,-219 36,-219 36,-219 168,-219 168,-219 174,-219 180,-225 180,-231 180,-231 180,-248 180,-248 180,-254 174,-260 168,-260"/>
+<text text-anchor="middle" x="102" y="-248" font-family="Arial" font-size="10.00">Code runs in notebook:</text>
+<text text-anchor="middle" x="102" y="-237" font-family="Arial" font-size="10.00">torch.cuda.is_available() &#45;&gt; True</text>
+<text text-anchor="middle" x="102" y="-226" font-family="Arial" font-size="10.00">Call vLLM endpoint &#45;&gt;</text>
+</g>
+<!-- vllm_dns -->
+<g id="node13" class="node">
+<title>vllm_dns</title>
+<path fill="#e0e0e0" stroke="#666666" d="M179,-98C179,-98 49,-98 49,-98 43,-98 37,-92 37,-86 37,-86 37,-36 37,-36 37,-30 43,-24 49,-24 49,-24 179,-24 179,-24 185,-24 191,-30 191,-36 191,-36 191,-86 191,-86 191,-92 185,-98 179,-98"/>
+<text text-anchor="middle" x="114" y="-86" font-family="Arial" font-size="10.00">Cluster DNS endpoint:</text>
+<text text-anchor="middle" x="114" y="-75" font-family="Arial" font-size="10.00">qwen3&#45;vllm.inference</text>
+<text text-anchor="middle" x="114" y="-64" font-family="Arial" font-size="10.00">.svc.cluster.local:8000</text>
+<text text-anchor="middle" x="114" y="-53" font-family="Arial" font-size="10.00">(cross&#45;namespace DNS works:</text>
+<text text-anchor="middle" x="114" y="-42" font-family="Arial" font-size="10.00">jupyter &#45;&gt; inference)</text>
+<text text-anchor="middle" x="114" y="-31" font-family="Arial" font-size="10.00">OpenAI&#45;compatible API</text>
+</g>
+<!-- nb_code&#45;&gt;vllm_dns -->
+<g id="edge8" class="edge">
+<title>nb_code&#45;&gt;vllm_dns</title>
+<path fill="none" stroke="#4caf50" stroke-width="2" d="M91.92,-218.66C82.63,-197.82 71.21,-164.1 78,-135 80.17,-125.71 83.7,-116.23 87.72,-107.33"/>
+<polygon fill="#4caf50" stroke="#4caf50" stroke-width="2" points="90.89,-108.81 92.05,-98.28 84.58,-105.79 90.89,-108.81"/>
+<text text-anchor="middle" x="91.5" y="-138" font-family="Arial" font-size="10.00" fill="#4caf50">HTTP</text>
+</g>
+<!-- vllm_gpus -->
+<g id="node12" class="node">
+<title>vllm_gpus</title>
+<path fill="#ff9800" stroke="#bf360c" d="M331,-81.5C331,-81.5 221,-81.5 221,-81.5 215,-81.5 209,-75.5 209,-69.5 209,-69.5 209,-52.5 209,-52.5 209,-46.5 215,-40.5 221,-40.5 221,-40.5 331,-40.5 331,-40.5 337,-40.5 343,-46.5 343,-52.5 343,-52.5 343,-69.5 343,-69.5 343,-75.5 337,-81.5 331,-81.5"/>
+<text text-anchor="middle" x="276" y="-69.5" font-family="Arial" font-size="10.00" fill="#ffffff">GPU 0 + GPU 1 (2x H100)</text>
+<text text-anchor="middle" x="276" y="-58.5" font-family="Arial" font-size="10.00" fill="#ffffff">Qwen3&#45;32B, TP=2</text>
+<text text-anchor="middle" x="276" y="-47.5" font-family="Arial" font-size="10.00" fill="#ffffff">~77GB each</text>
+</g>
+<!-- vllm_dns&#45;&gt;nb_code -->
+<g id="edge9" class="edge">
+<title>vllm_dns&#45;&gt;nb_code</title>
+<path fill="none" stroke="#4caf50" stroke-width="2" d="M111.54,-98.18C109.32,-130.88 106.08,-178.44 104.01,-208.92"/>
+<polygon fill="#4caf50" stroke="#4caf50" stroke-width="2" points="100.52,-208.72 103.33,-218.94 107.5,-209.2 100.52,-208.72"/>
+<text text-anchor="middle" x="131.5" y="-138" font-family="Arial" font-size="10.00" fill="#4caf50">Response</text>
+</g>
+<!-- remaining -->
+<g id="node14" class="node">
+<title>remaining</title>
+<path fill="#e0e0e0" stroke="#666666" stroke-dasharray="5,2" d="M643.5,-315C643.5,-315 536.5,-315 536.5,-315 530.5,-315 524.5,-309 524.5,-303 524.5,-303 524.5,-176 524.5,-176 524.5,-170 530.5,-164 536.5,-164 536.5,-164 643.5,-164 643.5,-164 649.5,-164 655.5,-170 655.5,-176 655.5,-176 655.5,-303 655.5,-303 655.5,-309 649.5,-315 643.5,-315"/>
+<text text-anchor="middle" x="590" y="-303" font-family="Arial" font-size="10.00">Remaining GPUs</text>
+<text text-anchor="middle" x="590" y="-292" font-family="Arial" font-size="10.00">(up to ~6 H100s available)</text>
+<text text-anchor="middle" x="590" y="-281" font-family="Arial" font-size="10.00">For:</text>
+<text text-anchor="middle" x="590" y="-270" font-family="Arial" font-size="10.00">&#45; More GPU notebooks</text>
+<text text-anchor="middle" x="590" y="-259" font-family="Arial" font-size="10.00">&#45; Training jobs</text>
+<text text-anchor="middle" x="590" y="-248" font-family="Arial" font-size="10.00">&#45; Other GPU workloads</text>
+<text text-anchor="middle" x="590" y="-237" font-family="Arial" font-size="10.00">When idle:</text>
+<text text-anchor="middle" x="590" y="-226" font-family="Arial" font-size="10.00">Holder pod (ns: default)</text>
+<text text-anchor="middle" x="590" y="-215" font-family="Arial" font-size="10.00">a3&#45;holder&#45;zone&#45;a requests</text>
+<text text-anchor="middle" x="590" y="-204" font-family="Arial" font-size="10.00">all 8 GPUs to prevent</text>
+<text text-anchor="middle" x="590" y="-193" font-family="Arial" font-size="10.00">node reclaim</text>
+<text text-anchor="middle" x="590" y="-182" font-family="Arial" font-size="10.00">(currently: 0 replicas</text>
+<text text-anchor="middle" x="590" y="-171" font-family="Arial" font-size="10.00">since vLLM holds node)</text>
+</g>
+<!-- remaining&#45;&gt;footer -->
+</g>
+</svg>
+
+<p><strong>Figure 1: Jupyter notebook spawn and model call flow.</strong> (1) User logs into JupyterHub at the internal load balancer. (2) User selects a profile (GPU or CPU) and clicks Start My Server. (3) Hub spawns a notebook pod on the appropriate node (GPU notebooks land on the A3 node with H100 GPUs). (4) User opens a notebook, writes Python code, and calls the vLLM inference endpoint using the in-cluster DNS name. (5) Request routes to the vLLM pod, which generates a response.</p>
+<h3 id="key-features">Key features</h3>
+<ul>
+<li><strong>Per-user isolation:</strong> Each user gets their own notebook server pod with dedicated resources</li>
+<li><strong>GPU or CPU profiles:</strong> Choose between a GPU-powered notebook (1× H100 GPU) or a CPU-only notebook</li>
+<li><strong>Persistent home directory:</strong> Your files are saved to a 20 GB persistent volume that survives server restarts</li>
+<li><strong>Internal access only:</strong> The JupyterHub is reachable at internal load balancer <strong><code>10.128.15.234</code></strong> (VPC-only, not public)</li>
+</ul>
+<h3 id="live-deployment-values">Live deployment values</h3>
+<ul>
+<li><strong>JupyterHub version:</strong> 5.5.0</li>
+<li><strong>Internal load balancer IP:</strong> <code>10.128.15.234</code> (port 80)</li>
+<li><strong>GPU profile:</strong> 1× H100 GPU, PyTorch + CUDA 12, <code>quay.io/jupyter/pytorch-notebook:cuda12-latest</code> image</li>
+<li><strong>CPU profile:</strong> 4 CPU cores, 16 GB RAM, no GPU</li>
+<li><strong>Storage per user:</strong> 20 GB persistent disk (GCP <code>premium-rwo</code> SSD)</li>
+</ul>
+<hr>
+<h2 id="2-log-in">2. Log In</h2>
+<h3 id="step-1-access-the-jupyterhub">Step 1: Access the JupyterHub</h3>
+<p>The JupyterHub is only reachable from <strong>inside the VPC</strong>. You have two options:</p>
+<p><strong>(a) From a VM or bastion host inside the VPC:</strong></p>
+<p>Open a web browser and navigate to:</p>
+<pre><code class="language-">
+http://10.128.15.234
+</code></pre>
+<p><strong>(b) From your laptop (via port-forward):</strong></p>
+<p>If you&#x27;re developing from your laptop, use <code>kubectl port-forward</code>:</p>
+<pre><code class="language-bash">
+# Forward local port 8080 to the JupyterHub service
+kubectl -n jupyter port-forward svc/proxy-public 8080:80
+</code></pre>
+<p>Leave this running in a terminal, then open your browser to:</p>
+<pre><code class="language-">
+http://localhost:8080
+</code></pre>
+<p><strong>Note:</strong> You&#x27;ll need cluster credentials configured:</p>
+<pre><code class="language-bash">
+gcloud container clusters get-credentials hypercomputer-a3-cluster \
+  --region us-central1 --project hdlab-elideng
+</code></pre>
+<h3 id="step-2-enter-credentials">Step 2: Enter credentials</h3>
+<p>The JupyterHub login page will prompt for:</p>
+<ul>
+<li><strong>Username:</strong> Any username (e.g., your name, email, or identifier)</li>
+<li><strong>Password:</strong> <code>demo2026</code></li>
+</ul>
+<p><strong>Important: Demo authentication only.</strong> The current setup uses <strong>DummyAuthenticator</strong>, which accepts any username with the hardcoded password <code>demo2026</code>. This is for <strong>demo and development purposes only</strong>. For production use, replace DummyAuthenticator with a real authentication provider like Google OAuth, LDAP, or GitHub OAuth (see <code>deploy/jupyter/values.yaml</code>).</p>
+<hr>
+<h2 id="3-choose-a-profile">3. Choose a Profile</h2>
+<p>After logging in, you&#x27;ll see a profile selection page with a dropdown offering the two profiles below. Pick one, then click <strong>Start My Server</strong>.</p>
+<h3 id="available-profiles">Available profiles</h3>
+<table>
+<thead><tr>
+<th>Profile</th>
+<th>Resources</th>
+<th>When to Use</th>
+<th>Image</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><strong>CPU (no GPU)</strong></td>
+<td>4 CPU cores, 16 GB RAM</td>
+<td>Data analysis, non-GPU workloads, small models, general Python development</td>
+<td>Standard JupyterLab image</td>
+</tr>
+<tr>
+<td><strong>GPU (1x H100)</strong></td>
+<td>1× NVIDIA H100 80GB GPU, PyTorch, CUDA 12</td>
+<td>Training/fine-tuning models, running GPU-accelerated libraries (PyTorch, TensorFlow, JAX), large-scale inference</td>
+<td><code>quay.io/jupyter/pytorch-notebook:cuda12-latest</code></td>
+</tr>
+</tbody></table>
+<h3 id="which-profile-should-i-choose">Which profile should I choose?</h3>
+<ul>
+<li><strong>Choose CPU</strong> if you&#x27;re doing data exploration, visualization, or running code that doesn&#x27;t need a GPU</li>
+<li><strong>Choose GPU</strong> if you&#x27;re:</li>
+<li>Training or fine-tuning machine learning models</li>
+<li>Running GPU-accelerated libraries (PyTorch, TensorFlow, JAX, cuDF, etc.)</li>
+<li>Experimenting with large models or datasets that benefit from GPU parallelism</li>
+</ul>
+<p><strong>Important: GPUs are shared and scarce.</strong> The cluster has a single A3 node with 8 H100 GPUs. The vLLM inference service uses 2 GPUs, leaving approximately <strong>6 GPUs available</strong> for notebooks. If all 6 are in use, your GPU notebook will remain in &quot;Pending&quot; state until a GPU becomes available. Please shut down your GPU server when you&#x27;re done (see <a href="#8-shut-down-your-server">Section 8</a>).</p>
+<hr>
+<h2 id="4-launch-and-verify-gpu-access">4. Launch and Verify GPU Access</h2>
+<h3 id="step-1-start-your-server">Step 1: Start your server</h3>
+<ol>
+<li>Select your profile (e.g., <strong>&quot;GPU (1x H100)&quot;</strong>)</li>
+<li>Click <strong>Start My Server</strong></li>
+<li>Wait for the server to start:</li>
+</ol>
+<ul>
+<li><strong>First launch:</strong> May take 2-3 minutes while the PyTorch CUDA image is pulled (approximately 5 GB)</li>
+<li><strong>Subsequent launches:</strong> Typically 15-30 seconds (image is cached)</li>
+</ul>
+<p>You&#x27;ll see a progress bar and status messages like &quot;Waiting for server to start...&quot; and &quot;Server is starting...&quot;.</p>
+<p>Once the server is ready, JupyterLab will open in your browser.</p>
+<h3 id="step-2-verify-gpu-access">Step 2: Verify GPU access</h3>
+<p><strong>Example notebook:</strong> See <code>deploy/jupyter/examples/gpu_check.ipynb</code> for a ready-to-run example.</p>
+<h4 id="option-1-run-nvidia-smi-in-a-terminal">Option 1: Run <code>nvidia-smi</code> in a terminal</h4>
+<ol>
+<li>In JupyterLab, open a <strong>Terminal</strong> (File &gt; New &gt; Terminal)</li>
+<li>Run:</li>
+<pre><code class="language-bash">
+nvidia-smi
+</code></pre>
+</ol>
+<p><strong>Sample output:</strong></p>
+<pre><code class="language-">
+Fri Jul 17 10:48:03 2026
++---------------------------------------------------------------------------------------+
+| NVIDIA-SMI 535.309.01             Driver Version: 535.309.01   CUDA Version: 12.2     |
+|-----------------------------------------+----------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id        Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |         Memory-Usage | GPU-Util  Compute M. |
+|                                         |                      |               MIG M. |
+|=========================================+======================+======================|
+|   0  NVIDIA H100 80GB HBM3          Off | 00000000:04:00.0 Off |                    0 |
+| N/A   33C    P0              71W / 700W |      0MiB / 81559MiB |      0%      Default |
++---------------------------------------------------------------------------------------+
+</code></pre>
+<p>If you see &quot;NVIDIA H100 80GB HBM3&quot;, the GPU is available.</p>
+<h4 id="option-2-run-python-code-in-a-notebook">Option 2: Run Python code in a notebook</h4>
+<p>Create a new notebook (File &gt; New &gt; Notebook) and run:</p>
+<pre><code class="language-python">
+!nvidia-smi
+</code></pre>
+<p>Then, in another cell:</p>
+<pre><code class="language-python">
+import torch
+
+print(f&quot;CUDA available: {torch.cuda.is_available()}&quot;)
+if torch.cuda.is_available():
+    print(f&quot;Device name: {torch.cuda.get_device_name(0)}&quot;)
+    print(f&quot;Device count: {torch.cuda.device_count()}&quot;)
+</code></pre>
+<p><strong>Sample output:</strong></p>
+<pre><code class="language-">
+CUDA available: True
+Device name: NVIDIA H100 80GB HBM3
+Device count: 1
+</code></pre>
+<p>If <code>torch.cuda.is_available()</code> returns <code>True</code>, PyTorch can see the GPU and you&#x27;re ready to run GPU-accelerated code.</p>
+<hr>
+<h2 id="5-call-the-inference-endpoint-from-your-notebook">5. Call the Inference Endpoint from Your Notebook</h2>
+<p>Your notebook pod runs inside the Kubernetes cluster, so it can reach the vLLM inference endpoint via <strong>in-cluster DNS</strong> without needing an external IP or port-forward.</p>
+<p><strong>Example notebook:</strong> See <code>deploy/jupyter/examples/call_vllm.ipynb</code> for a ready-to-run example.</p>
+<h3 id="step-1-install-the-openai-client-if-needed">Step 1: Install the OpenAI client (if needed)</h3>
+<p>In a notebook cell:</p>
+<pre><code class="language-python">
+!pip install -q openai
+</code></pre>
+<p>(The <code>-q</code> flag suppresses verbose output. The PyTorch notebook image may already have <code>openai</code> installed, but this ensures it&#x27;s available.)</p>
+<h3 id="step-2-call-the-inference-endpoint">Step 2: Call the inference endpoint</h3>
+<pre><code class="language-python">
+from openai import OpenAI
+
+# Use the in-cluster DNS name for the vLLM service
+client = OpenAI(
+    base_url=&quot;http://qwen3-vllm.inference.svc.cluster.local:8000/v1&quot;,
+    api_key=&quot;none&quot;  # vLLM ignores this; required by SDK but any value works
+)
+
+response = client.chat.completions.create(
+    model=&quot;qwen3-32b&quot;,
+    messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is 2+2?&quot;}],
+    max_tokens=20
+)
+
+print(response.choices[0].message.content)
+</code></pre>
+<p><strong>Sample output:</strong></p>
+<pre><code class="language-">
+&lt;think&gt;
+Okay, so I need to figure out what 2 plus 2 is. Let me
+</code></pre>
+<p>(Truncated at <code>max_tokens=20</code>. Increase <code>max_tokens</code> for longer responses.)</p>
+<h3 id="why-use-the-dns-name">Why use the DNS name?</h3>
+<p>The DNS name <code>qwen3-vllm.inference.svc.cluster.local:8000</code> resolves to the vLLM Service within the cluster. This works even though your notebook is in the <code>jupyter</code> namespace and vLLM is in the <code>inference</code> namespace — Kubernetes DNS resolves <code>&lt;service&gt;.&lt;namespace&gt;.svc.cluster.local</code> cluster-wide.</p>
+<p><strong>Alternative:</strong> You can also use the internal load balancer IP (<code>http://10.128.0.43:8000/v1</code>), but the DNS name is preferred because it will continue to work even if the IP changes.</p>
+<h3 id="more-examples">More examples</h3>
+<p>For detailed examples of streaming, multi-turn conversations, and parameter tuning, see the <strong><a href="03-inference-endpoint-user-guide.html">Inference Endpoint User Guide</a></strong>.</p>
+<hr>
+<h2 id="6-install-packages-and-do-aiml-work">6. Install Packages and Do AI/ML Work</h2>
+<h3 id="install-python-packages-with-pip">Install Python packages with pip</h3>
+<p>You can install any Python package in your notebook:</p>
+<pre><code class="language-python">
+!pip install pandas scikit-learn matplotlib seaborn transformers accelerate
+</code></pre>
+<p><strong>Note:</strong> Packages installed this way are <strong>not persistent</strong> across server restarts. If you frequently use a set of packages, consider:</p>
+<ul>
+<li>Adding them to a <code>requirements.txt</code> file in your home directory and running <code>!pip install -r requirements.txt</code> in a startup cell</li>
+<li>(Advanced) Building a custom notebook image with pre-installed packages</li>
+</ul>
+<h3 id="where-files-live">Where files live</h3>
+<ul>
+<li><strong>Your home directory (<code>/home/jovyan</code>):</strong> Persistent, survives server restarts (backed by a 20 GB persistent disk)</li>
+<li><strong>Installed packages:</strong> Stored in the container filesystem (not persistent; you&#x27;ll need to reinstall after a server restart)</li>
+<li><strong>Running kernel state (variables, imports):</strong> Only in memory; lost when the kernel restarts or the server stops</li>
+</ul>
+<p><strong>Best practice:</strong> Save your work frequently. Use notebooks (<code>.ipynb</code> files) for interactive work and Python scripts (<code>.py</code> files) for reusable code. Both are saved to your home directory and will persist.</p>
+<h3 id="example-gpu-accelerated-pytorch-training">Example: GPU-accelerated PyTorch training</h3>
+<pre><code class="language-python">
+import torch
+import torch.nn as nn
+import torch.optim as optim
+
+# Verify GPU is available
+device = torch.device(&quot;cuda&quot; if torch.cuda.is_available() else &quot;cpu&quot;)
+print(f&quot;Using device: {device}&quot;)
+
+# Define a simple model
+model = nn.Sequential(
+    nn.Linear(784, 256),
+    nn.ReLU(),
+    nn.Linear(256, 10)
+).to(device)
+
+# Dummy data (replace with your actual dataset)
+x = torch.randn(64, 784).to(device)
+y = torch.randint(0, 10, (64,)).to(device)
+
+# Training loop
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+for epoch in range(10):
+    optimizer.zero_grad()
+    outputs = model(x)
+    loss = criterion(outputs, y)
+    loss.backward()
+    optimizer.step()
+    print(f&quot;Epoch {epoch+1}, Loss: {loss.item():.4f}&quot;)
+</code></pre>
+<p>This code will run on the H100 GPU, providing significantly faster training than a CPU.</p>
+<hr>
+<h2 id="7-persistence--what-survives-restarts">7. Persistence — What Survives Restarts</h2>
+<h3 id="persistent-survives-restarts">Persistent (survives restarts)</h3>
+<ul>
+<li><strong>Your home directory (<code>/home/jovyan</code>):</strong> All notebooks, scripts, data files, and subdirectories you create are saved to a 20 GB persistent disk (GCP <code>premium-rwo</code> SSD)</li>
+<li><strong>File contents:</strong> Everything written to disk in your home directory</li>
+</ul>
+<h3 id="not-persistent-lost-on-restart">Not persistent (lost on restart)</h3>
+<ul>
+<li><strong>Installed packages:</strong> Python packages installed with <code>pip</code> are stored in the container&#x27;s ephemeral filesystem and are lost when the server stops. You&#x27;ll need to reinstall them.</li>
+<li><strong>Kernel state:</strong> Variables, imported modules, and running processes are only in memory. If you stop the server or the pod is restarted, kernel state is lost.</li>
+<li><strong>Temporary files outside home:</strong> Files written to <code>/tmp</code> or other paths outside <code>/home/jovyan</code> are not persistent.</li>
+</ul>
+<h3 id="what-triggers-a-restart">What triggers a restart?</h3>
+<ul>
+<li><strong>Manual stop:</strong> You stop the server from the JupyterHub control panel (File &gt; Hub Control Panel &gt; Stop My Server)</li>
+<li><strong>Idle culling:</strong> If your server is idle for too long (no notebook activity), the hub may automatically cull (stop) it to free up resources (default: 60 minutes of inactivity)</li>
+<li><strong>Node maintenance or pod restart:</strong> If the underlying node is drained or the pod crashes, Kubernetes will recreate your server pod, and your home directory will reattach</li>
+</ul>
+<h3 id="best-practices">Best practices</h3>
+<ul>
+<li>Save notebooks frequently (<code>Ctrl+S</code> or <code>Cmd+S</code>)</li>
+<li>Keep a <code>requirements.txt</code> file in your home directory with your commonly used packages:</li>
+<pre><code class="language-bash">
+# In a terminal or notebook cell
+cat &gt; requirements.txt &lt;&lt;EOF
+torch
+transformers
+accelerate
+pandas
+matplotlib
+seaborn
+EOF
+</code></pre>
+</ul>
+<p>Then, in a startup cell of your notebook:</p>
+<pre><code class="language-python">
+!pip install -q -r requirements.txt
+</code></pre>
+<hr>
+<h2 id="8-shut-down-your-server">8. Shut Down Your Server</h2>
+<p><strong>Important: GPUs are shared and scarce.</strong> When you&#x27;re done working, please stop your GPU server to free up the GPU for other users.</p>
+<h3 id="how-to-stop-your-server">How to stop your server</h3>
+<ol>
+<li>In JupyterLab, go to <strong>File &gt; Hub Control Panel</strong> (or navigate to <code>http://10.128.15.234/hub/home</code>)</li>
+<li>Click the <strong>Stop My Server</strong> button</li>
+<li>Wait for the server to stop (the button will change to &quot;Start My Server&quot;)</li>
+</ol>
+<p>Your files in <code>/home/jovyan</code> are safe and will be available when you start your server again.</p>
+<h3 id="idle-culling">Idle culling</h3>
+<p>To prevent resource waste, the JupyterHub is configured to <strong>automatically cull idle servers</strong> after a period of inactivity (default: 60 minutes). If your notebook has no activity (no cells executing, no terminals open with active processes), the hub will stop your server.</p>
+<p>You&#x27;ll receive a notification when you return, and you can restart your server with one click. Your saved notebooks and files will still be there.</p>
+<h3 id="how-to-avoid-idle-culling">How to avoid idle culling</h3>
+<p>If you&#x27;re running a long training job or background process and don&#x27;t want your server to be culled:</p>
+<ul>
+<li>Keep a notebook open with a cell that periodically prints or logs (e.g., a training loop with progress bars)</li>
+<li>Run your long job in a notebook cell (not a terminal), as notebook activity resets the idle timer</li>
+</ul>
+<p><strong>Note:</strong> Even with idle culling disabled, please stop your server when you&#x27;re truly done to free up the GPU for others.</p>
+<hr>
+<h2 id="9-troubleshooting">9. Troubleshooting</h2>
+<h3 id="problem-server-wont-start-stuck-in-pending-state">Problem: Server won&#x27;t start (stuck in &quot;Pending&quot; state)</h3>
+<p><strong>Symptoms:</strong> After clicking &quot;Start My Server&quot; and selecting the GPU profile, the server stays in &quot;Pending&quot; or &quot;Waiting for server...&quot; state for more than 5 minutes.</p>
+<p><strong>Likely causes:</strong></p>
+<table>
+<thead><tr>
+<th>Cause</th>
+<th>How to check</th>
+<th>Fix</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>All GPUs are in use</td>
+<td>Ask other users if they&#x27;re using GPU notebooks</td>
+<td>Wait for a GPU to free up, or ask others to stop their servers when done</td>
+</tr>
+<tr>
+<td>GPU node is down</td>
+<td>(Admin) <code>kubectl get nodes -l cloud.google.com/gke-accelerator=nvidia-h100-80gb</code></td>
+<td>(Admin) The A3 GPU node may need to be reprovisioned (see <a href="01-architecture.html">Architecture Reference</a> for DWS details)</td>
+</tr>
+<tr>
+<td>Image pull is slow (first launch)</td>
+<td>Wait a bit longer (2-3 minutes)</td>
+<td>The PyTorch CUDA image is approximately 5 GB and takes time to pull on first launch</td>
+</tr>
+</tbody></table>
+<p><strong>Workaround:</strong> Select the <strong>&quot;CPU (no GPU)&quot;</strong> profile instead if you don&#x27;t strictly need GPU acceleration for your current task.</p>
+<h3 id="problem-lost-work-or-notebook-is-empty">Problem: Lost work or notebook is empty</h3>
+<p><strong>Symptoms:</strong> You return to JupyterHub and your notebook is gone, or cells you wrote are missing.</p>
+<p><strong>Likely causes:</strong></p>
+<ul>
+<li>You didn&#x27;t save the notebook before stopping the server</li>
+<li>The notebook file was saved outside your home directory (e.g., in <code>/tmp</code>)</li>
+</ul>
+<p><strong>Fix:</strong></p>
+<ul>
+<li>Always save your notebooks frequently (<code>Ctrl+S</code> or <code>Cmd+S</code>)</li>
+<li>Verify notebooks are saved in <code>/home/jovyan</code> or a subdirectory (this is the default location in JupyterLab)</li>
+<li>Check for autosave: JupyterLab creates <code>.ipynb_checkpoints</code> directories with recent autosaved versions</li>
+</ul>
+<p><strong>Note:</strong> Kernel state (variables, outputs) is not persistent. Only the notebook file (code cells and markdown) persists. If you need to preserve outputs, consider exporting the notebook as HTML or PDF (File &gt; Save and Export Notebook As...).</p>
+<h3 id="problem-package-import-errors-or-modulenotfounderror">Problem: Package import errors or &quot;ModuleNotFoundError&quot;</h3>
+<p><strong>Symptoms:</strong></p>
+<pre><code class="language-python">
+ModuleNotFoundError: No module named &#x27;transformers&#x27;
+</code></pre>
+<p><strong>Causes:</strong></p>
+<ul>
+<li>The package isn&#x27;t installed in the current server session</li>
+<li>You installed it in a previous session, but the server was restarted (packages are not persistent)</li>
+</ul>
+<p><strong>Fix:</strong></p>
+<p>Install the package again:</p>
+<pre><code class="language-python">
+!pip install transformers
+</code></pre>
+<p>For packages you use frequently, keep a <code>requirements.txt</code> file and install from it at the start of each session (see <a href="#6-install-packages-and-do-aiml-work">Section 6</a>).</p>
+<h3 id="problem-gpu-not-available-torchcudaisavailable-returns-false">Problem: GPU not available (<code>torch.cuda.is_available()</code> returns <code>False</code>)</h3>
+<p><strong>Symptoms:</strong></p>
+<pre><code class="language-python">
+torch.cuda.is_available()
+# False
+</code></pre>
+<p>or</p>
+<pre><code class="language-bash">
+nvidia-smi
+# Command &#x27;nvidia-smi&#x27; not found
+</code></pre>
+<p><strong>Causes:</strong></p>
+<ul>
+<li>You selected the <strong>CPU (no GPU)</strong> profile, not the <strong>GPU (1x H100)</strong> profile</li>
+<li>The GPU notebook pod failed to schedule on the GPU node (rare)</li>
+</ul>
+<p><strong>Fix:</strong></p>
+<ol>
+<li>Stop your server (File &gt; Hub Control Panel &gt; Stop My Server)</li>
+<li>Start a new server and select <strong>&quot;GPU (1x H100)&quot;</strong> from the profile dropdown</li>
+<li>Verify GPU access with <code>nvidia-smi</code> or <code>torch.cuda.is_available()</code> (see <a href="#4-launch-and-verify-gpu-access">Section 4</a>)</li>
+</ol>
+<h3 id="problem-notebook-kernel-dies-or-kernel-restarting-message">Problem: Notebook kernel dies or &quot;Kernel Restarting&quot; message</h3>
+<p><strong>Symptoms:</strong> The notebook kernel crashes with &quot;Kernel Restarting&quot; or &quot;Kernel died, restarting&quot; message.</p>
+<p><strong>Likely causes:</strong></p>
+<ul>
+<li>Out of memory (GPU or CPU memory)</li>
+<li>Code that crashes Python (e.g., segfault in a native library)</li>
+</ul>
+<p><strong>Fix:</strong></p>
+<ul>
+<li><strong>Reduce memory usage:</strong> If you&#x27;re loading a large model or dataset, try reducing batch size, using smaller models, or clearing variables (<code>del large_variable; import gc; gc.collect()</code>)</li>
+<li><strong>Check GPU memory:</strong> In a terminal, run <code>nvidia-smi</code> to see GPU memory usage. If close to 81,559 MiB (full), you&#x27;re out of GPU memory.</li>
+<li><strong>Restart kernel and rerun:</strong> Kernel &gt; Restart Kernel and Clear All Outputs, then rerun your notebook cells one by one to identify the problematic cell</li>
+</ul>
+<h3 id="problem-cannot-reach-the-inference-endpoint">Problem: Cannot reach the inference endpoint</h3>
+<p><strong>Symptoms:</strong></p>
+<pre><code class="language-python">
+requests.exceptions.ConnectionError: (&#x27;Connection aborted.&#x27;, ConnectionRefusedError(111, &#x27;Connection refused&#x27;))
+</code></pre>
+<p><strong>Causes:</strong></p>
+<ul>
+<li>Wrong URL (using the external IP instead of the in-cluster DNS)</li>
+<li>vLLM service is down</li>
+</ul>
+<p><strong>Fix:</strong></p>
+<ol>
+<li><strong>Use the in-cluster DNS name:</strong> <code>http://qwen3-vllm.inference.svc.cluster.local:8000/v1</code> (NOT <code>http://10.128.0.43:8000</code> — though the IP should also work, the DNS name is more reliable)</li>
+<li><strong>Check if vLLM is running:</strong> In a terminal, run:</li>
+<pre><code class="language-bash">
+curl http://qwen3-vllm.inference.svc.cluster.local:8000/v1/models
+</code></pre>
+</ol>
+<p>If you get a connection error, the vLLM service may be down. (Admin: check <code>kubectl -n inference get pods -l app=qwen3-vllm</code>)</p>
+<p>See the <strong><a href="03-inference-endpoint-user-guide.html">Inference Endpoint User Guide</a></strong> for more troubleshooting tips.</p>
+<hr>
+<h2 id="related-guides">Related Guides</h2>
+<ul>
+<li><strong><a href="03-inference-endpoint-user-guide.html">Inference Endpoint User Guide</a></strong> — Detailed guide to calling the vLLM API (curl, Python, streaming, parameters)</li>
+<li><strong><a href="01-architecture.html">Architecture Reference</a></strong> — Understand the full system: GKE cluster, GPU nodes, vLLM deployment, JupyterHub, and networking</li>
+<li><strong><a href="02a-cluster-setup.html">Deployment from Scratch (Part 1 — start here)</a></strong> — The five-part series to deploy this infrastructure from a fresh GCP project</li>
+<li><strong><a href="appendix-glossary.html">Glossary appendix</a></strong> — Plain-language definitions of every term used in these guides</li>
+</ul>
+<hr>
+<p><strong>Document version:</strong> 2026-07-17</p>
+<p><strong>JupyterHub details:</strong> Version 5.5.0 at <code>10.128.15.234</code> (internal LB), GPU profile with 1× H100 80GB, CPU profile with 4 cores / 16 GB RAM, 20 GB persistent storage per user</p>
+</body>
+</html>

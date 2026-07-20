@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deployment Part 4 — Deploy JupyterHub (GPU Notebooks)</title>
+    <style>
+        body {
+            font-family: 'Arial', 'Helvetica', sans-serif;
+            font-size: 11pt;
+            line-height: 1.6;
+            color: #202124;
+            max-width: 8.5in;
+            margin: 1in auto;
+            padding: 0 1rem;
+            background-color: #ffffff;
+        }
+
+        h1 {
+            color: #1a73e8;
+            font-size: 20pt;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 8px;
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: bold;
+        }
+
+        h2 {
+            color: #1a73e8;
+            font-size: 15pt;
+            margin-top: 22px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #eeeeee;
+            padding-bottom: 4px;
+            font-weight: bold;
+        }
+
+        h3 {
+            color: #202124;
+            font-size: 13pt;
+            margin-top: 18px;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        h4 {
+            color: #5f6368;
+            font-size: 11.5pt;
+            margin-top: 14px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        h5 {
+            color: #5f6368;
+            font-size: 10.5pt;
+            margin-top: 12px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        h6 {
+            color: #5f6368;
+            font-size: 10pt;
+            margin-top: 10px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        p {
+            margin-bottom: 10px;
+        }
+
+        pre {
+            background-color: #f8f9fa;
+            border: 1px solid #dadce0;
+            border-radius: 6px;
+            padding: 12px;
+            font-family: 'Courier New', 'Consolas', monospace;
+            font-size: 9.5pt;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin-bottom: 14px;
+            overflow-x: auto;
+        }
+
+        code {
+            background-color: #f1f3f4;
+            color: #d93025;
+            font-family: 'Courier New', 'Consolas', monospace;
+            font-size: 9.5pt;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+
+        pre code {
+            background-color: transparent;
+            color: #202124;
+            padding: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 18px;
+            font-size: 10pt;
+        }
+
+        th {
+            background-color: #e8f0fe;
+            color: #1a73e8;
+            border: 1px solid #dadce0;
+            padding: 10px;
+            text-align: left;
+            font-weight: bold;
+        }
+
+        td {
+            border: 1px solid #dadce0;
+            padding: 9px;
+            vertical-align: top;
+        }
+
+        ul, ol {
+            margin-top: 4px;
+            margin-bottom: 12px;
+            padding-left: 24px;
+        }
+
+        li {
+            margin-bottom: 6px;
+        }
+
+        a {
+            color: #1a73e8;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        blockquote {
+            border-left: 4px solid #dadce0;
+            padding-left: 12px;
+            color: #5f6368;
+            margin: 12px 0;
+        }
+
+        hr {
+            border: 0;
+            border-top: 1px solid #dadce0;
+            margin: 22px 0;
+        }
+
+        /* SVG styling for embedded diagrams */
+        svg {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 16px auto;
+        }
+
+        /* Alert/callout boxes */
+        .admonition {
+            border-left: 4px solid #ea4335;
+            background-color: #fce8e6;
+            padding: 12px;
+            margin: 14px 0;
+            border-radius: 0 4px 4px 0;
+        }
+    </style>
+</head>
+<body>
+<h1 id="deployment-part-4--deploy-jupyterhub-gpu-notebooks">Deployment Part 4 — Deploy JupyterHub (GPU Notebooks)</h1>
+<p><strong>Deployment series:</strong> <a href="02a-cluster-setup.html">1. Cluster Setup</a> → <a href="02b-gpu-nodepool-dws.html">2. GPU Node &amp; DWS</a> → <a href="02c-deploy-inference.html">3. Inference</a> → <strong>4. JupyterHub</strong> → <a href="02e-verify-teardown.html">5. Verify &amp; Teardown</a></p>
+<hr>
+<p><strong>Part 4 of the deployment series.</strong> Assumes the GPU node from <a href="02b-gpu-nodepool-dws.html">Part 2</a> is running (the inference service from <a href="02c-deploy-inference.html">Part 3</a> is recommended but not strictly required for this part).</p>
+<p>This part installs <strong><a href="appendix-glossary.html#jupyterhub">JupyterHub</a></strong> via Helm with a CPU profile and a GPU profile, so users can launch notebooks that land on the A3 node and request an H100.</p>
+<hr>
+<h2 id="step-7-deploy-jupyterhub">Step 7: Deploy JupyterHub</h2>
+<h3 id="71-add-the-jupyterhub-helm-repo">7.1 Add the JupyterHub Helm repo</h3>
+<pre><code class="language-bash">
+helm repo add jupyterhub https://hub.jupyter.org/helm-chart/
+helm repo update
+</code></pre>
+<h3 id="72-create-jupyterhub-values-file">7.2 Create JupyterHub values file</h3>
+<p>Save this as <code>jupyter-values.yaml</code>:</p>
+<pre><code class="language-yaml">
+hub:
+  config:
+    JupyterHub:
+      authenticator_class: dummy
+    DummyAuthenticator:
+      password: &quot;demo2026&quot;
+proxy:
+  service:
+    type: LoadBalancer
+    annotations:
+      networking.gke.io/load-balancer-type: &quot;Internal&quot;
+singleuser:
+  storage:
+    dynamic:
+      storageClass: premium-rwo
+    capacity: 20Gi
+  profileList:
+  - display_name: &quot;CPU (no GPU)&quot;
+    default: true
+    kubespawner_override:
+      cpu_limit: 4
+      mem_limit: &quot;16G&quot;
+  - display_name: &quot;GPU (1x H100)&quot;
+    kubespawner_override:
+      image: quay.io/jupyter/pytorch-notebook:cuda12-latest
+      extra_resource_limits:
+        nvidia.com/gpu: &quot;1&quot;
+      node_selector:
+        cloud.google.com/gke-accelerator: nvidia-h100-80gb
+      tolerations:
+      - key: &quot;nvidia.com/gpu&quot;
+        operator: &quot;Exists&quot;
+        effect: &quot;NoSchedule&quot;
+      - key: &quot;cloud.google.com/gke-queued&quot;
+        operator: &quot;Exists&quot;
+        effect: &quot;NoSchedule&quot;
+</code></pre>
+<p><strong>What this does:</strong></p>
+<ul>
+<li><strong>DummyAuthenticator</strong> — any username, password <code>demo2026</code> (demo only; replace with Google OAuth for production)</li>
+<li><strong>Internal LoadBalancer</strong> — private IP, VPC-only access</li>
+<li><strong>Two profiles:</strong></li>
+<li><strong>CPU (default)</strong> — 4 CPU / 16GB, no GPU</li>
+<li><strong>GPU (1x H100)</strong> — PyTorch CUDA 12 image, requests 1 GPU, schedules on H100 node</li>
+<li><strong>20Gi persistent home</strong> per user</li>
+</ul>
+<h3 id="73-install-jupyterhub">7.3 Install JupyterHub</h3>
+<pre><code class="language-bash">
+helm upgrade --install jhub jupyterhub/jupyterhub \
+  --namespace jupyter \
+  --version 4.4.0 \
+  --values jupyter-values.yaml \
+  --timeout 10m
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+Release &quot;jhub&quot; does not exist. Installing it now.
+NAME: jhub
+LAST DEPLOYED: ...
+NAMESPACE: jupyter
+STATUS: deployed
+</code></pre>
+<p><strong>Time:</strong> ~3-5 minutes.</p>
+<p><strong>Verify pods:</strong></p>
+<pre><code class="language-bash">
+kubectl get pods -n jupyter
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+NAME                              READY   STATUS    RESTARTS   AGE
+hub-xxxxxxxxxx-yyyyy              1/1     Running   0          2m
+proxy-xxxxxxxxxx-zzzzz            1/1     Running   0          2m
+user-scheduler-xxxxxxxxxx-aaaaa   1/1     Running   0          2m
+</code></pre>
+<h3 id="74-get-the-jupyterhub-url">7.4 Get the JupyterHub URL</h3>
+<pre><code class="language-bash">
+kubectl get svc -n jupyter proxy-public
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+NAME           TYPE           CLUSTER-IP       EXTERNAL-IP       PORT(S)        AGE
+proxy-public   LoadBalancer   10.108.yy.yy     10.128.15.234     80:xxxxx/TCP   3m
+</code></pre>
+<p><strong>JupyterHub URL:</strong> <code>http://10.128.15.234</code> (internal IP, VPC-only).</p>
+<h3 id="75-log-in-and-launch-a-gpu-notebook">7.5 Log in and launch a GPU notebook</h3>
+<p><strong>From a machine inside the VPC</strong> (e.g., a GCP VM, or port-forward via a bastion):</p>
+<ol>
+<li>Browse to <code>http://10.128.15.234</code></li>
+<li>Log in with any username and password <strong><code>demo2026</code></strong></li>
+<li>Select <strong>&quot;GPU (1x H100)&quot;</strong> from the profile dropdown</li>
+<li>Click <strong>Start My Server</strong></li>
+<li>First launch takes 2-3 minutes (pulling the PyTorch CUDA image)</li>
+</ol>
+<p><strong>Verify GPU access (in the notebook):</strong></p>
+<pre><code class="language-python">
+import torch
+print(f&quot;CUDA available: {torch.cuda.is_available()}&quot;)
+print(f&quot;Device: {torch.cuda.get_device_name(0)}&quot;)
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+CUDA available: True
+Device: NVIDIA H100 80GB HBM3
+</code></pre>
+<h3 id="76-call-vllm-from-a-notebook">7.6 Call vLLM from a notebook</h3>
+<p><strong>Example notebook cell:</strong></p>
+<pre><code class="language-python">
+from openai import OpenAI
+
+client = OpenAI(
+    base_url=&#x27;http://qwen3-vllm.inference.svc.cluster.local:8000/v1&#x27;,
+    api_key=&#x27;none&#x27;  # vLLM ignores this
+)
+
+response = client.chat.completions.create(
+    model=&#x27;qwen3-32b&#x27;,
+    messages=[{&#x27;role&#x27;: &#x27;user&#x27;, &#x27;content&#x27;: &#x27;Explain GPUs in one sentence.&#x27;}],
+    max_tokens=128
+)
+
+print(response.choices[0].message.content)
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+A GPU (Graphics Processing Unit) is a specialized processor designed to accelerate
+graphics rendering and parallel computations, making it ideal for AI and machine learning tasks.
+</code></pre>
+<p><strong>Success:</strong> Notebooks can reach the inference service via in-cluster DNS.</p>
+<hr>
+<p>← Previous: <strong><a href="02c-deploy-inference.html">Part 3 — Deploy Inference</a></strong>  |  Next: <strong><a href="02e-verify-teardown.html">Part 5 — Verify &amp; Teardown</a></strong> →</p>
+<p><strong>Deployment series:</strong> <a href="02a-cluster-setup.html">1. Cluster Setup</a> → <a href="02b-gpu-nodepool-dws.html">2. GPU Node &amp; DWS</a> → <a href="02c-deploy-inference.html">3. Inference</a> → <strong>4. JupyterHub</strong> → <a href="02e-verify-teardown.html">5. Verify &amp; Teardown</a></p>
+<p><strong>Related:</strong> <a href="01-architecture.html">Architecture Reference</a> · <a href="appendix-glossary.html">Glossary</a> · <a href="03-inference-endpoint-user-guide.html">Inference User Guide</a> · <a href="04-jupyter-notebook-user-guide.html">Jupyter User Guide</a> · <a href="../../lab/README.md">Lab IaC foundation</a> · <a href="../../lab/RESERVATIONS.md">Reservations (&gt;7 days)</a></p>
+</body>
+</html>

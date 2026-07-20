@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deployment Part 3 — Deploy the Inference Service (vLLM + Qwen3-32B)</title>
+    <style>
+        body {
+            font-family: 'Arial', 'Helvetica', sans-serif;
+            font-size: 11pt;
+            line-height: 1.6;
+            color: #202124;
+            max-width: 8.5in;
+            margin: 1in auto;
+            padding: 0 1rem;
+            background-color: #ffffff;
+        }
+
+        h1 {
+            color: #1a73e8;
+            font-size: 20pt;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 8px;
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: bold;
+        }
+
+        h2 {
+            color: #1a73e8;
+            font-size: 15pt;
+            margin-top: 22px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #eeeeee;
+            padding-bottom: 4px;
+            font-weight: bold;
+        }
+
+        h3 {
+            color: #202124;
+            font-size: 13pt;
+            margin-top: 18px;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        h4 {
+            color: #5f6368;
+            font-size: 11.5pt;
+            margin-top: 14px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        h5 {
+            color: #5f6368;
+            font-size: 10.5pt;
+            margin-top: 12px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        h6 {
+            color: #5f6368;
+            font-size: 10pt;
+            margin-top: 10px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        p {
+            margin-bottom: 10px;
+        }
+
+        pre {
+            background-color: #f8f9fa;
+            border: 1px solid #dadce0;
+            border-radius: 6px;
+            padding: 12px;
+            font-family: 'Courier New', 'Consolas', monospace;
+            font-size: 9.5pt;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin-bottom: 14px;
+            overflow-x: auto;
+        }
+
+        code {
+            background-color: #f1f3f4;
+            color: #d93025;
+            font-family: 'Courier New', 'Consolas', monospace;
+            font-size: 9.5pt;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+
+        pre code {
+            background-color: transparent;
+            color: #202124;
+            padding: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 18px;
+            font-size: 10pt;
+        }
+
+        th {
+            background-color: #e8f0fe;
+            color: #1a73e8;
+            border: 1px solid #dadce0;
+            padding: 10px;
+            text-align: left;
+            font-weight: bold;
+        }
+
+        td {
+            border: 1px solid #dadce0;
+            padding: 9px;
+            vertical-align: top;
+        }
+
+        ul, ol {
+            margin-top: 4px;
+            margin-bottom: 12px;
+            padding-left: 24px;
+        }
+
+        li {
+            margin-bottom: 6px;
+        }
+
+        a {
+            color: #1a73e8;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        blockquote {
+            border-left: 4px solid #dadce0;
+            padding-left: 12px;
+            color: #5f6368;
+            margin: 12px 0;
+        }
+
+        hr {
+            border: 0;
+            border-top: 1px solid #dadce0;
+            margin: 22px 0;
+        }
+
+        /* SVG styling for embedded diagrams */
+        svg {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 16px auto;
+        }
+
+        /* Alert/callout boxes */
+        .admonition {
+            border-left: 4px solid #ea4335;
+            background-color: #fce8e6;
+            padding: 12px;
+            margin: 14px 0;
+            border-radius: 0 4px 4px 0;
+        }
+    </style>
+</head>
+<body>
+<h1 id="deployment-part-3--deploy-the-inference-service-vllm--qwen3-32b">Deployment Part 3 — Deploy the Inference Service (vLLM + Qwen3-32B)</h1>
+<p><strong>Deployment series:</strong> <a href="02a-cluster-setup.html">1. Cluster Setup</a> → <a href="02b-gpu-nodepool-dws.html">2. GPU Node &amp; DWS</a> → <strong>3. Inference</strong> → <a href="02d-deploy-jupyter.html">4. JupyterHub</a> → <a href="02e-verify-teardown.html">5. Verify &amp; Teardown</a></p>
+<hr>
+<p><strong>Part 3 of the deployment series.</strong> Requires a provisioned GPU node from <a href="02b-gpu-nodepool-dws.html">Part 2 — GPU Node Pool &amp; DWS</a>.</p>
+<p>This part deploys the <strong><a href="appendix-glossary.html#vllm">vLLM</a></strong> inference server serving <strong><a href="appendix-glossary.html#qwen3-32b">Qwen3-32B</a></strong> across 2 of the 8 H100 GPUs, hands the node off from the holder to vLLM gap-free, and exposes it on an internal load balancer.</p>
+<hr>
+<h2 id="step-6-deploy-the-vllm-inference-service">Step 6: Deploy the vLLM inference service</h2>
+<h3 id="61-deploy-vllm-qwen3-32b-tensor-parallel--2">6.1 Deploy vLLM (Qwen3-32B, tensor parallel = 2)</h3>
+<pre><code class="language-bash">
+kubectl apply -f - &lt;&lt;EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qwen3-vllm
+  namespace: inference
+  labels:
+    app: qwen3-vllm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: qwen3-vllm
+  template:
+    metadata:
+      labels:
+        app: qwen3-vllm
+    spec:
+      nodeSelector:
+        cloud.google.com/gke-accelerator: nvidia-h100-80gb
+      tolerations:
+      - key: &quot;nvidia.com/gpu&quot;
+        operator: &quot;Exists&quot;
+        effect: &quot;NoSchedule&quot;
+      - key: &quot;cloud.google.com/gke-queued&quot;
+        operator: &quot;Exists&quot;
+        effect: &quot;NoSchedule&quot;
+      containers:
+      - name: vllm
+        image: vllm/vllm-openai:v0.8.4  # CUDA 12.0 compat + Qwen3 support
+        args:
+        - &quot;--model&quot;
+        - &quot;Qwen/Qwen3-32B&quot;
+        - &quot;--served-model-name&quot;
+        - &quot;qwen3-32b&quot;
+        - &quot;--tensor-parallel-size&quot;
+        - &quot;2&quot;
+        - &quot;--gpu-memory-utilization&quot;
+        - &quot;0.90&quot;
+        - &quot;--max-model-len&quot;
+        - &quot;32768&quot;
+        - &quot;--host&quot;
+        - &quot;0.0.0.0&quot;
+        - &quot;--port&quot;
+        - &quot;8000&quot;
+        env:
+        - name: HF_HOME
+          value: /hf-cache
+        ports:
+        - containerPort: 8000
+        resources:
+          limits:
+            nvidia.com/gpu: &quot;2&quot;
+            cpu: &quot;24&quot;
+            memory: &quot;200Gi&quot;
+          requests:
+            nvidia.com/gpu: &quot;2&quot;
+            cpu: &quot;24&quot;
+            memory: &quot;200Gi&quot;
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          failureThreshold: 40
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 600
+          periodSeconds: 30
+        volumeMounts:
+        - name: hf-cache
+          mountPath: /hf-cache
+        - name: shm
+          mountPath: /dev/shm
+      volumes:
+      - name: hf-cache
+        persistentVolumeClaim:
+          claimName: hf-cache
+      - name: shm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 16Gi
+EOF
+</code></pre>
+<p><strong>What this does:</strong></p>
+<ul>
+<li>Deploys <strong>vLLM v0.8.4</strong> serving <strong>Qwen3-32B</strong> (ungated model, no Hugging Face token needed)</li>
+<li><strong><code>--tensor-parallel-size 2</code></strong> — splits the model across <strong>2 of 8 H100s</strong> (~77GB per GPU)</li>
+<li><strong><code>--gpu-memory-utilization 0.90</code></strong> — uses 90% of GPU memory for model/KV cache</li>
+<li><strong><code>--max-model-len 32768</code></strong> — supports up to 32K token context</li>
+<li>Mounts <strong><code>hf-cache</code> PVC</strong> at <code>/hf-cache</code> — model downloads once and persists</li>
+<li>Mounts <strong>16Gi <code>/dev/shm</code></strong> — required for tensor parallelism (inter-GPU shared memory IPC)</li>
+<li><strong>nodeSelector + tolerations</strong> — schedules onto the H100 node</li>
+</ul>
+<p><strong>Why v0.8.4 (not latest):</strong> The A3 node ships NVIDIA driver 535, which supports <strong>CUDA 12.0</strong>. Newer vLLM images (v0.25+) are built for CUDA 12.2+ and <strong>crash-loop</strong> on this driver with &quot;Engine core initialization failed.&quot; v0.8.4 is CUDA 12.0-compatible and already supports Qwen3. Always verify the image&#x27;s CUDA version against the node driver before upgrading.</p>
+<p><strong>Why 16Gi <code>/dev/shm</code>:</strong> Tensor parallelism uses shared memory for fast inter-GPU communication. The container default is 64MB, which causes OOM/IPC errors under TP. 16Gi is safe for TP=2.</p>
+<h3 id="62-hand-off-the-node-from-holder-to-vllm-gap-free">6.2 Hand off the node from holder to vLLM (gap-free)</h3>
+<p>When vLLM starts scheduling, we can release the holder so vLLM takes over:</p>
+<pre><code class="language-bash">
+# Wait for vLLM pod to be scheduled (may take 2-5 min to download model on first run)
+kubectl wait --for=jsonpath=&#x27;{.status.phase}&#x27;=Running \
+  pod -l app=qwen3-vllm -n inference --timeout=10m
+
+# Release the holder (vLLM now holds the node)
+kubectl -n default scale deploy/a3-holder-zone-a --replicas=0
+</code></pre>
+<p><strong>What this does:</strong> Scales the holder to 0 replicas after vLLM binds. vLLM&#x27;s 2-GPU request is enough to keep the node occupied (autoscaler won&#x27;t remove it). This is a <strong>gap-free handoff</strong> — the node is never idle between holder and workload.</p>
+<p><strong>Check vLLM is running:</strong></p>
+<pre><code class="language-bash">
+kubectl get pods -n inference -o wide
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+NAME                           READY   STATUS    RESTARTS   AGE   NODE
+qwen3-vllm-xxxxxxxxxx-yyyyy    1/1     Running   0          5m    gke-hypercomputer-a3-a3-h100-dws-pool-16664d9c-hhp6
+</code></pre>
+<p><strong>Check logs (model loading):</strong></p>
+<pre><code class="language-bash">
+kubectl logs -n inference -l app=qwen3-vllm --tail=30 -f
+</code></pre>
+<p><strong>You should see:</strong></p>
+<pre><code class="language-">
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000
+</code></pre>
+<h3 id="63-expose-vllm-via-internal-loadbalancer">6.3 Expose vLLM via internal LoadBalancer</h3>
+<pre><code class="language-bash">
+kubectl apply -f - &lt;&lt;EOF
+apiVersion: v1
+kind: Service
+metadata:
+  name: qwen3-vllm
+  namespace: inference
+  annotations:
+    networking.gke.io/load-balancer-type: &quot;Internal&quot;
+spec:
+  type: LoadBalancer
+  selector:
+    app: qwen3-vllm
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+EOF
+</code></pre>
+<p><strong>What this does:</strong> Creates an <strong>internal LoadBalancer</strong> (private IP, VPC-only) in front of the vLLM pod. The <code>Internal</code> annotation ensures it&#x27;s <strong>not</strong> exposed to the public internet.</p>
+<p><strong>Get the internal IP:</strong></p>
+<pre><code class="language-bash">
+kubectl get svc -n inference qwen3-vllm
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+NAME         TYPE           CLUSTER-IP       EXTERNAL-IP     PORT(S)          AGE
+qwen3-vllm   LoadBalancer   10.108.xx.xx     10.128.0.43     8000:xxxxx/TCP   30s
+</code></pre>
+<p>The <strong>EXTERNAL-IP</strong> (despite the name) is the <strong>internal</strong> load balancer IP (e.g., <code>10.128.0.43</code>). This IP is reachable from within the VPC (any GCP VM in the project&#x27;s network) but <strong>not</strong> from the public internet.</p>
+<h3 id="64-test-the-inference-endpoint">6.4 Test the inference endpoint</h3>
+<p><strong>From a pod in the cluster (or a GCP VM in the same VPC):</strong></p>
+<pre><code class="language-bash">
+# List models
+kubectl run -it --rm curl --image=curlimages/curl --restart=Never -- \
+  http://qwen3-vllm.inference.svc.cluster.local:8000/v1/models
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-json">
+{&quot;object&quot;:&quot;list&quot;,&quot;data&quot;:[{&quot;id&quot;:&quot;qwen3-32b&quot;,&quot;object&quot;:&quot;model&quot;,&quot;created&quot;:1784284247,&quot;owned_by&quot;:&quot;vllm&quot;,&quot;root&quot;:&quot;Qwen/Qwen3-32B&quot;,&quot;max_model_len&quot;:32768}]}
+</code></pre>
+<p><strong>Chat completion:</strong></p>
+<pre><code class="language-bash">
+kubectl run -it --rm curl --image=curlimages/curl --restart=Never -- \
+  -X POST http://qwen3-vllm.inference.svc.cluster.local:8000/v1/chat/completions \
+  -H &#x27;Content-Type: application/json&#x27; \
+  -d &#x27;{&quot;model&quot;:&quot;qwen3-32b&quot;,&quot;messages&quot;:[{&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;Say hello&quot;}],&quot;max_tokens&quot;:64}&#x27;
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-json">
+{&quot;id&quot;:&quot;chatcmpl-...&quot;,&quot;object&quot;:&quot;chat.completion&quot;,&quot;model&quot;:&quot;qwen3-32b&quot;,
+ &quot;choices&quot;:[{&quot;index&quot;:0,&quot;message&quot;:{&quot;role&quot;:&quot;assistant&quot;,&quot;content&quot;:&quot;Hello! How can I assist you today?&quot;},&quot;finish_reason&quot;:&quot;stop&quot;}],
+ &quot;usage&quot;:{&quot;prompt_tokens&quot;:10,&quot;total_tokens&quot;:20,&quot;completion_tokens&quot;:10}}
+</code></pre>
+<p><strong>Success:</strong> The inference endpoint is live and serving Qwen3-32B.</p>
+<h3 id="65-optional-add-a-poddisruptionbudget">6.5 (Optional) Add a PodDisruptionBudget</h3>
+<pre><code class="language-bash">
+kubectl apply -f - &lt;&lt;EOF
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: qwen3-vllm
+  namespace: inference
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: qwen3-vllm
+EOF
+</code></pre>
+<p><strong>What this does:</strong> Protects the inference service during node upgrades/drains. GKE won&#x27;t voluntarily evict the pod unless another replica is available (for a single-replica Deployment, this means drains are blocked unless you scale up first). Useful for production; optional for dev/test.</p>
+<hr>
+<p>← Previous: <strong><a href="02b-gpu-nodepool-dws.html">Part 2 — GPU Node Pool &amp; DWS</a></strong>  |  Next: <strong><a href="02d-deploy-jupyter.html">Part 4 — Deploy JupyterHub</a></strong> →</p>
+<p><strong>Deployment series:</strong> <a href="02a-cluster-setup.html">1. Cluster Setup</a> → <a href="02b-gpu-nodepool-dws.html">2. GPU Node &amp; DWS</a> → <strong>3. Inference</strong> → <a href="02d-deploy-jupyter.html">4. JupyterHub</a> → <a href="02e-verify-teardown.html">5. Verify &amp; Teardown</a></p>
+<p><strong>Related:</strong> <a href="01-architecture.html">Architecture Reference</a> · <a href="appendix-glossary.html">Glossary</a> · <a href="03-inference-endpoint-user-guide.html">Inference User Guide</a> · <a href="04-jupyter-notebook-user-guide.html">Jupyter User Guide</a> · <a href="../../lab/README.md">Lab IaC foundation</a> · <a href="../../lab/RESERVATIONS.md">Reservations (&gt;7 days)</a></p>
+</body>
+</html>

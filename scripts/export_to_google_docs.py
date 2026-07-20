@@ -19,6 +19,41 @@ import sys
 from pathlib import Path
 
 
+def slugify(text):
+    """GitHub-style heading slug: strip inline markdown, lowercase,
+    drop punctuation (keep word chars, spaces, hyphens), spaces -> hyphens."""
+    text = re.sub(r'`([^`]+)`', r'\1', text)          # inline code
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)       # bold
+    text = re.sub(r'__(.+?)__', r'\1', text)
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)  # links -> text
+    text = re.sub(r'[*_]', '', text)
+    text = text.strip().lower()
+    text = re.sub(r'[^\w\s-]', '', text, flags=re.UNICODE)
+    # GitHub converts each whitespace char to a hyphen without collapsing runs,
+    # so "Persistence — What" (em-dash removed, two spaces) -> "persistence--what".
+    text = re.sub(r'\s', '-', text)
+    return text
+
+
+def rewrite_local_md_links(html_content):
+    """Rewrite sibling '*.md' / '*.md#anchor' hyperlinks to '*.html'.
+    Only bare filenames (no '/') are rewritten so the per-topic HTML exports
+    cross-link to each other; repo-relative links (../../lab/README.md) are
+    left untouched."""
+    def repl(m):
+        href = m.group(1)
+        if '://' in href or href.startswith('#') or href.startswith('mailto:'):
+            return m.group(0)
+        path = href.split('#', 1)[0]
+        if '/' in path:
+            return m.group(0)
+        mm = re.match(r'^(.*?)\.md(#.*)?$', href)
+        if mm:
+            return 'href="%s.html%s"' % (mm.group(1), mm.group(2) or '')
+        return m.group(0)
+    return re.sub(r'href="([^"]+)"', repl, html_content)
+
+
 def parse_inline(text):
     """Parse inline Markdown: bold, code, links."""
     # Escape HTML
@@ -82,6 +117,7 @@ def convert_markdown_to_html(markdown_content):
     in_table = False
     table_headers = []
     code_lang = ''
+    slug_counts = {}
 
     i = 0
     while i < len(lines):
@@ -120,8 +156,15 @@ def convert_markdown_to_html(markdown_content):
                 in_table = False
 
             level = len(heading_match.group(1))
-            content = parse_inline(heading_match.group(2))
-            html_lines.append(f'<h{level}>{content}</h{level}>')
+            raw = heading_match.group(2)
+            content = parse_inline(raw)
+            slug = slugify(raw)
+            if slug in slug_counts:
+                slug_counts[slug] += 1
+                slug = f'{slug}-{slug_counts[slug]}'
+            else:
+                slug_counts[slug] = 0
+            html_lines.append(f'<h{level} id="{slug}">{content}</h{level}>')
             i += 1
             continue
 
@@ -284,10 +327,18 @@ def convert_markdown_files(input_files, output_file):
         base_dir = input_path.parent.absolute()
         html_body = inline_svg_images(html_body, base_dir)
 
+        # Rewrite sibling .md links to .html so per-topic exports cross-link
+        html_body = rewrite_local_md_links(html_body)
+
         html_parts.append(html_body)
 
+    # Derive the document title from the first <h1> (fall back to default)
+    combined = "\n".join(html_parts)
+    m = re.search(r'<h1[^>]*>(.*?)</h1>', combined, re.DOTALL)
+    doc_title = re.sub(r'<[^>]+>', '', m.group(1)).strip() if m else None
+
     # Generate the full HTML document
-    full_html = generate_full_html(html_parts)
+    full_html = generate_full_html(html_parts, doc_title)
 
     # Write output
     output_path = Path(output_file)
@@ -303,19 +354,21 @@ def convert_markdown_files(input_files, output_file):
     print(f"[+] Inlined {svg_count} SVG image(s)")
 
 
-def generate_full_html(html_parts):
+def generate_full_html(html_parts, doc_title=None):
     """
     Wrap HTML body parts in a complete HTML document with styling.
     """
     # Concatenate all HTML parts
     combined_body = "\n\n".join(html_parts)
+    title = html.escape(doc_title) if doc_title else \
+        "AI Infrastructure Guide — GKE + H100 + Inference + Notebooks"
 
     html_template = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Infrastructure Guide — GKE + H100 + Inference + Notebooks</title>
+    <title>{title}</title>
     <style>
         body {{
             font-family: 'Arial', 'Helvetica', sans-serif;

@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deployment Part 2 — GPU Node Pool &amp;amp; DWS Provisioning</title>
+    <style>
+        body {
+            font-family: 'Arial', 'Helvetica', sans-serif;
+            font-size: 11pt;
+            line-height: 1.6;
+            color: #202124;
+            max-width: 8.5in;
+            margin: 1in auto;
+            padding: 0 1rem;
+            background-color: #ffffff;
+        }
+
+        h1 {
+            color: #1a73e8;
+            font-size: 20pt;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 8px;
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: bold;
+        }
+
+        h2 {
+            color: #1a73e8;
+            font-size: 15pt;
+            margin-top: 22px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #eeeeee;
+            padding-bottom: 4px;
+            font-weight: bold;
+        }
+
+        h3 {
+            color: #202124;
+            font-size: 13pt;
+            margin-top: 18px;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        h4 {
+            color: #5f6368;
+            font-size: 11.5pt;
+            margin-top: 14px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        h5 {
+            color: #5f6368;
+            font-size: 10.5pt;
+            margin-top: 12px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        h6 {
+            color: #5f6368;
+            font-size: 10pt;
+            margin-top: 10px;
+            margin-bottom: 6px;
+            font-weight: bold;
+        }
+
+        p {
+            margin-bottom: 10px;
+        }
+
+        pre {
+            background-color: #f8f9fa;
+            border: 1px solid #dadce0;
+            border-radius: 6px;
+            padding: 12px;
+            font-family: 'Courier New', 'Consolas', monospace;
+            font-size: 9.5pt;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin-bottom: 14px;
+            overflow-x: auto;
+        }
+
+        code {
+            background-color: #f1f3f4;
+            color: #d93025;
+            font-family: 'Courier New', 'Consolas', monospace;
+            font-size: 9.5pt;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+
+        pre code {
+            background-color: transparent;
+            color: #202124;
+            padding: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 18px;
+            font-size: 10pt;
+        }
+
+        th {
+            background-color: #e8f0fe;
+            color: #1a73e8;
+            border: 1px solid #dadce0;
+            padding: 10px;
+            text-align: left;
+            font-weight: bold;
+        }
+
+        td {
+            border: 1px solid #dadce0;
+            padding: 9px;
+            vertical-align: top;
+        }
+
+        ul, ol {
+            margin-top: 4px;
+            margin-bottom: 12px;
+            padding-left: 24px;
+        }
+
+        li {
+            margin-bottom: 6px;
+        }
+
+        a {
+            color: #1a73e8;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        blockquote {
+            border-left: 4px solid #dadce0;
+            padding-left: 12px;
+            color: #5f6368;
+            margin: 12px 0;
+        }
+
+        hr {
+            border: 0;
+            border-top: 1px solid #dadce0;
+            margin: 22px 0;
+        }
+
+        /* SVG styling for embedded diagrams */
+        svg {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 16px auto;
+        }
+
+        /* Alert/callout boxes */
+        .admonition {
+            border-left: 4px solid #ea4335;
+            background-color: #fce8e6;
+            padding: 12px;
+            margin: 14px 0;
+            border-radius: 0 4px 4px 0;
+        }
+    </style>
+</head>
+<body>
+<h1 id="deployment-part-2--gpu-node-pool--dws-provisioning">Deployment Part 2 — GPU Node Pool &amp; DWS Provisioning</h1>
+<p><strong>Deployment series:</strong> <a href="02a-cluster-setup.html">1. Cluster Setup</a> → <strong>2. GPU Node &amp; DWS</strong> → <a href="02c-deploy-inference.html">3. Inference</a> → <a href="02d-deploy-jupyter.html">4. JupyterHub</a> → <a href="02e-verify-teardown.html">5. Verify &amp; Teardown</a></p>
+<hr>
+<p><strong>Part 2 of the <a href="01-architecture.html#7-where-to-go-next">deployment series</a>.</strong> You should have completed <a href="02a-cluster-setup.html">Part 1 — Cluster Setup</a> first (a running regional GKE cluster with <code>kubectl</code> access).</p>
+<p>This part creates the DWS-enabled A3 GPU node pool, provisions the 8× H100 node through Dynamic Workload Scheduler, and sets up the namespaces and model-cache storage the workloads need. This is the most involved part — DWS requires a <strong><a href="appendix-glossary.html#provisioningrequest">ProvisioningRequest</a></strong> and a <strong><a href="appendix-glossary.html#capacity-holder">capacity holder</a></strong> working together.</p>
+<hr>
+<h2 id="step-3-create-the-gpu-node-pool-dws-enabled">Step 3: Create the GPU node pool (DWS-enabled)</h2>
+<h3 id="31-create-the-a3-h100-node-pool">3.1 Create the A3 H100 node pool</h3>
+<pre><code class="language-bash">
+gcloud container node-pools create a3-h100-dws-pool \
+  --cluster hypercomputer-a3-cluster \
+  --region us-central1 \
+  --machine-type a3-highgpu-8g \
+  --accelerator type=nvidia-h100-80gb,count=8,gpu-driver-version=latest \
+  --num-nodes 0 \
+  --enable-autoscaling \
+  --min-nodes 0 \
+  --max-nodes 1 \
+  --node-labels cloud.google.com/gke-accelerator=nvidia-h100-80gb,gpu-cluster=a3-h100 \
+  --node-taints nvidia.com/gpu=present:NoSchedule \
+  --scopes cloud-platform \
+  --enable-queued-provisioning \
+  --project $PROJECT_ID
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+Creating node pool a3-h100-dws-pool...done.
+Created [https://container.googleapis.com/v1/projects/hdlab-elideng/zones/us-central1/nodePools/a3-h100-dws-pool].
+NAME               MACHINE_TYPE      DISK_SIZE_GB  NODE_VERSION
+a3-h100-dws-pool   a3-highgpu-8g     100           1.30.x-gke.y
+</code></pre>
+<p><strong>Time:</strong> ~2 minutes to create the pool configuration (no node is provisioned yet).</p>
+<p><strong>What this does:</strong></p>
+<ul>
+<li>Creates a node pool for <strong><code>a3-highgpu-8g</code></strong> machines (8× H100 80GB GPUs)</li>
+<li><strong>Starts at 0 nodes</strong> (autoscale 0→1) for cost savings</li>
+<li>Enables <strong>queued provisioning</strong> (<code>--enable-queued-provisioning</code>) — this is <strong>DWS Flex-Start</strong></li>
+<li>Applies a <strong>taint</strong> (<code>nvidia.com/gpu=present:NoSchedule</code>) so only GPU-aware pods schedule here</li>
+<li>Adds <strong>labels</strong> for pod nodeSelectors</li>
+</ul>
+<p><strong>Key flags explained:</strong></p>
+<ul>
+<li><code>--machine-type a3-highgpu-8g</code> — 8× H100 80GB, 208 vCPUs, 1872 GB RAM</li>
+<li><code>--accelerator</code> — tells GKE to install GPU drivers (NVIDIA driver 535+, CUDA 12.0)</li>
+<li><code>--num-nodes 0</code> — start with zero nodes (no GPU cost until we provision)</li>
+<li><code>--enable-queued-provisioning</code> — <strong>DWS Flex-Start</strong> (provisions when capacity available, 7-day max runtime)</li>
+<li><code>--node-taints</code> — keeps non-GPU pods off this expensive node</li>
+</ul>
+<p><strong>Check the pool:</strong></p>
+<pre><code class="language-bash">
+gcloud container node-pools list \
+  --cluster hypercomputer-a3-cluster \
+  --region us-central1 \
+  --project $PROJECT_ID
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+NAME               MACHINE_TYPE      DISK_SIZE_GB  NODE_VERSION
+default-pool       e2-standard-4     100           1.30.x-gke.y
+a3-h100-dws-pool   a3-highgpu-8g     100           1.30.x-gke.y
+</code></pre>
+<hr>
+<h2 id="step-4-provision-the-gpu-node-via-dws">Step 4: Provision the GPU node via DWS</h2>
+<p>This is the most complex step. DWS requires a <strong>ProvisioningRequest</strong> and a <strong>consumer holder</strong> to keep the node from being reclaimed.</p>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+ "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- Generated by graphviz version 2.43.0 (0)
+ -->
+<!-- Title: dws_lifecycle Pages: 1 -->
+<svg width="1780pt" height="378pt"
+ viewBox="0.00 0.00 1780.00 378.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 374)">
+<title>dws_lifecycle</title>
+<polygon fill="white" stroke="transparent" points="-4,4 -4,-374 1776,-374 1776,4 -4,4"/>
+<text text-anchor="middle" x="886" y="-350" font-family="Arial" font-size="20.00">DWS Flex&#45;Start Lifecycle: ProvisioningRequest &#45;&gt; Node &#45;&gt; Holder/Workload &#45;&gt; Reclaim</text>
+<g id="clust2" class="cluster">
+<title>cluster_roles</title>
+<path fill="#f5f5f5" stroke="#666666" d="M20,-72.5C20,-72.5 1240,-72.5 1240,-72.5 1246,-72.5 1252,-78.5 1252,-84.5 1252,-84.5 1252,-200.5 1252,-200.5 1252,-206.5 1246,-212.5 1240,-212.5 1240,-212.5 20,-212.5 20,-212.5 14,-212.5 8,-206.5 8,-200.5 8,-200.5 8,-84.5 8,-84.5 8,-78.5 14,-72.5 20,-72.5"/>
+<text text-anchor="middle" x="630" y="-196.5" font-family="Arial" font-size="15.00">Key Roles and Annotations</text>
+</g>
+<g id="clust3" class="cluster">
+<title>cluster_houserule</title>
+<path fill="#e3f2fd" stroke="#1565c0" d="M1272,-65C1272,-65 1752,-65 1752,-65 1758,-65 1764,-71 1764,-77 1764,-77 1764,-208 1764,-208 1764,-214 1758,-220 1752,-220 1752,-220 1272,-220 1272,-220 1266,-220 1260,-214 1260,-208 1260,-208 1260,-77 1260,-77 1260,-71 1266,-65 1272,-65"/>
+<text text-anchor="middle" x="1512" y="-204" font-family="Arial" font-size="15.00" fill="#1565c0">House Rule: Never Leave GPU Node Idle/Unheld</text>
+</g>
+<!-- s1 -->
+<g id="node1" class="node">
+<title>s1</title>
+<path fill="#fff9c4" stroke="#f57f17" d="M184,-340C184,-340 56,-340 56,-340 50,-340 44,-334 44,-328 44,-328 44,-259 44,-259 44,-253 50,-247 56,-247 56,-247 184,-247 184,-247 190,-247 196,-253 196,-259 196,-259 196,-328 196,-328 196,-334 190,-340 184,-340"/>
+<text text-anchor="middle" x="120" y="-327.2" font-family="Arial" font-size="11.00">ProvisioningRequest</text>
+<text text-anchor="middle" x="120" y="-315.2" font-family="Arial" font-size="11.00">Submitted</text>
+<text text-anchor="middle" x="120" y="-290.2" font-family="Arial" font-size="11.00">a3&#45;h100&#45;req&#45;zone&#45;a</text>
+<text text-anchor="middle" x="120" y="-278.2" font-family="Arial" font-size="11.00">podSet: 1x a3&#45;highgpu&#45;8g</text>
+<text text-anchor="middle" x="120" y="-266.2" font-family="Arial" font-size="11.00">Status: Accepted</text>
+<text text-anchor="middle" x="120" y="-254.2" font-family="Arial" font-size="11.00">(queued&#45;provisioning.gke.io)</text>
+</g>
+<!-- s2 -->
+<g id="node2" class="node">
+<title>s2</title>
+<path fill="#ffccbc" stroke="#d84315" d="M368.5,-340C368.5,-340 247.5,-340 247.5,-340 241.5,-340 235.5,-334 235.5,-328 235.5,-328 235.5,-259 235.5,-259 235.5,-253 241.5,-247 247.5,-247 247.5,-247 368.5,-247 368.5,-247 374.5,-247 380.5,-253 380.5,-259 380.5,-259 380.5,-328 380.5,-328 380.5,-334 374.5,-340 368.5,-340"/>
+<text text-anchor="middle" x="308" y="-327.2" font-family="Arial" font-size="11.00">Queue / Capacity Wait</text>
+<text text-anchor="middle" x="308" y="-302.2" font-family="Arial" font-size="11.00">Waiting for H100</text>
+<text text-anchor="middle" x="308" y="-290.2" font-family="Arial" font-size="11.00">capacity in</text>
+<text text-anchor="middle" x="308" y="-278.2" font-family="Arial" font-size="11.00">us&#45;central1&#45;a</text>
+<text text-anchor="middle" x="308" y="-266.2" font-family="Arial" font-size="11.00">(Hours to days)</text>
+<text text-anchor="middle" x="308" y="-254.2" font-family="Arial" font-size="11.00">Status: Provisioning=False</text>
+</g>
+<!-- s1&#45;&gt;s2 -->
+<g id="edge1" class="edge">
+<title>s1&#45;&gt;s2</title>
+<path fill="none" stroke="#333333" stroke-width="2" d="M196.2,-293.5C205.79,-293.5 215.64,-293.5 225.33,-293.5"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="2" points="225.35,-297 235.35,-293.5 225.35,-290 225.35,-297"/>
+<text text-anchor="middle" x="215.75" y="-299.7" font-family="Arial" font-size="11.00" fill="#666666">Wait</text>
+</g>
+<!-- s3 -->
+<g id="node3" class="node">
+<title>s3</title>
+<path fill="#c8e6c9" stroke="#2e7d32" d="M674,-340C674,-340 532,-340 532,-340 526,-340 520,-334 520,-328 520,-328 520,-259 520,-259 520,-253 526,-247 532,-247 532,-247 674,-247 674,-247 680,-247 686,-253 686,-259 686,-259 686,-328 686,-328 686,-334 680,-340 674,-340"/>
+<text text-anchor="middle" x="603" y="-327.2" font-family="Arial" font-size="11.00">Node Provisioned</text>
+<text text-anchor="middle" x="603" y="-302.2" font-family="Arial" font-size="11.00">gke&#45;...&#45;hhp6</text>
+<text text-anchor="middle" x="603" y="-290.2" font-family="Arial" font-size="11.00">8x H100 80GB</text>
+<text text-anchor="middle" x="603" y="-278.2" font-family="Arial" font-size="11.00">Ready, joined cluster</text>
+<text text-anchor="middle" x="603" y="-266.2" font-family="Arial" font-size="11.00">Status: Provisioned=True</text>
+<text text-anchor="middle" x="603" y="-254.2" font-family="Arial" font-size="11.00">~10&#45;min booking window starts</text>
+</g>
+<!-- s2&#45;&gt;s3 -->
+<g id="edge2" class="edge">
+<title>s2&#45;&gt;s3</title>
+<path fill="none" stroke="#333333" stroke-width="2" d="M380.54,-293.5C419.47,-293.5 467.89,-293.5 509.6,-293.5"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="2" points="509.77,-297 519.77,-293.5 509.77,-290 509.77,-297"/>
+<text text-anchor="middle" x="450.25" y="-299.7" font-family="Arial" font-size="11.00" fill="#4caf50">Capacity!</text>
+</g>
+<!-- holder -->
+<g id="node7" class="node">
+<title>holder</title>
+<path fill="#ffffff" stroke="#666666" d="M511.5,-179.5C511.5,-179.5 28.5,-179.5 28.5,-179.5 22.5,-179.5 16.5,-173.5 16.5,-167.5 16.5,-167.5 16.5,-92.5 16.5,-92.5 16.5,-86.5 22.5,-80.5 28.5,-80.5 28.5,-80.5 511.5,-80.5 511.5,-80.5 517.5,-80.5 523.5,-86.5 523.5,-92.5 523.5,-92.5 523.5,-167.5 523.5,-167.5 523.5,-173.5 517.5,-179.5 511.5,-179.5"/>
+<text text-anchor="start" x="216" y="-165.2" font-family="Arial" font-weight="bold" font-size="11.00">Capacity Holder Pod</text>
+<text text-anchor="start" x="27" y="-149.2" font-family="Arial" font-size="11.00">Purpose: Occupies node when no workload running (prevents reclaim)</text>
+<text text-anchor="start" x="27" y="-135.2" font-family="Arial" font-weight="bold" font-size="11.00">Required annotations:</text>
+<text text-anchor="start" x="27" y="-119.2" font-family="monospace" font-size="11.00">autoscaling.x&#45;k8s.io/consume&#45;provisioning&#45;request: a3&#45;h100&#45;req&#45;zone&#45;a</text>
+<text text-anchor="start" x="27" y="-104.2" font-family="monospace" font-size="11.00">autoscaling.x&#45;k8s.io/provisioning&#45;class&#45;name: queued&#45;provisioning.gke.io</text>
+<text text-anchor="start" x="27" y="-89.2" font-family="monospace" font-size="11.00">cluster&#45;autoscaler.kubernetes.io/safe&#45;to&#45;evict: &quot;false&quot;</text>
+</g>
+<!-- s2&#45;&gt;holder -->
+<!-- s4 -->
+<g id="node4" class="node">
+<title>s4</title>
+<path fill="#fff3e0" stroke="#ff6f00" d="M961.5,-340C961.5,-340 824.5,-340 824.5,-340 818.5,-340 812.5,-334 812.5,-328 812.5,-328 812.5,-259 812.5,-259 812.5,-253 818.5,-247 824.5,-247 824.5,-247 961.5,-247 961.5,-247 967.5,-247 973.5,-253 973.5,-259 973.5,-259 973.5,-328 973.5,-328 973.5,-334 967.5,-340 961.5,-340"/>
+<text text-anchor="middle" x="893" y="-327.2" font-family="Arial" font-size="11.00">10&#45;Minute Booking Window</text>
+<text text-anchor="middle" x="893" y="-302.2" font-family="Arial" font-size="11.00">Pod with</text>
+<text text-anchor="middle" x="893" y="-290.2" font-family="Arial" font-size="11.00">consume&#45;provisioning&#45;request</text>
+<text text-anchor="middle" x="893" y="-278.2" font-family="Arial" font-size="11.00">annotation MUST schedule</text>
+<text text-anchor="middle" x="893" y="-266.2" font-family="Arial" font-size="11.00">OR node is reclaimed!</text>
+<text text-anchor="middle" x="893" y="-254.2" font-family="Arial" font-size="11.00">(See bugfix 0002)</text>
+</g>
+<!-- s3&#45;&gt;s4 -->
+<g id="edge3" class="edge">
+<title>s3&#45;&gt;s4</title>
+<path fill="none" stroke="#333333" stroke-width="2" d="M686.1,-293.5C722.36,-293.5 764.98,-293.5 802.08,-293.5"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="2" points="802.39,-297 812.39,-293.5 802.39,-290 802.39,-297"/>
+<text text-anchor="middle" x="749.25" y="-299.7" font-family="Arial" font-size="11.00" fill="#ff6f00">Must land pod!</text>
+</g>
+<!-- s5 -->
+<g id="node5" class="node">
+<title>s5</title>
+<path fill="#a5d6a7" stroke="#1b5e20" d="M1348,-340C1348,-340 1264,-340 1264,-340 1258,-340 1252,-334 1252,-328 1252,-328 1252,-259 1252,-259 1252,-253 1258,-247 1264,-247 1264,-247 1348,-247 1348,-247 1354,-247 1360,-253 1360,-259 1360,-259 1360,-328 1360,-328 1360,-334 1354,-340 1348,-340"/>
+<text text-anchor="middle" x="1306" y="-327.2" font-family="Arial" font-size="11.00">Running / Held</text>
+<text text-anchor="middle" x="1306" y="-302.2" font-family="Arial" font-size="11.00">Holder or workload</text>
+<text text-anchor="middle" x="1306" y="-290.2" font-family="Arial" font-size="11.00">occupies node</text>
+<text text-anchor="middle" x="1306" y="-278.2" font-family="Arial" font-size="11.00">safe&#45;to&#45;evict: false</text>
+<text text-anchor="middle" x="1306" y="-266.2" font-family="Arial" font-size="11.00">Node stays up</text>
+<text text-anchor="middle" x="1306" y="-254.2" font-family="Arial" font-size="11.00">(up to 7&#45;day cap)</text>
+</g>
+<!-- s4&#45;&gt;s5 -->
+<g id="edge4" class="edge">
+<title>s4&#45;&gt;s5</title>
+<path fill="none" stroke="#333333" stroke-width="2" d="M973.61,-293.5C1051.92,-293.5 1169.29,-293.5 1241.58,-293.5"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="2" points="1241.9,-297 1251.9,-293.5 1241.9,-290 1241.9,-297"/>
+<text text-anchor="middle" x="1112.75" y="-299.7" font-family="Arial" font-size="11.00" fill="#4caf50">Consumed!</text>
+</g>
+<!-- bugfix -->
+<g id="node8" class="node">
+<title>bugfix</title>
+<path fill="#fff9c4" stroke="#f57f17" d="M1232,-164.5C1232,-164.5 554,-164.5 554,-164.5 548,-164.5 542,-158.5 542,-152.5 542,-152.5 542,-107.5 542,-107.5 542,-101.5 548,-95.5 554,-95.5 554,-95.5 1232,-95.5 1232,-95.5 1238,-95.5 1244,-101.5 1244,-107.5 1244,-107.5 1244,-152.5 1244,-152.5 1244,-158.5 1238,-164.5 1232,-164.5"/>
+<text text-anchor="start" x="804" y="-150.2" font-family="Arial" font-weight="bold" font-size="11.00" fill="#f57f17">Bugfix 0002 &#45; Reclaim After 10min</text>
+<text text-anchor="start" x="552" y="-134.2" font-family="Arial" font-size="11.00" fill="#d84315">Problem: Node provisioned then deleted ~15 minutes later</text>
+<text text-anchor="start" x="552" y="-120.2" font-family="Arial" font-weight="bold" font-size="11.00">Root cause:</text>
+<text text-anchor="start" x="616" y="-120.2" font-family="Arial" font-size="11.00"> No pod consumed the ProvisioningRequest inside the 10&#45;min booking window</text>
+<text text-anchor="start" x="552" y="-105.2" font-family="Arial" font-weight="bold" font-size="11.00">Fix:</text>
+<text text-anchor="start" x="572" y="-105.2" font-family="Arial" font-size="11.00"> Deploy holder WITH consume&#45;* annotations BEFORE request submitted (holder waits Pending, binds immediately when node provisions)</text>
+</g>
+<!-- s4&#45;&gt;bugfix -->
+<!-- s6 -->
+<g id="node6" class="node">
+<title>s6</title>
+<path fill="#ffcdd2" stroke="#b71c1c" d="M1543,-334C1543,-334 1445,-334 1445,-334 1439,-334 1433,-328 1433,-322 1433,-322 1433,-265 1433,-265 1433,-259 1439,-253 1445,-253 1445,-253 1543,-253 1543,-253 1549,-253 1555,-259 1555,-265 1555,-265 1555,-322 1555,-322 1555,-328 1549,-334 1543,-334"/>
+<text text-anchor="middle" x="1494" y="-321.2" font-family="Arial" font-size="11.00">Reclaimed</text>
+<text text-anchor="middle" x="1494" y="-296.2" font-family="Arial" font-size="11.00">7&#45;day cap reached</text>
+<text text-anchor="middle" x="1494" y="-284.2" font-family="Arial" font-size="11.00">Node deleted by GKE</text>
+<text text-anchor="middle" x="1494" y="-272.2" font-family="Arial" font-size="11.00">No holder can</text>
+<text text-anchor="middle" x="1494" y="-260.2" font-family="Arial" font-size="11.00">prevent this</text>
+</g>
+<!-- s5&#45;&gt;s6 -->
+<g id="edge5" class="edge">
+<title>s5&#45;&gt;s6</title>
+<path fill="none" stroke="#333333" stroke-width="2" d="M1360.13,-293.5C1379.7,-293.5 1402.11,-293.5 1422.92,-293.5"/>
+<polygon fill="#333333" stroke="#333333" stroke-width="2" points="1422.99,-297 1432.99,-293.5 1422.99,-290 1422.99,-297"/>
+<text text-anchor="middle" x="1396.5" y="-299.7" font-family="Arial" font-size="11.00" fill="#d84315">7 days max</text>
+</g>
+<!-- houserule -->
+<g id="node9" class="node">
+<title>houserule</title>
+<path fill="#ffffff" stroke="#1565c0" d="M1744,-187C1744,-187 1280,-187 1280,-187 1274,-187 1268,-181 1268,-175 1268,-175 1268,-85 1268,-85 1268,-79 1274,-73 1280,-73 1280,-73 1744,-73 1744,-73 1750,-73 1756,-79 1756,-85 1756,-85 1756,-175 1756,-175 1756,-181 1750,-187 1744,-187"/>
+<text text-anchor="start" x="1372.5" y="-173.2" font-family="Arial" font-weight="bold" font-size="11.00">The GPU node must ALWAYS have an occupying pod</text>
+<text text-anchor="start" x="1278" y="-158.2" font-family="Arial" font-weight="bold" font-size="11.00">When vLLM or real workload is running:</text>
+<text text-anchor="start" x="1488" y="-158.2" font-family="Arial" font-size="11.00"> Holder scaled to 0 replicas (workload holds the node)</text>
+<text text-anchor="start" x="1278" y="-143.2" font-family="Arial" font-weight="bold" font-size="11.00">When no workload is running:</text>
+<text text-anchor="start" x="1436" y="-143.2" font-family="Arial" font-size="11.00"> Holder IMMEDIATELY scaled to 1 replica (gap&#45;free handoff)</text>
+<text text-anchor="start" x="1278" y="-128.2" font-family="Arial" font-weight="bold" font-size="11.00">Why:</text>
+<text text-anchor="start" x="1278" y="-112.2" font-family="Arial" font-size="11.00">• H100 capacity is scarce &#45; took hours/days to obtain</text>
+<text text-anchor="start" x="1278" y="-97.2" font-family="Arial" font-size="11.00">• Idle/unheld node &#45;&gt; autoscaler reclaims it &#45;&gt; you lose the GPUs</text>
+<text text-anchor="start" x="1278" y="-82.2" font-family="Arial" font-size="11.00">• Cost is not a concern (you pay for 7&#45;day window regardless)</text>
+</g>
+<!-- s5&#45;&gt;houserule -->
+<!-- footer -->
+<g id="node10" class="node">
+<title>footer</title>
+<text text-anchor="middle" x="890" y="-15.2" font-family="Arial" font-size="11.00">Current deployment: Node provisioned ~2026&#45;07&#45;16, expires ~2026&#45;07&#45;23 (7&#45;day cap) | See deploy/ops/handoff.sh &amp; rearm&#45;holder.sh</text>
+</g>
+<!-- holder&#45;&gt;footer -->
+<!-- houserule&#45;&gt;footer -->
+</g>
+</svg>
+
+<p><strong>Figure 2: DWS lifecycle.</strong> (1) Submit ProvisioningRequest + consumer holder. (2) DWS searches for capacity (may take minutes to hours). (3) Node provisions and holder binds within the 10-minute booking window. (4) Node stays up for 7 days (holder keeps it occupied). (5) Real workload can take over by scaling holder to 0. See <code>bugfixes/0002-dws-a3-node-reclaimed-after-10min.md</code> for why the consumer pattern is required.</p>
+<h3 id="41-submit-the-dws-provisioningrequest">4.1 Submit the DWS ProvisioningRequest</h3>
+<p>Save this manifest as <code>dws-request.yaml</code>:</p>
+<pre><code class="language-yaml">
+apiVersion: autoscaling.x-k8s.io/v1
+kind: ProvisioningRequest
+metadata:
+  name: a3-h100-req-zone-a
+  namespace: default
+spec:
+  provisioningClassName: queued-provisioning.gke.io
+  parameters:
+    maxRunDurationSeconds: &quot;604800&quot;  # 7 days (max allowed)
+  podSets:
+  - count: 1
+    podTemplateRef:
+      name: a3-h100-pod-template-zone-a
+---
+apiVersion: v1
+kind: PodTemplate
+metadata:
+  name: a3-h100-pod-template-zone-a
+  namespace: default
+template:
+  metadata:
+    labels:
+      app: gpu-workload
+      dws-zone: us-central1-a
+  spec:
+    restartPolicy: Never
+    nodeSelector:
+      node.kubernetes.io/instance-type: a3-highgpu-8g
+      gpu-cluster: a3-h100
+      topology.kubernetes.io/zone: us-central1-a  # Pin to zone a
+    tolerations:
+    - key: &quot;nvidia.com/gpu&quot;
+      operator: &quot;Exists&quot;
+      effect: &quot;NoSchedule&quot;
+    - key: &quot;cloud.google.com/gke-queued&quot;
+      operator: &quot;Exists&quot;
+      effect: &quot;NoSchedule&quot;
+    containers:
+    - name: placeholder
+      image: nvcr.io/nvidia/pytorch:24.03-py3
+      resources:
+        limits:
+          nvidia.com/gpu: &quot;8&quot;
+          cpu: &quot;64&quot;
+          memory: &quot;384Gi&quot;
+        requests:
+          nvidia.com/gpu: &quot;8&quot;
+          cpu: &quot;64&quot;
+          memory: &quot;384Gi&quot;
+</code></pre>
+<p><strong>Apply it:</strong></p>
+<pre><code class="language-bash">
+kubectl apply -f dws-request.yaml
+</code></pre>
+<p><strong>What this does:</strong></p>
+<ul>
+<li>Submits a request for <strong>1× a3-highgpu-8g</strong> in zone <code>us-central1-a</code></li>
+<li>Sets <strong><code>maxRunDurationSeconds: 604800</code></strong> (7 days, the maximum for Flex-Start)</li>
+<li>The pod template describes the shape DWS should provision (8 GPUs, full node resources)</li>
+</ul>
+<p><strong>Check status:</strong></p>
+<pre><code class="language-bash">
+kubectl get provisioningrequests -A
+</code></pre>
+<p><strong>Expected output (immediately after submission):</strong></p>
+<pre><code class="language-">
+NAMESPACE   NAME                   AGE   ACCEPTED   PROVISIONED
+default     a3-h100-req-zone-a     10s   True       False
+</code></pre>
+<p><strong>What <code>ACCEPTED=True</code> means:</strong> GKE accepted the request and is searching for capacity. <strong>This can take anywhere from 5 minutes to several hours</strong> depending on regional H100 availability. You will see <code>PROVISIONED=True</code> when a node is assigned.</p>
+<p><strong>Why zone-pinned:</strong> The <code>topology.kubernetes.io/zone: us-central1-a</code> selector ensures this request targets zone <code>a</code> specifically. Without this, multiple per-zone requests are identical and GKE may place them all in one zone. See <code>bugfixes/0001-dws-zone-requests-not-zone-pinned.md</code> for the full story.</p>
+<h3 id="42-deploy-the-capacity-holder-consumer">4.2 Deploy the capacity holder (consumer)</h3>
+<p><strong>Critical:</strong> Without a <strong>consumer holder</strong>, the provisioned node will be <strong>reclaimed ~10-15 minutes after boot</strong>. DWS holds a fresh node for only ~10 minutes; a pod must land on it inside that window or the autoscaler removes it as &quot;not needed.&quot; See <code>bugfixes/0002-dws-a3-node-reclaimed-after-10min.md</code> for the full diagnosis.</p>
+<p>Save this manifest as <code>dws-holder.yaml</code>:</p>
+<pre><code class="language-yaml">
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: a3-holder-zone-a
+  namespace: default
+  labels:
+    app: a3-holder
+    dws-zone: us-central1-a
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: a3-holder-zone-a
+  template:
+    metadata:
+      labels:
+        app: a3-holder-zone-a
+      annotations:
+        # These two annotations are REQUIRED to consume the ProvisioningRequest
+        autoscaling.x-k8s.io/consume-provisioning-request: a3-h100-req-zone-a
+        autoscaling.x-k8s.io/provisioning-class-name: &quot;queued-provisioning.gke.io&quot;
+        cluster-autoscaler.kubernetes.io/safe-to-evict: &quot;false&quot;
+    spec:
+      restartPolicy: Always
+      nodeSelector:
+        node.kubernetes.io/instance-type: a3-highgpu-8g
+        gpu-cluster: a3-h100
+        topology.kubernetes.io/zone: us-central1-a
+      tolerations:
+      - key: &quot;nvidia.com/gpu&quot;
+        operator: &quot;Exists&quot;
+        effect: &quot;NoSchedule&quot;
+      - key: &quot;cloud.google.com/gke-queued&quot;
+        operator: &quot;Exists&quot;
+        effect: &quot;NoSchedule&quot;
+      containers:
+      - name: pause
+        image: registry.k8s.io/pause:3.9  # Tiny placeholder container
+        resources:
+          limits:
+            nvidia.com/gpu: &quot;8&quot;
+            cpu: &quot;64&quot;
+            memory: &quot;384Gi&quot;
+          requests:
+            nvidia.com/gpu: &quot;8&quot;
+            cpu: &quot;64&quot;
+            memory: &quot;384Gi&quot;
+</code></pre>
+<p><strong>Apply it:</strong></p>
+<pre><code class="language-bash">
+kubectl apply -f dws-holder.yaml
+</code></pre>
+<p><strong>What this does:</strong></p>
+<ul>
+<li>Deploys a <strong>consumer holder</strong> — a tiny <code>pause</code> container that requests the full 8-GPU shape</li>
+<li>Carries <strong>both required annotations</strong>:</li>
+<li><code>autoscaling.x-k8s.io/consume-provisioning-request: a3-h100-req-zone-a</code> — links to the request</li>
+<li><code>autoscaling.x-k8s.io/provisioning-class-name: &quot;queued-provisioning.gke.io&quot;</code> — declares DWS consumer</li>
+<li>Sets <code>safe-to-evict: false</code> — keeps the node from idle scale-down once holder binds</li>
+<li><strong>Starts immediately as <code>Pending</code></strong> and binds the instant the node provisions (inside the 10-min window)</li>
+</ul>
+<p><strong>Check holder status:</strong></p>
+<pre><code class="language-bash">
+kubectl get pods -n default -l app=a3-holder-zone-a
+</code></pre>
+<p><strong>Expected output (while waiting for capacity):</strong></p>
+<pre><code class="language-">
+NAME                                  READY   STATUS    RESTARTS   AGE
+a3-holder-zone-a-xxxxxxxxxx-yyyyy     0/1     Pending   0          30s
+</code></pre>
+<p><strong>Healthy signal (from events):</strong></p>
+<pre><code class="language-bash">
+kubectl describe pod -n default -l app=a3-holder-zone-a | grep IgnoredInScaleUp
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+IgnoredInScaleUp: Unschedulable pod ignored in scale-up loop, because it&#x27;s consuming
+ProvisioningRequest default/a3-h100-req-zone-a that is in Accepted state.
+</code></pre>
+<p><strong>What this means:</strong> The autoscaler recognizes the holder as a request consumer and won&#x27;t try to provision via other mechanisms. It&#x27;s waiting for DWS to deliver the node.</p>
+<p><strong>Broken signal (old, incorrect holder):</strong></p>
+<pre><code class="language-">
+no.scale.up.nap.pod.gpu.no.limit.defined
+</code></pre>
+<p>If you see this, the holder is missing the consume annotations and <strong>will not hold the node</strong> — the node will be reclaimed. Verify the YAML has both <code>autoscaling.x-k8s.io/*</code> annotations (not the old <code>cluster-autoscaler.kubernetes.io/</code> prefix).</p>
+<h3 id="43-wait-for-provisioning-5-minutes-to-hours">4.3 Wait for provisioning (5 minutes to hours)</h3>
+<p><strong>Monitor the request:</strong></p>
+<pre><code class="language-bash">
+watch kubectl get provisioningrequests -A
+</code></pre>
+<p><strong>When capacity is found, you&#x27;ll see:</strong></p>
+<pre><code class="language-">
+NAMESPACE   NAME                   AGE   ACCEPTED   PROVISIONED
+default     a3-h100-req-zone-a     15m   True       True
+</code></pre>
+<p><strong>Check the node appeared:</strong></p>
+<pre><code class="language-bash">
+kubectl get nodes -L cloud.google.com/gke-accelerator
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+NAME                                                  STATUS   ROLES    AGE   ACCELERATOR
+gke-hypercomputer-a3-default-pool-xxxx-yyyy           Ready    &lt;none&gt;   20m   &lt;none&gt;
+gke-hypercomputer-a3-a3-h100-dws-pool-16664d9c-hhp6   Ready    &lt;none&gt;   2m    nvidia-h100-80gb
+</code></pre>
+<p><strong>Verify holder bound:</strong></p>
+<pre><code class="language-bash">
+kubectl get pods -n default -l app=a3-holder-zone-a -o wide
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+NAME                                  READY   STATUS    RESTARTS   AGE   NODE
+a3-holder-zone-a-xxxxxxxxxx-yyyyy     1/1     Running   0          5m    gke-hypercomputer-a3-a3-h100-dws-pool-16664d9c-hhp6
+</code></pre>
+<p><strong>Success signal:</strong> The holder is <strong><code>Running</code></strong> on the GPU node. The node will now stay up for <strong>7 days</strong> (until <code>maxRunDurationSeconds</code> expires or you delete the request).</p>
+<p><strong>If the node vanishes ~15 minutes after boot:</strong> You hit the reclaim bug. Check that the holder pod has <strong>both</strong> <code>autoscaling.x-k8s.io/consume-provisioning-request</code> and <code>autoscaling.x-k8s.io/provisioning-class-name</code> annotations in its pod spec (not just the Deployment). Re-apply the corrected holder and request.</p>
+<hr>
+<h2 id="step-5-deploy-namespaces-and-storage">Step 5: Deploy namespaces and storage</h2>
+<h3 id="51-create-namespaces">5.1 Create namespaces</h3>
+<pre><code class="language-bash">
+kubectl apply -f - &lt;&lt;EOF
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: inference
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jupyter
+EOF
+</code></pre>
+<p><strong>What this does:</strong> Creates two namespaces to organize workloads:</p>
+<ul>
+<li><code>inference</code> — for the vLLM inference service</li>
+<li><code>jupyter</code> — for JupyterHub and notebook pods</li>
+</ul>
+<h3 id="52-create-the-model-cache-pvc">5.2 Create the model cache PVC</h3>
+<pre><code class="language-bash">
+kubectl apply -f - &lt;&lt;EOF
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hf-cache
+  namespace: inference
+spec:
+  accessModes: [&quot;ReadWriteOnce&quot;]
+  storageClassName: premium-rwo  # GKE pd-ssd dynamic class
+  resources:
+    requests:
+      storage: 150Gi
+EOF
+</code></pre>
+<p><strong>What this does:</strong> Creates a <strong>150Gi SSD-backed Persistent Volume</strong> to cache the Qwen3-32B model weights (~60GB). Without this, every pod restart re-downloads the model from Hugging Face (slow and wasteful). The PVC is <code>ReadWriteOnce</code> (single-node attachment), which is fine since the inference pod runs on one node.</p>
+<p><strong>Verify:</strong></p>
+<pre><code class="language-bash">
+kubectl get pvc -n inference
+</code></pre>
+<p><strong>Expected output:</strong></p>
+<pre><code class="language-">
+NAME       STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+hf-cache   Bound    pvc-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx   150Gi      RWO            premium-rwo    10s
+</code></pre>
+<hr>
+<p>← Previous: <strong><a href="02a-cluster-setup.html">Part 1 — Cluster Setup</a></strong>  |  Next: <strong><a href="02c-deploy-inference.html">Part 3 — Deploy Inference</a></strong> →</p>
+<p><strong>Deployment series:</strong> <a href="02a-cluster-setup.html">1. Cluster Setup</a> → <strong>2. GPU Node &amp; DWS</strong> → <a href="02c-deploy-inference.html">3. Inference</a> → <a href="02d-deploy-jupyter.html">4. JupyterHub</a> → <a href="02e-verify-teardown.html">5. Verify &amp; Teardown</a></p>
+<p><strong>Related:</strong> <a href="01-architecture.html">Architecture Reference</a> · <a href="appendix-glossary.html">Glossary</a> · <a href="03-inference-endpoint-user-guide.html">Inference User Guide</a> · <a href="04-jupyter-notebook-user-guide.html">Jupyter User Guide</a> · <a href="../../lab/README.md">Lab IaC foundation</a> · <a href="../../lab/RESERVATIONS.md">Reservations (&gt;7 days)</a></p>
+</body>
+</html>
