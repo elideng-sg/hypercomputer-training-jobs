@@ -42,8 +42,8 @@ Both services share a single 8-GPU [A3 machine](appendix-glossary.md#a3-machine)
 | GPU node | `gke-hypercomputer-a3-a3-h100-dws-pool-16664d9c-hhp6` (zone `us-central1-a`) |
 | Machine / GPUs | `a3-highgpu-8g` = 8× NVIDIA H100 80GB |
 | Provisioning | DWS Flex-Start, 7-day cap (expires ~2026-07-23) |
-| Inference | vLLM `v0.8.4` serving `qwen3-32b`, internal LB `10.128.0.43:8000` |
-| Notebooks | JupyterHub 5.5.0, internal LB `10.128.15.234` |
+| Inference | vLLM `v0.8.4` serving `qwen3-32b` — public `https://infer.136.69.110.10.nip.io/v1` (API-key gated); in-cluster `qwen3-vllm.inference.svc.cluster.local:8000` |
+| Notebooks | JupyterHub 5.5.0 — public `https://jupyter.34.54.187.199.nip.io` (Google sign-in). See [Remote Access](05-remote-access-iap.md). |
 
 ---
 
@@ -296,7 +296,8 @@ For full API details (curl, Python, streaming, error handling), see the **[Infer
 **From a command line (inside the VPC):**
 
 ```bash
-curl http://10.128.0.43:8000/v1/chat/completions \
+curl https://infer.136.69.110.10.nip.io/v1/chat/completions \
+  -H "Authorization: Bearer $VLLM_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"model":"qwen3-32b","messages":[{"role":"user","content":"Hello, how are you?"}],"max_tokens":64}'
 ```
@@ -307,8 +308,8 @@ curl http://10.128.0.43:8000/v1/chat/completions \
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://10.128.0.43:8000/v1",   # Or use DNS: qwen3-vllm.inference.svc.cluster.local:8000
-    api_key="none"   # vLLM ignores the key by default
+    base_url="https://infer.136.69.110.10.nip.io/v1",   # public; or in-cluster DNS qwen3-vllm.inference.svc.cluster.local:8000
+    api_key="<VLLM_API_KEY>"   # required — value is in the vllm-api-key secret
 )
 
 response = client.chat.completions.create(
@@ -364,7 +365,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="http://qwen3-vllm.inference.svc.cluster.local:8000/v1",
-    api_key="none"
+    api_key="<VLLM_API_KEY>"   # required — value is in the vllm-api-key secret
 )
 
 response = client.chat.completions.create(

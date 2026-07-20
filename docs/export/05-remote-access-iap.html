@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Remote Access — Expose JupyterHub &amp;amp; vLLM to the Team via HTTPS + IAP</title>
+    <title>Remote Access — Expose JupyterHub &amp;amp; vLLM to the Team over HTTPS</title>
     <style>
         body {
             font-family: 'Arial', 'Helvetica', sans-serif;
@@ -173,124 +173,112 @@
     </style>
 </head>
 <body>
-<h1 id="remote-access--expose-jupyterhub--vllm-to-the-team-via-https--iap">Remote Access — Expose JupyterHub &amp; vLLM to the Team via HTTPS + IAP</h1>
-<p><strong>Audience:</strong> The cluster admin. This guide makes the JupyterHub UI and the vLLM inference endpoint reachable by teammates who <strong>cannot</strong> access your GCP project or VPC directly — with no VPN and no <code>kubectl</code>.</p>
-<blockquote><strong>New to the terminology?</strong> IAP, Ingress, LoadBalancer, and Service are defined in the <strong><a href="appendix-glossary.html">Glossary appendix</a></strong>.</blockquote>
-<h2 id="what-youll-build">What you&#x27;ll build</h2>
-<p>Two public <strong>external HTTPS Load Balancers</strong> (one per service, because a GKE Ingress can only target Services in its own namespace), each with a Google-managed TLS certificate:</p>
+<h1 id="remote-access--expose-jupyterhub--vllm-to-the-team-over-https">Remote Access — Expose JupyterHub &amp; vLLM to the Team over HTTPS</h1>
+<p><strong>Audience:</strong> The cluster admin. This makes the JupyterHub UI and the vLLM inference endpoint reachable by teammates who <strong>cannot</strong> access your GCP project or VPC directly — no VPN, no <code>kubectl</code>.</p>
+<blockquote><strong>New to the terminology?</strong> Ingress, LoadBalancer, and Service are defined in the <strong><a href="appendix-glossary.html">Glossary appendix</a></strong>.</blockquote>
+<h2 id="approach">Approach</h2>
+<p>Two public <strong>external HTTPS Load Balancers</strong> (one per service — a GKE Ingress can only target Services in its own namespace), each with a Google-managed TLS certificate:</p>
 <table>
 <thead><tr>
 <th>Service</th>
-<th>Namespace</th>
-<th>Public host (nip.io)</th>
+<th>Public host</th>
 <th>Gate</th>
 </tr></thead>
 <tbody>
 <tr>
-<td>JupyterHub UI</td>
-<td><code>jupyter</code></td>
-<td><code>jupyter.&lt;JUPYTER_LB_IP&gt;.nip.io</code></td>
-<td><strong>IAP</strong> (Google sign-in, IAM-controlled) + GoogleOAuthenticator</td>
+<td>vLLM inference API</td>
+<td><code>infer.&lt;VLLM_LB_IP&gt;.nip.io</code></td>
+<td><strong>API key</strong> (<code>Authorization: Bearer &lt;key&gt;</code>)</td>
 </tr>
 <tr>
-<td>vLLM inference API</td>
-<td><code>inference</code></td>
-<td><code>infer.&lt;INFER_LB_IP&gt;.nip.io</code></td>
-<td><strong>API key</strong> (<code>Authorization: Bearer &lt;key&gt;</code>)</td>
+<td>JupyterHub UI</td>
+<td><code>jupyter.&lt;JUPYTER_LB_IP&gt;.nip.io</code></td>
+<td><strong>GoogleOAuthenticator</strong>, restricted to your Workspace domain</td>
 </tr>
 </tbody></table>
 <ul>
-<li><strong>JupyterHub</strong> is gated by <strong><a href="https://cloud.google.com/iap/docs/concepts-overview">Identity-Aware Proxy (IAP)</a></strong>: teammates authenticate with their Google (Workspace) account and you control who gets in with a single IAM binding — no VPC access. The chart&#x27;s <code>DummyAuthenticator</code> is replaced with <code>GoogleOAuthenticator</code> (restricted to your Workspace domain) so each user gets a real identity and their own home directory.</li>
-<li><strong>vLLM</strong> is gated by a <strong>vLLM API key</strong> rather than IAP, so the OpenAI client works unchanged (IAP would require an OIDC-token wrapper). It&#x27;s still HTTPS-only.</li>
+<li><strong>vLLM</strong> is gated by a <strong>vLLM API key</strong> so the OpenAI client works unchanged.</li>
+<li><strong>JupyterHub</strong> is gated by <strong>GoogleOAuthenticator</strong> (Google sign-in restricted to your Workspace domain), replacing the demo <code>DummyAuthenticator</code>. Each user gets a real identity and their own home directory.</li>
 </ul>
-<p><strong>Why nip.io:</strong> Google-managed certificates require a real, publicly-resolvable domain. <code>nip.io</code> is a free wildcard-DNS service where <code>anything.&lt;IP&gt;.nip.io</code> resolves to <code>&lt;IP&gt;</code> — so you get valid managed TLS without registering a domain. If you later get a real domain, just swap the hostnames in the <code>ManagedCertificate</code> and <code>Ingress</code>/<code>oauth_callback_url</code>.</p>
-<p>All manifests referenced below live in <a href="../../deploy/expose"><code>deploy/expose/</code></a>.</p>
+<p><strong>Why not IAP?</strong> The IAP OAuth Admin APIs were shut down in early 2026, so the &quot;bring-your-own OAuth client for IAP&quot; path is no longer usable. GoogleOAuthenticator uses a <em>standard</em> OAuth 2.0 client (unaffected) and gives equivalent domain-restricted access control. If you later want IAP as an extra edge layer, enable it via Google-managed OAuth in the console.</p>
+<p><strong>Why nip.io:</strong> Google-managed certs need a publicly-resolvable domain. <code>nip.io</code> resolves <code>anything.&lt;IP&gt;.nip.io</code> → <code>&lt;IP&gt;</code>, giving valid managed TLS with no domain registration. Swap in a real domain later by editing the <code>ManagedCertificate</code>, <code>Ingress</code>, and <code>oauth_callback_url</code>.</p>
+<p>Manifests live in <a href="../../deploy/expose"><code>deploy/expose/</code></a>.</p>
+<blockquote><strong>Current live deployment (project <code>hdlab-elideng</code>, region <code>us-central1</code>):</strong></blockquote>
+<blockquote>- vLLM: <strong><code>https://infer.136.69.110.10.nip.io</code></strong> (Part A below — already provisioned)</blockquote>
+<blockquote>- JupyterHub: <strong><code>https://jupyter.34.54.187.199.nip.io</code></strong> (Part B — awaiting the OAuth client step)</blockquote>
+<blockquote>- The vLLM API key lives in the <code>vllm-api-key</code> secret; retrieve it with:</blockquote>
+<blockquote>```bash</blockquote>
+<blockquote>kubectl -n inference get secret vllm-api-key -o jsonpath=&#x27;{.data.api-key}&#x27; | base64 -d; echo</blockquote>
+<blockquote>```</blockquote>
+<blockquote>Certs can take 10–60 min to go <strong>Active</strong> after first provisioning.</blockquote>
 <hr>
 <h2 id="prerequisites">Prerequisites</h2>
 <ul>
-<li>The stack from the <a href="02a-cluster-setup.html">deployment series</a> is running (GKE cluster, GPU node, vLLM, JupyterHub on internal LBs).</li>
-<li>You are on a Google <strong>Workspace / Cloud Identity</strong> org (needed for domain-restricted access).</li>
-<li><code>gcloud</code> and <code>kubectl</code> configured against the cluster (project <code>hdlab-elideng</code>, region <code>us-central1</code>).</li>
-<li>Roles: <code>roles/owner</code> or equivalent (to enable APIs, configure IAP/OAuth, reserve IPs, set IAM).</li>
+<li>The stack from the <a href="02a-cluster-setup.html">deployment series</a> is running.</li>
+<li>You are on a Google <strong>Workspace / Cloud Identity</strong> org.</li>
+<li><code>gcloud</code>, <code>kubectl</code>, <code>helm</code> configured against the cluster.</li>
+<li>Roles to enable APIs, reserve IPs, configure OAuth, and run Helm.</li>
 </ul>
-<hr>
-<h2 id="step-1-enable-apis">Step 1: Enable APIs</h2>
+<h2 id="one-time-setup-both-services">One-time setup (both services)</h2>
 <pre><code class="language-bash">
-gcloud services enable iap.googleapis.com compute.googleapis.com --project hdlab-elideng
-</code></pre>
-<hr>
-<h2 id="step-2-configure-the-oauth-consent-screen-one-time">Step 2: Configure the OAuth consent screen (one-time)</h2>
-<p>IAP and GoogleOAuthenticator both need an <strong>OAuth consent screen</strong> (a &quot;brand&quot;) on the project.</p>
-<ol>
-<li>Console → <strong>APIs &amp; Services → OAuth consent screen</strong>.</li>
-<li>User type <strong>Internal</strong> (Workspace org — only your domain can consent). Set an app name and support email. Save.</li>
-</ol>
-<p><em>(This step is simplest in the console. <code>gcloud iap oauth-brands create</code> exists but is restricted; the console is the reliable path.)</em></p>
-<hr>
-<h2 id="step-3-reserve-static-ips-and-compute-your-hostnames">Step 3: Reserve static IPs and compute your hostnames</h2>
-<p>Each Ingress needs a <strong>global</strong> static IP. Reserve both, then read their addresses:</p>
-<pre><code class="language-bash">
-gcloud compute addresses create jupyter-lb-ip --global --project hdlab-elideng
+gcloud services enable compute.googleapis.com container.googleapis.com --project hdlab-elideng
+
+# Reserve one global static IP per service, then read the addresses:
 gcloud compute addresses create vllm-lb-ip    --global --project hdlab-elideng
-
-JUPYTER_LB_IP=$(gcloud compute addresses describe jupyter-lb-ip --global --format=&#x27;value(address)&#x27; --project hdlab-elideng)
-INFER_LB_IP=$(gcloud compute addresses describe vllm-lb-ip    --global --format=&#x27;value(address)&#x27; --project hdlab-elideng)
-echo &quot;JupyterHub host: jupyter.${JUPYTER_LB_IP}.nip.io&quot;
-echo &quot;vLLM host:       infer.${INFER_LB_IP}.nip.io&quot;
-</code></pre>
-<p>Substitute the placeholders in the manifests (and set your Workspace domain):</p>
-<pre><code class="language-bash">
-export WORKSPACE_DOMAIN=yourco.com     # &lt;-- your Workspace domain
-
-sed -i \
-  -e &quot;s/&lt;JUPYTER_LB_IP&gt;/${JUPYTER_LB_IP}/g&quot; \
-  -e &quot;s/&lt;INFER_LB_IP&gt;/${INFER_LB_IP}/g&quot; \
-  -e &quot;s/&lt;WORKSPACE_DOMAIN&gt;/${WORKSPACE_DOMAIN}/g&quot; \
-  deploy/expose/jupyter-values-iap.yaml \
-  deploy/expose/jupyter-managedcert.yaml \
-  deploy/expose/vllm-managedcert.yaml
+gcloud compute addresses create jupyter-lb-ip --global --project hdlab-elideng
+VLLM_IP=$(gcloud compute addresses describe vllm-lb-ip    --global --format=&#x27;value(address)&#x27; --project hdlab-elideng)
+JUP_IP=$(gcloud compute addresses describe jupyter-lb-ip  --global --format=&#x27;value(address)&#x27; --project hdlab-elideng)
+echo &quot;vLLM host:  infer.${VLLM_IP}.nip.io&quot;
+echo &quot;Jupyter host: jupyter.${JUP_IP}.nip.io&quot;
 </code></pre>
 <hr>
-<h2 id="step-4-create-oauth-clients-and-secrets">Step 4: Create OAuth clients and secrets</h2>
-<p>You need <strong>two</strong> OAuth 2.0 clients (both under the consent screen from Step 2):</p>
-<p><strong>(a) IAP OAuth client</strong> — used by IAP to gate JupyterHub. Console → <strong>APIs &amp; Services → Credentials → Create OAuth client ID → Web application</strong>. Note the client ID/secret, then create the k8s secret:</p>
+<h2 id="part-a--vllm-public-endpoint-api-key-gated">Part A — vLLM public endpoint (API-key gated)</h2>
 <pre><code class="language-bash">
-kubectl -n jupyter create secret generic jupyter-iap-oauth \
-  --from-literal=client_id=&lt;IAP_OAUTH_CLIENT_ID&gt; \
-  --from-literal=client_secret=&lt;IAP_OAUTH_CLIENT_SECRET&gt;
+# 1. Create a strong API key secret
+kubectl -n inference create secret generic vllm-api-key \
+  --from-literal=api-key=&quot;$(openssl rand -hex 24)&quot;
+
+# 2. Add the key to the running deployment (vLLM then requires it on EVERY request,
+#    in-cluster and external). Re-apply the manifest, or patch in place:
+kubectl -n inference patch deploy qwen3-vllm --type=json \
+  -p=&#x27;[{&quot;op&quot;:&quot;add&quot;,&quot;path&quot;:&quot;/spec/template/spec/containers/0/env/-&quot;,&quot;value&quot;:{&quot;name&quot;:&quot;VLLM_API_KEY&quot;,&quot;valueFrom&quot;:{&quot;secretKeyRef&quot;:{&quot;name&quot;:&quot;vllm-api-key&quot;,&quot;key&quot;:&quot;api-key&quot;}}}}]&#x27;
+kubectl -n inference rollout status deploy/qwen3-vllm
+
+# 3. Swap the internal LB for a ClusterIP+NEG Service and add the HTTPS Ingress
+kubectl apply -f deploy/expose/vllm-service.yaml          # replaces vllm-service-internal
+kubectl apply -f deploy/expose/vllm-backendconfig.yaml
+kubectl apply -f deploy/expose/vllm-frontendconfig.yaml
+sed &quot;s/&lt;INFER_LB_IP&gt;/${VLLM_IP}/g&quot; deploy/expose/vllm-managedcert.yaml | kubectl apply -f -
+kubectl apply -f deploy/expose/vllm-ingress.yaml
 </code></pre>
-<p><strong>(b) JupyterHub&#x27;s own OAuth client</strong> — used by <code>GoogleOAuthenticator</code>. Create another <strong>Web application</strong> client. Add this <strong>Authorized redirect URI</strong>:</p>
+<p><strong>Verify</strong> (once the cert is Active):</p>
+<pre><code class="language-bash">
+kubectl -n inference get managedcertificate vllm-cert -o jsonpath=&#x27;{.status.certificateStatus}&#x27;; echo
+KEY=$(kubectl -n inference get secret vllm-api-key -o jsonpath=&#x27;{.data.api-key}&#x27; | base64 -d)
+curl -s https://infer.${VLLM_IP}.nip.io/v1/models -H &quot;Authorization: Bearer $KEY&quot;
+</code></pre>
+<blockquote>⚠️ <strong>Enabling the key changes existing behavior:</strong> in-cluster callers (JupyterHub notebooks) that previously used <code>api_key=&quot;none&quot;</code> now get <strong>401</strong> and must send the real key. The user guides have been updated accordingly.</blockquote>
+<hr>
+<h2 id="part-b--jupyterhub-public-ui-google-sign-in">Part B — JupyterHub public UI (Google sign-in)</h2>
+<h3 id="b1-oauth-consent-screen-one-time-console">B1. OAuth consent screen (one-time, console)</h3>
+<p>Console → <strong>APIs &amp; Services → OAuth consent screen</strong> → User type <strong>Internal</strong> (your Workspace org) → set app name + support email → Save.</p>
+<h3 id="b2-create-an-oauth-20-web-client-console">B2. Create an OAuth 2.0 Web client (console)</h3>
+<p>Console → <strong>APIs &amp; Services → Credentials → Create credentials → OAuth client ID → Web application</strong>. Add this <strong>Authorized redirect URI</strong> (use your reserved Jupyter IP):</p>
 <pre><code class="language-">
 https://jupyter.&lt;JUPYTER_LB_IP&gt;.nip.io/hub/oauth_callback
 </code></pre>
-<p>Put its client ID/secret into <code>deploy/expose/jupyter-values-iap.yaml</code> (the <code>GoogleOAuthenticator</code> block; the <code>sed</code> in Step 3 already filled the callback URL and domain).</p>
-<p><strong>(c) vLLM API key</strong> — generate a strong key and store it:</p>
+<p>Note the generated <strong>Client ID</strong> and <strong>Client secret</strong>.</p>
+<h3 id="b3-fill-in-the-values-overlay">B3. Fill in the values overlay</h3>
 <pre><code class="language-bash">
-kubectl -n inference create secret generic vllm-api-key \
-  --from-literal=api-key=&quot;$(openssl rand -base64 32)&quot;
-# print it once to share with the team (store it in your secrets manager):
-kubectl -n inference get secret vllm-api-key -o jsonpath=&#x27;{.data.api-key}&#x27; | base64 -d; echo
+export WORKSPACE_DOMAIN=yourco.com     # your Workspace domain
+sed -i \
+  -e &quot;s/&lt;JUPYTER_LB_IP&gt;/${JUP_IP}/g&quot; \
+  -e &quot;s/&lt;WORKSPACE_DOMAIN&gt;/${WORKSPACE_DOMAIN}/g&quot; \
+  deploy/expose/jupyter-values-public.yaml deploy/expose/jupyter-managedcert.yaml
 </code></pre>
-<blockquote>The <code>*.secret.example.yaml</code> files in <code>deploy/expose/</code> are templates only — create the real secrets with the commands above; don&#x27;t commit real values.</blockquote>
-<hr>
-<h2 id="step-5-expose-vllm-api-key-gated">Step 5: Expose vLLM (API-key gated)</h2>
+<p>Then edit <code>deploy/expose/jupyter-values-public.yaml</code> and paste the <strong>Client ID / Client secret</strong> from B2 into the <code>GoogleOAuthenticator</code> block. (For real deployments, prefer a Kubernetes secret / <code>--set</code> over committing them.)</p>
+<h3 id="b4-apply">B4. Apply</h3>
 <pre><code class="language-bash">
-# Roll the API key into the running deployment (adds the VLLM_API_KEY env)
-kubectl -n inference apply -f deploy/inference/vllm-deployment.yaml
-kubectl -n inference rollout status deploy/qwen3-vllm
-
-# Switch the Service from internal LB to ClusterIP+NEG, and add the Ingress stack
-kubectl apply -f deploy/expose/vllm-service.yaml        # replaces vllm-service-internal
-kubectl apply -f deploy/expose/vllm-backendconfig.yaml
-kubectl apply -f deploy/expose/vllm-frontendconfig.yaml
-kubectl apply -f deploy/expose/vllm-managedcert.yaml
-kubectl apply -f deploy/expose/vllm-ingress.yaml
-</code></pre>
-<hr>
-<h2 id="step-6-expose-jupyterhub-iap-gated">Step 6: Expose JupyterHub (IAP gated)</h2>
-<pre><code class="language-bash">
-# Apply the IAP secret + backend config + Ingress stack
-kubectl apply -f deploy/expose/jupyter-iap-oauth.secret.example.yaml   # only if you didn&#x27;t create it in Step 4
 kubectl apply -f deploy/expose/jupyter-backendconfig.yaml
 kubectl apply -f deploy/expose/jupyter-frontendconfig.yaml
 kubectl apply -f deploy/expose/jupyter-managedcert.yaml
@@ -298,69 +286,34 @@ kubectl apply -f deploy/expose/jupyter-managedcert.yaml
 # Reconfigure JupyterHub: ClusterIP proxy + GoogleOAuthenticator (overlay on base values)
 helm upgrade jhub jupyterhub/jupyterhub --namespace jupyter --version 4.4.0 \
   -f deploy/jupyter/values.yaml \
-  -f deploy/expose/jupyter-values-iap.yaml \
+  -f deploy/expose/jupyter-values-public.yaml \
   --timeout 10m
 
 kubectl apply -f deploy/expose/jupyter-ingress.yaml
 </code></pre>
-<hr>
-<h2 id="step-7-grant-the-team-access-iap-iam">Step 7: Grant the team access (IAP IAM)</h2>
-<p>Grant your team the <strong>IAP-secured Web App User</strong> role on the JupyterHub backend service. Simplest is a Google group:</p>
+<h3 id="b5-verify">B5. Verify</h3>
 <pre><code class="language-bash">
-# Find the backend service that IAP created for the Ingress
-gcloud compute backend-services list --global --project hdlab-elideng
-
-# Grant the group access to it
-gcloud iap web add-iam-policy-binding \
-  --resource-type=backend-services \
-  --service=&lt;JUPYTER_BACKEND_SERVICE_NAME&gt; \
-  --member=&quot;group:ai-team@${WORKSPACE_DOMAIN}&quot; \
-  --role=&quot;roles/iap.httpsResourceAccessor&quot; \
-  --project hdlab-elideng
-</code></pre>
-<p>Add/remove teammates by managing that group — no cluster changes needed. (The vLLM endpoint isn&#x27;t IAP-gated; you control its access by who holds the API key.)</p>
-<hr>
-<h2 id="step-8-wait-then-verify">Step 8: Wait, then verify</h2>
-<p>Managed certs and the LB take time to provision (<strong>typically 10–60 minutes</strong> the first time).</p>
-<pre><code class="language-bash">
-# Certs must reach Active
 kubectl -n jupyter get managedcertificate jupyter-cert -o jsonpath=&#x27;{.status.certificateStatus}&#x27;; echo
-kubectl -n inference get managedcertificate vllm-cert   -o jsonpath=&#x27;{.status.certificateStatus}&#x27;; echo
-
-# Ingress IPs should match the reserved addresses
 kubectl -n jupyter get ingress jupyter-ingress
-kubectl -n inference get ingress vllm-ingress
 </code></pre>
-<p><strong>Test vLLM</strong> (from anywhere, once the cert is Active):</p>
-<pre><code class="language-bash">
-curl https://infer.${INFER_LB_IP}.nip.io/v1/models \
-  -H &quot;Authorization: Bearer &lt;THE_API_KEY&gt;&quot;
-</code></pre>
-<p>Team members use the OpenAI client unchanged:</p>
-<pre><code class="language-python">
-from openai import OpenAI
-client = OpenAI(base_url=&quot;https://infer.&lt;INFER_LB_IP&gt;.nip.io/v1&quot;, api_key=&quot;&lt;THE_API_KEY&gt;&quot;)
-print(client.chat.completions.create(
-    model=&quot;qwen3-32b&quot;,
-    messages=[{&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;hi&quot;}], max_tokens=16).choices[0].message.content)
-</code></pre>
-<p><strong>Test JupyterHub:</strong> browse to <code>https://jupyter.&lt;JUPYTER_LB_IP&gt;.nip.io</code> → Google sign-in (IAP) → JupyterHub (GoogleOAuthenticator) → profile page.</p>
+<p>Browse to <code>https://jupyter.&lt;JUPYTER_LB_IP&gt;.nip.io</code> → &quot;Sign in with Google&quot; → only <code>@&lt;WORKSPACE_DOMAIN&gt;</code> accounts are allowed → profile page.</p>
+<h3 id="managing-who-has-access">Managing who has access</h3>
+<p>Access is anyone in <code>hosted_domain</code>. To restrict further, set <code>allow_all: false</code> and list <code>allowed_users</code> in <code>jupyter-values-public.yaml</code>, then re-run the <code>helm upgrade</code>.</p>
 <hr>
 <h2 id="security-notes--gotchas">Security notes &amp; gotchas</h2>
 <ul>
-<li><strong>Managed-cert provisioning is not instant</strong> — it needs the Ingress live with the static IP attached and the host resolving (nip.io resolves immediately). If it&#x27;s stuck <code>Provisioning</code> for &gt;1 hour, confirm the Ingress has the reserved IP and the domain resolves to it.</li>
-<li><strong>vLLM is public with only an API key.</strong> Rotate the key if it leaks. For stronger protection add <strong><a href="https://cloud.google.com/armor">Cloud Armor</a></strong> to the vLLM backend (IP allowlist and/or rate limiting) via a <code>securityPolicy</code> in <code>vllm-backendconfig.yaml</code>.</li>
-<li><strong>JupyterHub identity trust:</strong> IAP gates <em>access</em>; GoogleOAuthenticator establishes <em>identity</em>. Users may see two Google prompts (IAP then JupyterHub), usually seamless with an existing session. To collapse to true single sign-on you can instead trust IAP&#x27;s signed <code>X-Goog-IAP-JWT-Assertion</code> header in a custom authenticator — deferred here because it needs JWT verification in the hub image.</li>
-<li><strong>The GPU node is DWS Flex-Start (7-day cap).</strong> The LBs, IAP, and certs stay up across node rotation, but the vLLM/notebook <strong>backends</strong> go unavailable while the node is being replaced (see <a href="02e-verify-teardown.html#step-10-node-rotation-and-the-7-day-expiry">Part 5 — node rotation</a>). Expect 502s during that window.</li>
-<li><strong>Don&#x27;t leave both an internal LB and the public Ingress on the same Service</strong> — <code>vllm-service.yaml</code> replaces <code>vllm-service-internal.yaml</code> (same name).</li>
+<li><strong>Managed-cert provisioning isn&#x27;t instant</strong> (10–60 min). It needs the Ingress live with the static IP attached; nip.io resolves immediately. If stuck <code>Provisioning</code> &gt;1 hour, confirm the Ingress has the reserved IP.</li>
+<li><strong>vLLM is public with only an API key.</strong> Rotate it if it leaks (<code>kubectl create secret ... --dry-run=client -o yaml | kubectl apply -f -</code>, then <code>kubectl rollout restart deploy/qwen3-vllm</code>). For stronger protection add <strong><a href="https://cloud.google.com/armor">Cloud Armor</a></strong> (IP allowlist / rate limiting) to <code>vllm-backendconfig.yaml</code> via a <code>securityPolicy</code>.</li>
+<li><strong>JupyterHub has no IAP layer</strong> — the gate is GoogleOAuthenticator&#x27;s <code>hosted_domain</code>. That is real, domain-restricted auth; just be sure <code>hosted_domain</code> is set so it&#x27;s not open to any Google account.</li>
+<li><strong>The GPU node is DWS Flex-Start (7-day cap).</strong> LBs and certs stay up across node rotation, but the vLLM/notebook <strong>backends</strong> go unavailable while the node is replaced (see <a href="02e-verify-teardown.html#step-10-node-rotation-and-the-7-day-expiry">Part 5 — node rotation</a>) — expect 502s during that window.</li>
 </ul>
 <h2 id="revert-to-internal-only">Revert to internal-only</h2>
 <pre><code class="language-bash">
 kubectl delete -f deploy/expose/jupyter-ingress.yaml -f deploy/expose/vllm-ingress.yaml
-kubectl delete -f deploy/expose/jupyter-managedcert.yaml -f deploy/expose/vllm-managedcert.yaml
-kubectl apply  -f deploy/inference/vllm-service-internal.yaml          # back to internal LB
-helm upgrade jhub jupyterhub/jupyterhub -n jupyter --version 4.4.0 \
-  -f deploy/jupyter/values.yaml --timeout 10m                          # base values (internal LB, no IAP)
+kubectl delete -f deploy/expose/jupyter-managedcert.yaml
+kubectl delete managedcertificate vllm-cert -n inference
+kubectl apply  -f deploy/inference/vllm-service-internal.yaml
+helm upgrade jhub jupyterhub/jupyterhub -n jupyter --version 4.4.0 -f deploy/jupyter/values.yaml --timeout 10m
 gcloud compute addresses delete jupyter-lb-ip vllm-lb-ip --global --project hdlab-elideng
 </code></pre>
 <hr>

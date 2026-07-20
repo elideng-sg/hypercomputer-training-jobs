@@ -37,12 +37,12 @@
 - **Per-user isolation:** Each user gets their own notebook server pod with dedicated resources
 - **GPU or CPU profiles:** Choose between a GPU-powered notebook (1× H100 GPU) or a CPU-only notebook
 - **Persistent home directory:** Your files are saved to a 20 GB persistent volume that survives server restarts
-- **Internal access only:** The JupyterHub is reachable at internal load balancer **`10.128.15.234`** (VPC-only, not public)
+- **Public access with Google sign-in:** Reachable at **`https://jupyter.34.54.187.199.nip.io`** — sign in with your Workspace Google account (restricted to your organization's domain). No VPN or `kubectl` needed.
 
 ### Live deployment values
 
 - **JupyterHub version:** 5.5.0
-- **Internal load balancer IP:** `10.128.15.234` (port 80)
+- **Public URL:** `https://jupyter.34.54.187.199.nip.io` (HTTPS, Google sign-in)
 - **GPU profile:** 1× H100 GPU, PyTorch + CUDA 12, `quay.io/jupyter/pytorch-notebook:cuda12-latest` image
 - **CPU profile:** 4 CPU cores, 16 GB RAM, no GPU
 - **Storage per user:** 20 GB persistent disk (GCP `premium-rwo` SSD)
@@ -51,48 +51,21 @@
 
 ## 2. Log In
 
-### Step 1: Access the JupyterHub
+### Step 1: Open JupyterHub
 
-The JupyterHub is only reachable from **inside the VPC**. You have two options:
-
-**(a) From a VM or bastion host inside the VPC:**
-
-Open a web browser and navigate to:
+In a web browser, go to:
 
 ```
-http://10.128.15.234
+https://jupyter.34.54.187.199.nip.io
 ```
 
-**(b) From your laptop (via port-forward):**
+Works from anywhere — no VPN, no `kubectl`.
 
-If you're developing from your laptop, use `kubectl port-forward`:
+### Step 2: Sign in with Google
 
-```bash
-# Forward local port 8080 to the JupyterHub service
-kubectl -n jupyter port-forward svc/proxy-public 8080:80
-```
+Click **Sign in with Google** and use your **Workspace account** (`@your-domain`). Only accounts in your organization's domain are allowed — there is no shared password. Your first sign-in provisions your personal 20 GB home directory.
 
-Leave this running in a terminal, then open your browser to:
-
-```
-http://localhost:8080
-```
-
-**Note:** You'll need cluster credentials configured:
-
-```bash
-gcloud container clusters get-credentials hypercomputer-a3-cluster \
-  --region us-central1 --project hdlab-elideng
-```
-
-### Step 2: Enter credentials
-
-The JupyterHub login page will prompt for:
-
-- **Username:** Any username (e.g., your name, email, or identifier)
-- **Password:** `demo2026`
-
-**Important: Demo authentication only.** The current setup uses **DummyAuthenticator**, which accepts any username with the hardcoded password `demo2026`. This is for **demo and development purposes only**. For production use, replace DummyAuthenticator with a real authentication provider like Google OAuth, LDAP, or GitHub OAuth (see `deploy/jupyter/values.yaml`).
+**Access control:** Who can log in is governed by the domain restriction (and optionally an explicit allow-list) configured by your admin — see the [Remote Access guide](05-remote-access-iap.md). If you're denied, ask your admin to add you.
 
 ---
 
@@ -216,10 +189,11 @@ In a notebook cell:
 ```python
 from openai import OpenAI
 
-# Use the in-cluster DNS name for the vLLM service
+# In-cluster DNS name for the vLLM service. The endpoint now requires the API key.
+import os
 client = OpenAI(
     base_url="http://qwen3-vllm.inference.svc.cluster.local:8000/v1",
-    api_key="none"  # vLLM ignores this; required by SDK but any value works
+    api_key=os.environ.get("VLLM_API_KEY", "<paste the key from your admin>"),
 )
 
 response = client.chat.completions.create(
@@ -244,7 +218,7 @@ Okay, so I need to figure out what 2 plus 2 is. Let me
 
 The DNS name `qwen3-vllm.inference.svc.cluster.local:8000` resolves to the vLLM Service within the cluster. This works even though your notebook is in the `jupyter` namespace and vLLM is in the `inference` namespace — Kubernetes DNS resolves `<service>.<namespace>.svc.cluster.local` cluster-wide.
 
-**Alternative:** You can also use the internal load balancer IP (`http://10.128.0.43:8000/v1`), but the DNS name is preferred because it will continue to work even if the IP changes.
+**Alternative:** From outside the cluster, use the public endpoint `https://infer.136.69.110.10.nip.io/v1` with the same API key. Inside a notebook, the in-cluster DNS name above is simplest (and avoids leaving the cluster network).
 
 ### More examples
 
@@ -364,7 +338,7 @@ Then, in a startup cell of your notebook:
 
 ### How to stop your server
 
-1. In JupyterLab, go to **File > Hub Control Panel** (or navigate to `http://10.128.15.234/hub/home`)
+1. In JupyterLab, go to **File > Hub Control Panel** (or navigate to `https://jupyter.34.54.187.199.nip.io/hub/home`)
 2. Click the **Stop My Server** button
 3. Wait for the server to stop (the button will change to "Start My Server")
 
@@ -500,11 +474,12 @@ requests.exceptions.ConnectionError: ('Connection aborted.', ConnectionRefusedEr
 
 **Fix:**
 
-1. **Use the in-cluster DNS name:** `http://qwen3-vllm.inference.svc.cluster.local:8000/v1` (NOT `http://10.128.0.43:8000` — though the IP should also work, the DNS name is more reliable)
+1. **Use the in-cluster DNS name** and include the API key (the endpoint now requires it): `http://qwen3-vllm.inference.svc.cluster.local:8000/v1`
 2. **Check if vLLM is running:** In a terminal, run:
 
 ```bash
-curl http://qwen3-vllm.inference.svc.cluster.local:8000/v1/models
+curl http://qwen3-vllm.inference.svc.cluster.local:8000/v1/models \
+  -H "Authorization: Bearer $VLLM_API_KEY"
 ```
 
 If you get a connection error, the vLLM service may be down. (Admin: check `kubectl -n inference get pods -l app=qwen3-vllm`)
@@ -522,5 +497,5 @@ See the **[Inference Endpoint User Guide](03-inference-endpoint-user-guide.md)**
 
 ---
 
-**Document version:** 2026-07-17  
-**JupyterHub details:** Version 5.5.0 at `10.128.15.234` (internal LB), GPU profile with 1× H100 80GB, CPU profile with 4 cores / 16 GB RAM, 20 GB persistent storage per user
+**Document version:** 2026-07-20  
+**JupyterHub details:** Version 5.5.0 at `https://jupyter.34.54.187.199.nip.io` (public HTTPS, Google sign-in), GPU profile with 1× H100 80GB, CPU profile with 4 cores / 16 GB RAM, 20 GB persistent storage per user

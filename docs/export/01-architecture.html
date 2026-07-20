@@ -428,11 +428,11 @@
 </tr>
 <tr>
 <td>Inference</td>
-<td>vLLM <code>v0.8.4</code> serving <code>qwen3-32b</code>, internal LB <code>10.128.0.43:8000</code></td>
+<td>vLLM <code>v0.8.4</code> serving <code>qwen3-32b</code> — public <code>https://infer.136.69.110.10.nip.io/v1</code> (API-key gated); in-cluster <code>qwen3-vllm.inference.svc.cluster.local:8000</code></td>
 </tr>
 <tr>
 <td>Notebooks</td>
-<td>JupyterHub 5.5.0, internal LB <code>10.128.15.234</code></td>
+<td>JupyterHub 5.5.0 — public <code>https://jupyter.34.54.187.199.nip.io</code> (Google sign-in). See <a href="05-remote-access-iap.html">Remote Access</a>.</td>
 </tr>
 </tbody></table>
 <hr>
@@ -1068,7 +1068,8 @@ volumes:
 <p>For full API details (curl, Python, streaming, error handling), see the <strong><a href="03-inference-endpoint-user-guide.html">Inference Endpoint User Guide</a></strong>. A minimal example:</p>
 <p><strong>From a command line (inside the VPC):</strong></p>
 <pre><code class="language-bash">
-curl http://10.128.0.43:8000/v1/chat/completions \
+curl https://infer.136.69.110.10.nip.io/v1/chat/completions \
+  -H &quot;Authorization: Bearer $VLLM_API_KEY&quot; \
   -H &#x27;Content-Type: application/json&#x27; \
   -d &#x27;{&quot;model&quot;:&quot;qwen3-32b&quot;,&quot;messages&quot;:[{&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;Hello, how are you?&quot;}],&quot;max_tokens&quot;:64}&#x27;
 </code></pre>
@@ -1077,8 +1078,8 @@ curl http://10.128.0.43:8000/v1/chat/completions \
 from openai import OpenAI
 
 client = OpenAI(
-    base_url=&quot;http://10.128.0.43:8000/v1&quot;,   # Or use DNS: qwen3-vllm.inference.svc.cluster.local:8000
-    api_key=&quot;none&quot;   # vLLM ignores the key by default
+    base_url=&quot;https://infer.136.69.110.10.nip.io/v1&quot;,   # public; or in-cluster DNS qwen3-vllm.inference.svc.cluster.local:8000
+    api_key=&quot;&lt;VLLM_API_KEY&gt;&quot;   # required — value is in the vllm-api-key secret
 )
 
 response = client.chat.completions.create(
@@ -1346,7 +1347,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url=&quot;http://qwen3-vllm.inference.svc.cluster.local:8000/v1&quot;,
-    api_key=&quot;none&quot;
+    api_key=&quot;&lt;VLLM_API_KEY&gt;&quot;   # required — value is in the vllm-api-key secret
 )
 
 response = client.chat.completions.create(

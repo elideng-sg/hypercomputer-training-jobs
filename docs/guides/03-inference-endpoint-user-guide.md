@@ -37,30 +37,31 @@ The inference endpoint is a **vLLM** server that serves the **Qwen3-32B** langua
 - **Model served:** `Qwen/Qwen3-32B` (from Hugging Face, ungated)
 - **Model name to use in API calls:** `qwen3-32b`
 - **API compatibility:** OpenAI-compatible `/v1/chat/completions` and `/v1/models` endpoints
-- **Internal load balancer IP:** `10.128.0.43:8000`
-- **In-cluster DNS name:** `qwen3-vllm.inference.svc.cluster.local:8000`
+- **Public endpoint (HTTPS):** `https://infer.136.69.110.10.nip.io/v1`
+- **In-cluster DNS name:** `qwen3-vllm.inference.svc.cluster.local:8000` (for notebooks/pods in the cluster)
 - **Maximum context length:** 32,768 tokens
-- **API key:** Not required (vLLM ignores the `api_key` field by default; use `"none"` or any placeholder)
+- **API key: REQUIRED.** Every request must carry `Authorization: Bearer <key>` (OpenAI client: `api_key="<key>"`). **Ask your admin for the key** — it's stored in the `vllm-api-key` Kubernetes secret.
 
-### Important: VPC-internal only
+### Access
 
-The endpoint is **not publicly accessible**. It uses an internal load balancer, so you can only reach it from:
+The endpoint is reachable two ways, both requiring the API key:
 
-- Inside the VPC (from a VM, container, or service in the same GCP network)
-- From a Jupyter notebook running in-cluster (see [Section 8](#8-using-from-a-jupyter-notebook))
-- From your laptop via `kubectl port-forward` (see [Section 2](#2-how-to-reach-the-endpoint))
+- **Public HTTPS (for the team):** `https://infer.136.69.110.10.nip.io/v1` — works from anywhere, no VPC access or `kubectl` needed.
+- **In-cluster:** notebooks and pods use the DNS name `qwen3-vllm.inference.svc.cluster.local:8000` (see [Section 8](#8-using-from-a-jupyter-notebook)).
 
 ---
 
 ## 2. How to Reach the Endpoint
 
-### (a) From inside the VPC
+### (a) Public HTTPS endpoint (recommended, for the team)
 
-If you're running on a VM or container inside the VPC, use the load balancer IP directly:
+From anywhere — no VPC access or `kubectl` needed. Use the HTTPS URL plus the API key:
 
 ```
-http://10.128.0.43:8000
+https://infer.136.69.110.10.nip.io/v1
 ```
+
+Every request must include `Authorization: Bearer <API_KEY>` (the OpenAI client sends this automatically when you set `api_key`). Get the key from your admin.
 
 ### (b) From a Jupyter notebook in-cluster
 
@@ -97,7 +98,8 @@ gcloud container clusters get-credentials hypercomputer-a3-cluster \
 To see the model(s) served by the endpoint:
 
 ```bash
-curl http://10.128.0.43:8000/v1/models
+curl https://infer.136.69.110.10.nip.io/v1/models \
+  -H "Authorization: Bearer $VLLM_API_KEY"
 ```
 
 **Sample output:**
@@ -127,7 +129,8 @@ The `id` field (`"qwen3-32b"`) is the model name you'll use in chat completion r
 ### Basic request
 
 ```bash
-curl http://10.128.0.43:8000/v1/chat/completions \
+curl https://infer.136.69.110.10.nip.io/v1/chat/completions \
+  -H "Authorization: Bearer $VLLM_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{
     "model": "qwen3-32b",
@@ -180,10 +183,11 @@ pip install openai
 ```python
 from openai import OpenAI
 
-# Initialize the client (use localhost:8000 if port-forwarding from your laptop)
+# Public HTTPS endpoint + API key (ask your admin for the key)
+import os
 client = OpenAI(
-    base_url="http://10.128.0.43:8000/v1",
-    api_key="none"  # vLLM ignores this; required by SDK but any value works
+    base_url="https://infer.136.69.110.10.nip.io/v1",
+    api_key=os.environ["VLLM_API_KEY"],   # or paste the key string directly
 )
 
 # Send a chat completion request
@@ -265,8 +269,8 @@ For long responses, you can stream tokens as they're generated instead of waitin
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://10.128.0.43:8000/v1",
-    api_key="none"
+    base_url="https://infer.136.69.110.10.nip.io/v1",
+    api_key=os.environ["VLLM_API_KEY"],
 )
 
 stream = client.chat.completions.create(
@@ -345,7 +349,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="http://qwen3-vllm.inference.svc.cluster.local:8000/v1",
-    api_key="none"
+    api_key=os.environ["VLLM_API_KEY"]   # required now; ask your admin for the key
 )
 
 response = client.chat.completions.create(
@@ -374,16 +378,24 @@ requests.exceptions.ConnectionError: ('Connection aborted.', ConnectionRefusedEr
 or
 
 ```
-curl: (7) Failed to connect to 10.128.0.43 port 8000: Connection refused
+curl: (7) Failed to connect to infer.136.69.110.10.nip.io port 443: Connection refused
 ```
 
 **Possible causes and fixes:**
 
 | Cause | How to check | Fix |
 |-------|--------------|-----|
-| You're outside the VPC | Check if you're on a laptop or external machine | Use `kubectl port-forward` (see [Section 2c](#c-from-your-laptop-outside-the-vpc)) |
-| vLLM pod is down | `kubectl -n inference get pods -l app=qwen3-vllm` | Wait for pod to become `Running` and `Ready`, or check pod logs: `kubectl -n inference logs -l app=qwen3-vllm` |
-| Wrong IP or port | Verify you're using `10.128.0.43:8000` (inside VPC) or `localhost:8000` (with port-forward) | Double-check the URL in your code |
+| Wrong URL | Verify you're using `https://infer.136.69.110.10.nip.io/v1` (public) or `qwen3-vllm.inference.svc.cluster.local:8000` (in-cluster) | Double-check the base URL in your code |
+| TLS cert not ready yet | `curl -v` shows a certificate error | The Google-managed cert can take 10–60 min after first setup; retry, or ask your admin to check `managedcertificate vllm-cert` |
+| vLLM pod is down | (Admin) `kubectl -n inference get pods -l app=qwen3-vllm` | Wait for the pod to be `Running`/`Ready`; across the 7-day node rotation expect brief unavailability |
+
+### Problem: 401 Unauthorized
+
+**Symptom:** `{"error":{"message":"...","code":401}}` or an HTTP 401.
+
+**Cause:** Missing or wrong API key — the endpoint now **requires** one.
+
+**Fix:** Send `Authorization: Bearer <key>` (OpenAI client: set `api_key`). Get the key from your admin (it lives in the `vllm-api-key` secret). Example: `export VLLM_API_KEY=<key>` then retry.
 
 ### Problem: "Model not found" or 404 error
 
@@ -485,4 +497,4 @@ messages = [
 ---
 
 **Document version:** 2026-07-20  
-**Endpoint details:** vLLM v0.8.4 serving Qwen3-32B at `10.128.0.43:8000` (internal LB, VPC-only access)
+**Endpoint details:** vLLM v0.8.4 serving Qwen3-32B at `https://infer.136.69.110.10.nip.io/v1` (public HTTPS, API-key gated). In-cluster: `qwen3-vllm.inference.svc.cluster.local:8000`.
