@@ -53,6 +53,24 @@ The endpoint is reachable two ways, both requiring the API key:
 
 ## 2. How to Reach the Endpoint
 
+### Getting your API key
+
+Every request needs an API key — you don't create it yourself.
+
+**If you're a team member:** ask your cluster admin for the key, then set it as an environment variable so every example below works unchanged:
+
+```bash
+export VLLM_API_KEY="<the key your admin gave you>"
+```
+
+**If you're the admin:** the key is stored in the `vllm-api-key` Kubernetes secret. Retrieve it (and share it with the team over a secure channel — a password manager, not chat/email) with:
+
+```bash
+kubectl -n inference get secret vllm-api-key -o jsonpath='{.data.api-key}' | base64 -d; echo
+```
+
+Treat the key like a password: don't commit it to code or post it publicly. To rotate it, see [Remote Access → Security notes](05-remote-access-iap.md#security-notes--gotchas).
+
 ### (a) Public HTTPS endpoint (recommended, for the team)
 
 From anywhere — no VPC access or `kubectl` needed. Use the HTTPS URL plus the API key:

@@ -186,6 +186,8 @@ In a notebook cell:
 
 ### Step 2: Call the inference endpoint
 
+The endpoint requires an API key — **ask your admin for it** (details: [Inference Endpoint User Guide → Getting your API key](03-inference-endpoint-user-guide.md#getting-your-api-key)). In your notebook, set it once, e.g. `import os; os.environ["VLLM_API_KEY"] = "<the key>"`, or paste it directly below.
+
 ```python
 from openai import OpenAI
 

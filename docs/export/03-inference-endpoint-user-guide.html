@@ -399,6 +399,17 @@
 </ul>
 <hr>
 <h2 id="2-how-to-reach-the-endpoint">2. How to Reach the Endpoint</h2>
+<h3 id="getting-your-api-key">Getting your API key</h3>
+<p>Every request needs an API key — you don&#x27;t create it yourself.</p>
+<p><strong>If you&#x27;re a team member:</strong> ask your cluster admin for the key, then set it as an environment variable so every example below works unchanged:</p>
+<pre><code class="language-bash">
+export VLLM_API_KEY=&quot;&lt;the key your admin gave you&gt;&quot;
+</code></pre>
+<p><strong>If you&#x27;re the admin:</strong> the key is stored in the <code>vllm-api-key</code> Kubernetes secret. Retrieve it (and share it with the team over a secure channel — a password manager, not chat/email) with:</p>
+<pre><code class="language-bash">
+kubectl -n inference get secret vllm-api-key -o jsonpath=&#x27;{.data.api-key}&#x27; | base64 -d; echo
+</code></pre>
+<p>Treat the key like a password: don&#x27;t commit it to code or post it publicly. To rotate it, see <a href="05-remote-access-iap.html#security-notes--gotchas">Remote Access → Security notes</a>.</p>
 <h3 id="a-public-https-endpoint-recommended-for-the-team">(a) Public HTTPS endpoint (recommended, for the team)</h3>
 <p>From anywhere — no VPC access or <code>kubectl</code> needed. Use the HTTPS URL plus the API key:</p>
 <pre><code class="language-">
