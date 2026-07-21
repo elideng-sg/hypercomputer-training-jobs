@@ -15,16 +15,19 @@ hypercomputer-training-jobs/
 │   ├── dws_provisioning_request.yaml         # Optimized atomic single-machine 7-day DWS Queued Provisioning Request (`TARGET_SIZE: 1`)
 │   ├── dws_provisioning_request_zone_a.yaml  # Standalone DWS Queued Request specifically targeting zone us-central1-a (`604800`s)
 │   ├── dws_provisioning_request_zone_b.yaml  # Standalone DWS Queued Request specifically targeting zone us-central1-b (`604800`s)
-│   └── dws_provisioning_request_zone_c.yaml  # Standalone DWS Queued Request specifically targeting zone us-central1-c (`604800`s)
+│   ├── dws_provisioning_request_zone_c.yaml  # Standalone DWS Queued Request specifically targeting zone us-central1-c (`604800`s)
+│   └── gpt2_training_job.yaml                # GKE 8x H100 distributed 3D-parallel GPT-2 training job spec
 ├── scripts/
 │   ├── 01_setup_gcp_project.sh               # Phase 1: Configure gcloud project, APIs & query regional GPU quotas
 │   ├── 02_create_gke_cluster.sh              # Phase 2: Provision foundational Option 2 Spot node pool across Iowa (`8x L4`)
 │   ├── 02_create_gke_cluster_dws.sh          # Phase 2 (DWS): Deploy multi-zone A3 8x H100 node pool with atomic 7-day queue request + 8-GPU Capacity Holder
 │   ├── 03_submit_verification_job.sh         # Phase 3: Package ConfigMap & stream live diagnostic training run logs
+│   ├── 03_submit_gpt2_job.sh                 # Phase 3 (GPT-2): Package ConfigMap & launch/tail GPT-2 training job
 │   ├── 03_submit_job_direct_gcloud.py        # Option 1: Direct GKE HTTPS REST API launcher (bypasses local kubectl)
 │   └── 04_teardown_cluster.sh                # Phase 4: Cost-protection script to scale nodes to zero or delete cluster
 ├── src/
-│   └── train_benchmark_fp8.py          # Distributed PyTorch NCCL & Tensor Core DDP benchmark script
+│   ├── train_benchmark_fp8.py          # Distributed PyTorch NCCL & Tensor Core DDP benchmark script
+│   └── train_benchmark_gpt2.py         # Distributed GPT-2 LLM 3D-parallel training script (TP/PP/DP/wandb)
 ├── logs/                               # Output log folder for NCCL traces and runtime timing JSON files
 ├── deploy/                             # Inference + notebooks + public access (see docs/)
 │   ├── inference/                      # vLLM Qwen3-32B Deployment, Service, model-cache PVC, PDB
@@ -38,6 +41,7 @@ hypercomputer-training-jobs/
 ├── GKE_GPU_WORKLOAD_INIT_TEST_GUIDE.md # Complete step-by-step colleagues operational initialization & testing handbook alongside GKE architectural deep dive
 ├── ai_hypercomputer_verification_report.md # Full diagnostic execution run report and hardware performance metric breakdown
 └── README.md                           # Comprehensive end-to-end execution runbook
+
 ```
 
 ---
@@ -147,23 +151,79 @@ To launch Option A directly across your terminal:
 
 ---
 
-### Step 3: Run the 8x GPU Distributed Training Verification Suite
-Package our distributed training code ([src/train_benchmark_fp8.py](src/train_benchmark_fp8.py)) right into your cluster and run the multi-GPU DDP test suite. If `kubectl` is restricted locally, the script automatically triggers our Option 1 HTTPS REST API launcher (`03_submit_job_direct_gcloud.py`).
+### Step 3: Run Distributed GPU Training Workloads
+Package our execution code into GKE and run distributed training workloads. You have two options depending on whether you want to verify the cluster infrastructure or run a full parameterized training & serving pipeline.
+
+#### Option A: Distributed Training Verification (All-Reduce Stress Test)
+Runs a raw tensor-core FP8 NCCL stress test job ([src/train_benchmark_fp8.py](src/train_benchmark_fp8.py)) to verify hardware topology and bandwidth. If `kubectl` is restricted locally, the script automatically triggers the REST API launcher.
 
 **Command to run:**
 ```bash
 ./scripts/03_submit_verification_job.sh
 ```
 
-#### What the Verification Workload Proves:
+##### What the Verification Workload Proves:
 1. **Intra-Node Crossbar Throughput:** Evaluates pure NVLink Gen 4/5 all-reduce speed across all 8 concurrent GPUs (`NCCL_DEBUG=INFO`).
 2. **Mixed-Precision Math Execution:** Computes heavy neural model iterations using modern `bfloat16` or `float8_e4m3fn` Tensor Core routines via `torchrun --nproc_per_node=8`.
 3. **IPC Shared Memory Integrity:** Confirms high-capacity shared RAM (`/dev/shm`) access via explicit 64Gi RAM disk mounting inside [a3_a4_verification_job.yaml](configs/a3_a4_verification_job.yaml).
 
 ---
 
+#### Option B: Parameterized GPT-2 Training & Serving
+Submit a full distributed 3D-parallel GPT-2 training job ([src/train_benchmark_gpt2.py](src/train_benchmark_gpt2.py)). For an interactive breakdown explaining how data, tensor, and pipeline parallelisms combine to scale model training, refer to the [3D Parallelism Visualization Tool](https://darenwkt.github.io/llm-visualizer/#/distributed-training). The submission script packages your training code, dynamically injects parameters, provisions the pod, runs 3D-parallel pretraining, consolidates the checkpoint files, and hosts a prediction serving HTTP endpoint directly on Rank 0 GPU:
+
+**Command to run:**
+```bash
+./scripts/03_submit_gpt2_job.sh \
+  --tp-size 2 \
+  --pp-size 2 \
+  --batch-size 4 \
+  --max-steps 100 \
+  --dataset-bin "gs://<YOUR_GCS_BUCKET_NAME>/dataset/train.bin"
+```
+
+##### CLI Input Parameters:
+* `--tp-size`: Tensor Parallelism size (default: `2`).
+* `--pp-size`: Pipeline Parallelism size (default: `2`).
+* `--batch-size`: Micro-batch size per GPU (default: `4`).
+* `--max-steps`: Total pretraining iteration steps (default: `100`).
+* `--dataset-bin`: GCS URI to the pre-tokenized binary dataset (defaults to `""` which streams directly from Hugging Face).
+* `--instance-type`: GKE node machine type (defaults to auto-detecting your cluster's GPU nodes, e.g., `g2-standard-96`).
+
+##### Weights & Biases (WandB) Integration:
+To enable real-time tracking of training metrics (loss, PPL, step time, TFLOPS):
+1. **Create a WandB secret:** Save your API key securely in the cluster:
+   ```bash
+   kubectl create secret generic wandb-secret --from-literal=WANDB_API_KEY="<YOUR_WANDB_API_KEY>"
+   ```
+2. **Expose the key in the manifest:** Add the secret reference to the `env:` block in `configs/gpt2_training_job.yaml`:
+   ```yaml
+           env:
+           - name: WANDB_API_KEY
+             valueFrom:
+               secretKeyRef:
+                 name: wandb-secret
+                 key: WANDB_API_KEY
+   ```
+   *(The training script will automatically detect this environment variable and initialize the logger).*
+
+##### How to Send Prompts to the Served Model:
+1. **Set up Port Forwarding:** Open a separate terminal window and run:
+   ```bash
+   kubectl port-forward pod/<POD_NAME> 8080:8080
+   ```
+   *(The script console output will print the specific target pod name at the end of the run).*
+2. **Query the Predict Endpoint:** Run this `curl` command locally to send prompt strings:
+   ```bash
+   curl -X POST http://localhost:8080/predict \
+     -H "Content-Type: application/json" \
+     -d '{"prompt": "The future of artificial intelligence is", "max_new_tokens": 50}'
+   ```
+
+---
+
 ### Step 4: Scale Down or Clean Up Resources (Cost Safeguard)
-Because 8x H100/B200 nodes accrue rapid on-demand usage costs, always scale your compute capacity to **0** as soon as test execution wraps up.
+Because 8x GPU nodes accrue rapid on-demand usage costs, always scale your compute capacity to **0** as soon as test execution wraps up.
 
 **Command to run:**
 ```bash
