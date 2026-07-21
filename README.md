@@ -170,7 +170,7 @@ Runs a raw tensor-core FP8 NCCL stress test job ([src/train_benchmark_fp8.py](sr
 ---
 
 #### Option B: Parameterized GPT-2 Training & Serving
-Submit a full distributed 3D-parallel GPT-2 training job ([src/train_benchmark_gpt2.py](src/train_benchmark_gpt2.py)). For an interactive breakdown explaining how data, tensor, and pipeline parallelisms combine to scale model training, refer to the [3D Parallelism Visualization Tool](https://darenwktdev.github.io/llm-visualizer/#/distributed-training). The submission script packages your training code, dynamically injects parameters, provisions the pod, runs 3D-parallel pretraining, consolidates the checkpoint files, and hosts a prediction serving HTTP endpoint directly on Rank 0 GPU:
+Submit a full distributed 3D-parallel GPT-2 training job ([src/train_benchmark_gpt2.py](src/train_benchmark_gpt2.py)). For an interactive breakdown explaining how data, tensor, and pipeline parallelisms combine to scale model training, refer to the [3D Parallelism Visualization Tool](https://darenwkt.github.io/llm-visualizer/#/distributed-training). The submission script packages your training code, dynamically injects parameters, provisions the pod, runs 3D-parallel pretraining, consolidates the checkpoint files, and hosts a prediction serving HTTP endpoint directly on Rank 0 GPU:
 
 **Command to run:**
 ```bash

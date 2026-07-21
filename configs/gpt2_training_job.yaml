@@ -1,0 +1,98 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gcp-ai-hypercomputer-gpt2-training
+  labels:
+    job-group: ai-cluster-gpt2
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        job-group: ai-cluster-gpt2
+        app: gpt2-training
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        node.kubernetes.io/instance-type: _INSTANCE_TYPE_
+      tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"
+      - key: "cloud.google.com/gke-queued"
+        operator: "Exists"
+        effect: "NoSchedule"
+      containers:
+      - name: gpt2-train
+        # Official NVIDIA PyTorch container equipped with Hopper optimizations & CUDA 12.x
+        image: nvcr.io/nvidia/pytorch:24.03-py3
+        imagePullPolicy: IfNotPresent
+        command:
+        - /bin/bash
+        - -c
+        - |
+          echo "================================================================="
+          echo " -> Container online! Inspecting internal hardware attachments..."
+          echo "================================================================="
+          nvidia-smi
+          
+          echo ""
+          echo "================================================================="
+          echo " -> Initializing PyTorch Distributed 8x GPU Run with torchrun..."
+          echo "================================================================="
+          mkdir -p /workspace/src /workspace/logs
+          pip install --no-cache-dir google-cloud-storage tiktoken
+          # Copy benchmark code over from mounted ConfigMap
+          if [ -f "/mounted_src/train_benchmark_gpt2.py" ]; then
+            cp /mounted_src/train_benchmark_gpt2.py /workspace/src/
+          fi
+          
+          cd /workspace && \
+          torchrun \
+            --nproc_per_node=8 \
+            --nnodes=1 \
+            --master_addr="127.0.0.1" \
+            --master_port=29500 \
+            src/train_benchmark_gpt2.py \
+              --tp-size _TP_SIZE_ \
+              --pp-size _PP_SIZE_ \
+              --batch-size _BATCH_SIZE_ \
+              --max-steps _MAX_STEPS_ \
+              --dataset-bin "_DATASET_BIN_" \
+              --serve
+              
+          echo "[+] Job completed cleanly. Log dumps available under /workspace/logs."
+        env:
+        - name: NCCL_DEBUG
+          value: "INFO"
+        - name: NCCL_DEBUG_SUBSYS
+          value: "INIT,ENV,NET"
+        - name: NCCL_NET_GDR_LEVEL
+          value: "5"
+        - name: NCCL_ALGORITHM
+          value: "RING"
+        - name: OMP_NUM_THREADS
+          value: "8"
+        resources:
+          limits:
+            nvidia.com/gpu: "8"
+            cpu: "64"
+            memory: "300Gi"
+          requests:
+            nvidia.com/gpu: "8"
+            cpu: "64"
+            memory: "300Gi"
+        volumeMounts:
+        - name: shm
+          mountPath: /dev/shm
+        - name: benchmark-code
+          mountPath: /mounted_src
+      volumes:
+      # Critical: Mount high-capacity in-memory IPC volume to prevent PyTorch zero-copy data crashes
+      - name: shm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 64Gi
+      - name: benchmark-code
+        configMap:
+          name: gpt2-source-map
