@@ -4,6 +4,16 @@
 
 ---
 
+> ### ⚠️ Historical: this describes the ORIGINAL `us-central1` build
+>
+> **The live deployment moved on 2026-08-05** to cluster `hypercomputer-a3-tcpxo` in
+> **`asia-southeast1-c`** on **A3 Mega** nodes with the **GPUDirect-TCPXO** fabric. Read
+> [Part 1's translation table](02a-cluster-setup.md) before copying any command here — the
+> cluster name, region, machine type, and accelerator label have all changed, and
+> `nvidia-h100-80gb` now matches **no node** (pods using it sit in `Pending` forever).
+> Current manifests: [`deploy/tcpxo-migration/`](../../deploy/tcpxo-migration/).
+
+
 **Part 5 of the deployment series** — the final part. Assumes you have completed [Parts 1–4](02a-cluster-setup.md).
 
 This part verifies the whole stack end-to-end, then covers day-2 operations: tearing down workloads while keeping the node held, the 7-day Flex-Start expiry and node rotation, durable (>7-day) capacity, and full cleanup. It ends with troubleshooting, a command quick-reference, and cost estimates.

@@ -1,0 +1,198 @@
+# deploy/tcpxo-migration/01-static-pvs.yaml
+#
+# Re-attach the five existing Persistent Disks to the TCPXO cluster.
+#
+# The disks were created dynamically in hypercomputer-a3-asiasoutheast1 but live in
+# zone asia-southeast1-c -- the SAME zone as hypercomputer-a3-tcpxo. A zonal PD can
+# attach to any node in its zone, so the data moves by re-binding, not by copying.
+#
+# Two things make this safe and repeatable:
+#   * every source PV was flipped to reclaimPolicy=Retain BEFORE the source cluster
+#     was torn down, so deleting the old PVC leaves the disk intact. claim-kzuo was
+#     the one still on Delete -- it was patched first.
+#   * claimRef pins each PV to exactly one PVC, so the scheduler cannot bind the
+#     wrong home directory to the wrong user. Without claimRef, binding is by
+#     size+class match and homes could silently swap.
+#
+# volumeName + claimRef on both sides is deliberate belt-and-braces: the PVC names
+# must match what JupyterHub's KubeSpawner expects (claim-<username>), or the hub
+# provisions fresh empty homes and the re-attach silently does nothing.
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: jupyter-claim-elideng
+spec:
+  capacity: {storage: 20Gi}
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: premium-rwo
+  claimRef:
+    namespace: jupyter
+    name: claim-elideng
+  csi:
+    driver: pd.csi.storage.gke.io
+    volumeHandle: projects/hdlab-elideng/zones/asia-southeast1-c/disks/pvc-d5a2da83-591f-4bf6-8b82-980a614067c0
+    fsType: ext4
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: topology.gke.io/zone
+          operator: In
+          values: [asia-southeast1-c]
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: jupyter-claim-kzuo
+spec:
+  capacity: {storage: 20Gi}
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: premium-rwo
+  claimRef:
+    namespace: jupyter
+    name: claim-kzuo
+  csi:
+    driver: pd.csi.storage.gke.io
+    volumeHandle: projects/hdlab-elideng/zones/asia-southeast1-c/disks/pvc-fc2ff237-483c-4dfe-8b54-abaade8c69a8
+    fsType: ext4
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: topology.gke.io/zone
+          operator: In
+          values: [asia-southeast1-c]
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: jupyter-claim-samaujs
+spec:
+  capacity: {storage: 20Gi}
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: premium-rwo
+  claimRef:
+    namespace: jupyter
+    name: claim-samaujs
+  csi:
+    driver: pd.csi.storage.gke.io
+    volumeHandle: projects/hdlab-elideng/zones/asia-southeast1-c/disks/pvc-6b946599-4b2c-4cb6-8288-7cfae164886a
+    fsType: ext4
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: topology.gke.io/zone
+          operator: In
+          values: [asia-southeast1-c]
+---
+# The hub's SQLite DB: user list, spawner state, API tokens. Re-attaching this is what
+# keeps the team's existing logins and named servers working after the move.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: jupyter-hub-db-dir
+spec:
+  capacity: {storage: 1Gi}
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: standard-rwo
+  claimRef:
+    namespace: jupyter
+    name: hub-db-dir
+  csi:
+    driver: pd.csi.storage.gke.io
+    volumeHandle: projects/hdlab-elideng/zones/asia-southeast1-c/disks/pvc-38c3c4c8-b383-495d-a406-5bad06ae7d0b
+    fsType: ext4
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: topology.gke.io/zone
+          operator: In
+          values: [asia-southeast1-c]
+---
+# 150Gi of downloaded Qwen3-32B weights. Re-attaching avoids a multi-hour re-pull
+# from HuggingFace on first vLLM start.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: inference-hf-cache
+spec:
+  capacity: {storage: 150Gi}
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: premium-rwo
+  claimRef:
+    namespace: inference
+    name: hf-cache
+  csi:
+    driver: pd.csi.storage.gke.io
+    volumeHandle: projects/hdlab-elideng/zones/asia-southeast1-c/disks/pvc-6c2333c3-37c1-43f0-9e7a-6c187c610a8d
+    fsType: ext4
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: topology.gke.io/zone
+          operator: In
+          values: [asia-southeast1-c]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: claim-elideng
+  namespace: jupyter
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 20Gi}}
+  storageClassName: premium-rwo
+  volumeName: jupyter-claim-elideng
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: claim-kzuo
+  namespace: jupyter
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 20Gi}}
+  storageClassName: premium-rwo
+  volumeName: jupyter-claim-kzuo
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: claim-samaujs
+  namespace: jupyter
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 20Gi}}
+  storageClassName: premium-rwo
+  volumeName: jupyter-claim-samaujs
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hub-db-dir
+  namespace: jupyter
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}
+  storageClassName: standard-rwo
+  volumeName: jupyter-hub-db-dir
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hf-cache
+  namespace: inference
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 150Gi}}
+  storageClassName: premium-rwo
+  volumeName: inference-hf-cache

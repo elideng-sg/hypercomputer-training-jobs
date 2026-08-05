@@ -4,6 +4,16 @@
 
 ---
 
+> ### ⚠️ Historical: this describes the ORIGINAL `us-central1` build
+>
+> **The live deployment moved on 2026-08-05** to cluster `hypercomputer-a3-tcpxo` in
+> **`asia-southeast1-c`** on **A3 Mega** nodes with the **GPUDirect-TCPXO** fabric. Read
+> [Part 1's translation table](02a-cluster-setup.md) before copying any command here — the
+> cluster name, region, machine type, and accelerator label have all changed, and
+> `nvidia-h100-80gb` now matches **no node** (pods using it sit in `Pending` forever).
+> Current manifests: [`deploy/tcpxo-migration/`](../../deploy/tcpxo-migration/).
+
+
 **Part 2 of the [deployment series](01-architecture.md#7-where-to-go-next).** You should have completed [Part 1 — Cluster Setup](02a-cluster-setup.md) first (a running regional GKE cluster with `kubectl` access).
 
 This part creates the DWS-enabled A3 GPU node pool, provisions the 8× H100 node through Dynamic Workload Scheduler, and sets up the namespaces and model-cache storage the workloads need. This is the most involved part — DWS requires a **[ProvisioningRequest](appendix-glossary.md#provisioningrequest)** and a **[capacity holder](appendix-glossary.md#capacity-holder)** working together.

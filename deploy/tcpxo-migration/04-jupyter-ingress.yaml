@@ -1,0 +1,67 @@
+# deploy/tcpxo-migration/04-jupyter-ingress.yaml
+#
+# Public HTTPS front door for JupyterHub in the TCPXO cluster.
+#
+# WHY THE IP MUST BE REUSED
+# -------------------------
+# The team's bookmark, the managed cert's domain, and the OAuth client's registered
+# redirect URI are all derived from 34.54.187.199 (via nip.io). Reusing the existing
+# global static address `jupyter-lb-ip` is what makes this migration invisible to
+# users -- a new IP would mean a new hostname, a new cert, AND re-registering the
+# OAuth redirect URI, which breaks sign-in for everyone until all three land.
+#
+# ORDERING CONSTRAINT: a global static IP can only be attached to one forwarding
+# rule at a time. The old cluster's Ingress must be DELETED (releasing the IP)
+# before this one can bind it. That is the one unavoidable gap in the migration --
+# a few minutes of 502 on the Jupyter URL while the new LB programs. The vLLM
+# endpoint is unaffected (separate IP).
+#
+# The managed cert re-issues for the same domain once the IP is bound; expect
+# Provisioning -> Active in ~10-15 min. Until it goes Active, HTTPS will fail.
+---
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: jupyter-cert
+  namespace: jupyter
+spec:
+  domains:
+  - jupyter.34.54.187.199.nip.io
+---
+apiVersion: networking.gke.io/v1beta1
+kind: FrontendConfig
+metadata:
+  name: jupyter-frontendconfig
+  namespace: jupyter
+spec:
+  redirectToHttps:
+    enabled: true
+---
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: jupyter-backendconfig
+  namespace: jupyter
+spec:
+  healthCheck:
+    # The hub answers /hub/health; the default / returns a redirect that the GCLB
+    # health checker scores as unhealthy, which black-holes the backend.
+    requestPath: /hub/health
+    type: HTTP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jupyter-ingress
+  namespace: jupyter
+  annotations:
+    kubernetes.io/ingress.class: gce
+    kubernetes.io/ingress.global-static-ip-name: jupyter-lb-ip
+    networking.gke.io/managed-certificates: jupyter-cert
+    networking.gke.io/v1beta1.FrontendConfig: jupyter-frontendconfig
+spec:
+  defaultBackend:
+    service:
+      name: proxy-public
+      port:
+        number: 80

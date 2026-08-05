@@ -34,6 +34,10 @@ The inference endpoint is a **vLLM** server that serves the **Qwen3-32B** langua
 
 ### Key details
 
+> **Nothing here changed in the 2026-08-05 migration.** The service moved region (to
+> `asia-southeast1-c`, on A3 Mega GPUs) but the **URL, the model name, and your API key are
+> all the same**. No action needed — your existing code keeps working.
+
 - **Model served:** `Qwen/Qwen3-32B` (from Hugging Face, ungated)
 - **Model name to use in API calls:** `qwen3-32b`
 - **API compatibility:** OpenAI-compatible `/v1/chat/completions` and `/v1/models` endpoints
@@ -105,8 +109,8 @@ Leave this running in a terminal, then use `http://localhost:8000` in your code 
 **Note:** You'll need cluster credentials configured:
 
 ```bash
-gcloud container clusters get-credentials hypercomputer-a3-cluster \
-  --region us-central1 --project hdlab-elideng
+gcloud container clusters get-credentials hypercomputer-a3-tcpxo \
+  --location asia-southeast1-c --project hdlab-elideng
 ```
 
 ---
@@ -514,5 +518,5 @@ messages = [
 
 ---
 
-**Document version:** 2026-07-20  
+**Document version:** 2026-08-05 (migrated to `asia-southeast1-c` / A3 Mega; URL, model, and API key unchanged)  
 **Endpoint details:** vLLM v0.8.4 serving Qwen3-32B at `https://infer.136.69.110.10.nip.io/v1` (public HTTPS, API-key gated). In-cluster: `qwen3-vllm.inference.svc.cluster.local:8000`.

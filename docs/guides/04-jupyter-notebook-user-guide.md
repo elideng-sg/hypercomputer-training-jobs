@@ -34,16 +34,23 @@
 
 ### Key features
 
+> **Migrated 2026-08-05.** JupyterHub moved to `asia-southeast1-c` on A3 Mega GPUs.
+> **Your URL, your Google sign-in, and your home directory are all unchanged** — the same
+> persistent disks were re-attached, so your files are exactly where you left them. There is
+> also a **new 8-GPU profile** with the TCPXO fabric for multi-GPU work (see
+> [Section 3](#3-choose-a-profile)).
+
 - **Per-user isolation:** Each user gets their own notebook server pod with dedicated resources
-- **GPU or CPU profiles:** Choose between a GPU-powered notebook (1× H100 GPU) or a CPU-only notebook
+- **GPU or CPU profiles:** CPU-only, 1× H100 Mega, or a full 8-GPU fabric-armed node
 - **Persistent home directory:** Your files are saved to a 20 GB persistent volume that survives server restarts
 - **Public access with Google sign-in:** Reachable at **`https://jupyter.34.54.187.199.nip.io`** — sign in with your Workspace Google account (restricted to your organization's domain). No VPN or `kubectl` needed.
 
 ### Live deployment values
 
-- **JupyterHub version:** 5.5.0
+- **Chart:** Zero-to-JupyterHub 4.4.0
 - **Public URL:** `https://jupyter.34.54.187.199.nip.io` (HTTPS, Google sign-in)
-- **GPU profile:** 1× H100 GPU, PyTorch + CUDA 12, `quay.io/jupyter/pytorch-notebook:cuda12-latest` image
+- **Cluster / zone:** `hypercomputer-a3-tcpxo` in `asia-southeast1-c`
+- **GPU hardware:** 3× `a3-megagpu-8g` nodes = 24× NVIDIA H100 **Mega** 80GB
 - **CPU profile:** 4 CPU cores, 16 GB RAM, no GPU
 - **Storage per user:** 20 GB persistent disk (GCP `premium-rwo` SSD)
 
@@ -71,24 +78,75 @@ Click **Sign in with Google** and use your **Workspace account** (`@your-domain`
 
 ## 3. Choose a Profile
 
-After logging in, you'll see a profile selection page with a dropdown offering the two profiles below. Pick one, then click **Start My Server**.
+After logging in, you'll see a profile selection page with a dropdown offering the three profiles below. Pick one, then click **Start My Server**.
 
 ### Available profiles
 
 | Profile | Resources | When to Use | Image |
 |---------|-----------|-------------|-------|
-| **CPU (no GPU)** | 4 CPU cores, 16 GB RAM | Data analysis, non-GPU workloads, small models, general Python development | Standard JupyterLab image |
-| **GPU (1x H100)** | 1× NVIDIA H100 80GB GPU, PyTorch, CUDA 12 | Training/fine-tuning models, running GPU-accelerated libraries (PyTorch, TensorFlow, JAX), large-scale inference | `quay.io/jupyter/pytorch-notebook:cuda12-latest` |
+| **CPU (no GPU)** *(default)* | 4 CPU cores, 16 GB RAM | Data analysis, non-GPU workloads, small models, general Python development | Standard JupyterLab image |
+| **GPU (1x H100 Mega)** | 1× NVIDIA H100 Mega 80GB GPU, PyTorch, CUDA 12 | Training/fine-tuning models, running GPU-accelerated libraries (PyTorch, TensorFlow, JAX), large-scale inference | `quay.io/jupyter/pytorch-notebook:cuda12-latest` |
+| **GPU (8x H100 Mega, TCPXO fabric)** | **A whole node** — 8× H100 Mega, fabric-armed | Multi-GPU training, NCCL collectives, anything that will later scale across nodes | `quay.io/jupyter/pytorch-notebook:cuda12-latest` |
 
 ### Which profile should I choose?
 
 - **Choose CPU** if you're doing data exploration, visualization, or running code that doesn't need a GPU
-- **Choose GPU** if you're:
-  - Training or fine-tuning machine learning models
+- **Choose GPU (1x)** if you're:
+  - Training or fine-tuning machine learning models on a single GPU
   - Running GPU-accelerated libraries (PyTorch, TensorFlow, JAX, cuDF, etc.)
   - Experimenting with large models or datasets that benefit from GPU parallelism
+- **Choose GPU (8x, TCPXO)** if you need all 8 GPUs of a node together — `torchrun --nproc_per_node=8`, FSDP, DeepSpeed, or NCCL benchmarking. This takes a **whole node**, so coordinate with the team before starting one
 
-**Important: GPUs are shared and scarce.** The cluster has a single A3 node with 8 H100 GPUs. The vLLM inference service uses 2 GPUs, leaving approximately **6 GPUs available** for notebooks. If all 6 are in use, your GPU notebook will remain in "Pending" state until a GPU becomes available. Please shut down your GPU server when you're done (see [Section 8](#8-shut-down-your-server)).
+### About the 8-GPU TCPXO profile
+
+This profile is pre-armed for **GPUDirect-TCPXO**, the high-speed fabric that carries
+GPU-to-GPU traffic *between* nodes. Inside one node your 8 GPUs already talk over NVLink at
+~475 GB/s, so the fabric does not change single-node performance — what it buys you is that
+your code runs on the same NCCL stack as the multi-node training jobs, so scaling out later
+needs no re-plumbing.
+
+**If you use NCCL in this profile, source the vendor environment first:**
+
+```python
+# In the FIRST cell, before importing torch.distributed / initializing NCCL:
+import subprocess, os
+out = subprocess.check_output(
+    ['bash','-c','source /usr/local/nvidia/lib64/nccl-env-profile.sh && env'], text=True)
+for line in out.splitlines():
+    if '=' in line:
+        k, v = line.split('=', 1)
+        if k.startswith('NCCL_'):
+            os.environ[k] = v
+```
+
+Or from a terminal, simply:
+
+```bash
+source /usr/local/nvidia/lib64/nccl-env-profile.sh
+torchrun --nproc_per_node=8 your_script.py
+```
+
+> ⚠️ **Skipping this causes a silent hang, not an error.** The fabric plugin validates 14
+> NCCL variables and **aborts or hangs during init** if they don't match — your cell just
+> never finishes, with 0% GPU utilisation and no message. If NCCL appears to freeze on
+> startup, this is almost always why. Background:
+> [Architecture → The TCPXO fabric](01-architecture.md#6-the-tcpxo-fabric).
+
+Sanity-check that your pod really got the fabric:
+
+```bash
+ls /sys/class/net          # expect eth0..eth8 (9 interfaces)
+ls /dev/aperture_devices   # expect 8 entries
+```
+
+**Important: GPUs are scarce and deliberately held at 100%.** The cluster has 3 A3 Mega nodes
+= 24 H100 Mega GPUs, and *all 24 are held* by capacity-holder pods so that Google does not
+reclaim the Flex-Start nodes (see
+[Architecture → GPU allocation](01-architecture.md#layer-4-the-a3-mega-nodes--8-h100-mega-each-nvlink-inside-tcpxo-between)).
+**This means a GPU notebook will sit in "Pending" until an admin frees GPUs for you** — it is
+not a bug and waiting will not fix it. **Ask your admin to shrink a holder.** And please shut
+down your GPU server when you're done (see [Section 8](#8-shut-down-your-server)) so the GPUs
+can go back to the holder.
 
 ---
 
@@ -96,7 +154,7 @@ After logging in, you'll see a profile selection page with a dropdown offering t
 
 ### Step 1: Start your server
 
-1. Select your profile (e.g., **"GPU (1x H100)"**)
+1. Select your profile (e.g., **"GPU (1x H100 Mega)"**)
 2. Click **Start My Server**
 3. Wait for the server to start:
    - **First launch:** May take 2-3 minutes while the PyTorch CUDA image is pulled (approximately 5 GB)
@@ -373,8 +431,10 @@ If you're running a long training job or background process and don't want your 
 
 | Cause | How to check | Fix |
 |-------|--------------|-----|
-| All GPUs are in use | Ask other users if they're using GPU notebooks | Wait for a GPU to free up, or ask others to stop their servers when done |
-| GPU node is down | (Admin) `kubectl get nodes -l cloud.google.com/gke-accelerator=nvidia-h100-80gb` | (Admin) The A3 GPU node may need to be reprovisioned (see [Architecture Reference](01-architecture.md) for DWS details) |
+| **All 24 GPUs are held by capacity holders** (the usual cause) | (Admin) `kubectl get pods -n default -l app=gpu-holder-tcpxo` | **Ask an admin to shrink a holder.** Waiting will *not* help — the GPUs are held on purpose, not in use by another notebook. See [Section 3](#3-choose-a-profile) |
+| Another user has the GPUs | Ask other users if they're running GPU notebooks | Ask them to stop their servers when done |
+| GPU nodes are down / mid-rotation | (Admin) `kubectl get nodes -l cloud.google.com/gke-accelerator=nvidia-h100-mega-80gb` | (Admin) Flex-Start nodes rotate every 7 days; the [capacity watchdog](01-architecture.md#6b-capacity-watchdog) re-grabs them automatically — check its last run |
+| Wrong accelerator label in a hand-written manifest | Look for `nvidia-h100-80gb` | The label is now **`nvidia-h100-mega-80gb`**. The old value matches no node, so the pod stays Pending forever with no error |
 | Image pull is slow (first launch) | Wait a bit longer (2-3 minutes) | The PyTorch CUDA image is approximately 5 GB and takes time to pull on first launch |
 
 **Workaround:** Select the **"CPU (no GPU)"** profile instead if you don't strictly need GPU acceleration for your current task.
@@ -437,13 +497,13 @@ nvidia-smi
 
 **Causes:**
 
-- You selected the **CPU (no GPU)** profile, not the **GPU (1x H100)** profile
+- You selected the **CPU (no GPU)** profile, not the **GPU (1x H100 Mega)** profile
 - The GPU notebook pod failed to schedule on the GPU node (rare)
 
 **Fix:**
 
 1. Stop your server (File > Hub Control Panel > Stop My Server)
-2. Start a new server and select **"GPU (1x H100)"** from the profile dropdown
+2. Start a new server and select **"GPU (1x H100 Mega)"** from the profile dropdown
 3. Verify GPU access with `nvidia-smi` or `torch.cuda.is_available()` (see [Section 4](#4-launch-and-verify-gpu-access))
 
 ### Problem: Notebook kernel dies or "Kernel Restarting" message
@@ -499,5 +559,5 @@ See the **[Inference Endpoint User Guide](03-inference-endpoint-user-guide.md)**
 
 ---
 
-**Document version:** 2026-07-20  
-**JupyterHub details:** Version 5.5.0 at `https://jupyter.34.54.187.199.nip.io` (public HTTPS, Google sign-in), GPU profile with 1× H100 80GB, CPU profile with 4 cores / 16 GB RAM, 20 GB persistent storage per user
+**Document version:** 2026-08-05 (migrated to asia-southeast1-c; added the 8-GPU TCPXO profile)  
+**JupyterHub details:** Zero-to-JupyterHub 4.4.0 at `https://jupyter.34.54.187.199.nip.io` (public HTTPS, Google sign-in) on cluster `hypercomputer-a3-tcpxo` in `asia-southeast1-c`. Profiles: CPU (4 cores / 16 GB), GPU 1x H100 Mega, and GPU 8x H100 Mega with TCPXO fabric. 20 GB persistent storage per user.

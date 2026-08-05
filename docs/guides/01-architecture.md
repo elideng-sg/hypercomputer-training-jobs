@@ -35,16 +35,26 @@ Both services share a single 8-GPU [A3 machine](appendix-glossary.md#a3-machine)
 
 ### Live deployment values
 
+> **Updated 2026-08-05 — the deployment moved region.** Everything now runs in
+> **`asia-southeast1-c`** on **A3 Mega** nodes with the **GPUDirect-TCPXO** fabric armed.
+> The original `us-central1` / `hypercomputer-a3-cluster` A3 High deployment described
+> in the [from-scratch series](02a-cluster-setup.md) has been released. The two team URLs
+> did **not** change, and neither did the vLLM API key — see
+> [Remote Access](05-remote-access-iap.md).
+
 | Attribute | Value |
 |---|---|
 | Project | `hdlab-elideng` |
-| Region | `us-central1` |
-| Cluster | `hypercomputer-a3-cluster` |
-| GPU node | `gke-hypercomputer-a3-a3-h100-dws-pool-16664d9c-hhp6` (zone `us-central1-a`) |
-| Machine / GPUs | `a3-highgpu-8g` = 8× NVIDIA H100 80GB |
-| Provisioning | DWS Flex-Start, 7-day cap (expires ~2026-07-23) |
+| Region / zone | `asia-southeast1-c` (Singapore) |
+| Cluster | `hypercomputer-a3-tcpxo` |
+| GPU node pool | `a3-mega-tcpxo-flex-pool` — **3 nodes, 24× H100 Mega** |
+| Machine / GPUs | `a3-megagpu-8g` = 8× NVIDIA H100 **Mega** 80GB per node |
+| Accelerator label | `cloud.google.com/gke-accelerator: nvidia-h100-mega-80gb` |
+| Inter-node fabric | **GPUDirect-TCPXO** — 8 dedicated GPU NICs per node (`eth1`–`eth8`), measured **317.84 GB/s** all-reduce busbw at 16 GPUs. See [§6](#6-the-tcpxo-fabric). |
+| Provisioning | Flex-Start, 7-day cap, auto-re-grabbed by the [capacity watchdog](#capacity-watchdog) |
 | Inference | vLLM `v0.8.4` serving `qwen3-32b` — public `https://infer.136.69.110.10.nip.io/v1` (API-key gated); in-cluster `qwen3-vllm.inference.svc.cluster.local:8000` |
-| Notebooks | JupyterHub 5.5.0 — public `https://jupyter.34.54.187.199.nip.io` (Google sign-in). See [Remote Access](05-remote-access-iap.md). |
+| Notebooks | JupyterHub (z2jh 4.4.0) — public `https://jupyter.34.54.187.199.nip.io` (Google sign-in). See [Remote Access](05-remote-access-iap.md). |
+| Admin SSH | Over **IAP TCP forwarding** — see [Remote Access → SSH](05-remote-access-iap.md#part-c--ssh-to-the-gpu-nodes-over-iap) |
 
 ---
 
@@ -55,22 +65,28 @@ The system is built in layers, each depending on the one below it. Reading top-d
 ### Layer 1: GCP Project and Region
 
 - **Project:** `hdlab-elideng` — the [GCP](appendix-glossary.md#gcp) billing and resource container
-- **Region:** `us-central1` (Iowa, USA)
-- **VPC network:** A private network using the `10.128.0.0/16` IP range
+- **Zone:** `asia-southeast1-c` (Singapore)
+- **VPC networks:** the `default` VPC carries ordinary pod/service traffic, **plus 8 additional
+  VPCs** (`tcpxo-gpu-net-0` … `tcpxo-gpu-net-7`) that exist solely to carry GPU-to-GPU
+  fabric traffic. A node has one NIC on each, so 9 NICs total. See [§6](#6-the-tcpxo-fabric).
 
 All resources live in this project and region. The [VPC](appendix-glossary.md#vpc) provides private networking — internal resources use private `10.128.x.x` addresses reachable only within this network. The two user-facing services are additionally exposed to the team over public HTTPS (see [Remote Access](05-remote-access-iap.md)).
 
 ### Layer 2: GKE Cluster
 
-- **Cluster name:** `hypercomputer-a3-cluster`
-- **Type:** Regional [GKE](appendix-glossary.md#gke) cluster (control plane spans multiple zones for high availability)
+- **Cluster name:** `hypercomputer-a3-tcpxo`
+- **Type:** Zonal [GKE](appendix-glossary.md#gke) cluster in `asia-southeast1-c`
 - **Management:** Google manages the control plane; we manage the workloads (pods, services, etc.)
+
+> **Why zonal, not regional?** TCPXO's 8 additional node networks are zonal subnetworks,
+> and all GPU nodes must sit in one zone for the fabric to be usable between them anyway.
+> A regional control plane would add nothing here.
 
 Access the cluster with:
 
 ```bash
-gcloud container clusters get-credentials hypercomputer-a3-cluster \
-  --region us-central1 --project hdlab-elideng
+gcloud container clusters get-credentials hypercomputer-a3-tcpxo \
+  --location asia-southeast1-c --project hdlab-elideng
 kubectl get nodes
 ```
 
@@ -78,22 +94,27 @@ kubectl get nodes
 
 A GKE cluster has one or more **[node pools](appendix-glossary.md#node-pool)** — groups of identical machines. Ours has:
 
-1. **System node pool** — A few small CPU-only machines (`e2-standard-4` or similar) that run system components (Kubernetes daemons, networking, logging, monitoring). Always on, low cost.
+1. **`default-pool`** — A few small CPU-only machines that run system components (Kubernetes daemons, networking, logging, monitoring) and the JupyterHub hub/proxy. Always on, low cost.
 
-2. **GPU node pool:** `a3-h100-dws-pool` — The single [A3 machine](appendix-glossary.md#a3-machine) with 8× H100 GPUs. Provisioned by [DWS Flex-Start](appendix-glossary.md#dws-flex-start). This is the **only GPU node** in the cluster.
+2. **GPU node pool:** `a3-mega-tcpxo-flex-pool` — **3× [A3 Mega machines](appendix-glossary.md#a3-machine)**, 8 H100 Mega GPUs each = **24 GPUs**. Provisioned by [Flex-Start](appendix-glossary.md#dws-flex-start) and armed with the TCPXO fabric.
 
 ![GKE Node Pools](../diagrams/gke-node-pools.svg)
 
-**Figure 2: Node pool structure.** The cluster has a system pool (always-on CPU nodes) and a GPU pool (`a3-h100-dws-pool`) with one A3 node. The GPU node is provisioned on-demand by DWS and is the scarce, expensive resource.
+**Figure 2: Node pool structure.** *(Diagram predates the 2026-08-05 migration — it shows the single-node `us-central1` layout. The shape is the same; today the GPU pool is `a3-mega-tcpxo-flex-pool` with three A3 Mega nodes.)*
 
-### Layer 4: The A3 Node — 8× H100 GPUs with NVLink
+### Layer 4: The A3 Mega Nodes — 8× H100 Mega each, NVLink inside, TCPXO between
 
-- **Node name:** `gke-hypercomputer-a3-a3-h100-dws-pool-16664d9c-hhp6`
-- **Machine type:** `a3-highgpu-8g`
-- **Zone:** `us-central1-a`
-- **GPUs:** 8× NVIDIA [H100](appendix-glossary.md#h100) 80GB HBM3 (each approximately 81,559 MiB)
-- **GPU interconnect:** [NVLink + NVSwitch](appendix-glossary.md#nvlink-and-nvswitch) — all 8 GPUs can communicate with each other at high bandwidth
-- **Accelerator label:** `cloud.google.com/gke-accelerator: nvidia-h100-80gb` (pods use this label to select the node)
+- **Node pool:** `a3-mega-tcpxo-flex-pool` (3 nodes; names look like `gke-hypercomputer-a3-a3-mega-tcpxo-fl-<hash>-<id>`)
+- **Machine type:** `a3-megagpu-8g`
+- **Zone:** `asia-southeast1-c`
+- **GPUs:** 8× NVIDIA [H100](appendix-glossary.md#h100) **Mega** 80GB HBM3 per node, 24 total
+- **GPU interconnect *within* a node:** [NVLink + NVSwitch](appendix-glossary.md#nvlink-and-nvswitch) — full bandwidth between all 8 local GPUs
+- **GPU interconnect *between* nodes:** [GPUDirect-TCPXO](#6-the-tcpxo-fabric) over 8 dedicated NICs
+- **Accelerator label:** `cloud.google.com/gke-accelerator: nvidia-h100-mega-80gb` (pods use this label to select a GPU node)
+
+> ⚠️ **The label changed.** It is `nvidia-h100-mega-80gb`, not `nvidia-h100-80gb`. A pod
+> carrying the old label matches no node and sits `Pending` forever with no obvious error.
+> This is the single most common breakage when copying an older manifest.
 
 **Node [taints](appendix-glossary.md#taint-and-toleration)** (to keep non-GPU pods away):
 
@@ -110,16 +131,35 @@ tolerations:
 - { key: "cloud.google.com/gke-queued", operator: "Exists", effect: "NoSchedule" }
 ```
 
-**Inside the A3 node:** The 8 H100 GPUs are numbered 0-7. Our vLLM service uses GPUs 0-1 ([tensor parallelism](appendix-glossary.md#tensor-parallelism) across 2 GPUs). The remaining approximately 6 GPUs are available for Jupyter notebooks and other GPU workloads.
+**How the 24 GPUs are allocated today:**
+
+| Consumer | GPUs | Notes |
+|---|---|---|
+| `qwen3-vllm` (namespace `inference`) | 2 | [tensor parallelism](appendix-glossary.md#tensor-parallelism) across 2 GPUs on one node |
+| `gpu-holder-tcpxo` (namespace `default`) | 8 + 8 | two full-node [capacity holders](appendix-glossary.md#capacity-holder) |
+| `gpu-holder-tcpxo-partial` (namespace `default`) | 6 | shares vLLM's node — holds what vLLM does not use |
+| **Total held** | **24 / 24** | |
+
+**Why the pool is always 100% allocated:** Flex-Start capacity is reclaimed once nothing is
+using it, and H100 Mega capacity in this zone is scarce enough that getting it back is not
+guaranteed. So every GPU is deliberately held. To run a notebook or a training job you do
+**not** wait for a free GPU — you *shrink a holder* to hand GPUs over. See
+[`deploy/ops/rearm-holder.sh`](../../deploy/ops/rearm-holder.sh) and
+[Part 5 → node rotation](02e-verify-teardown.md#step-10-node-rotation-and-the-7-day-expiry).
+
+> ⚠️ **Never scale a holder to 0 replicas on a Flex pool.** An empty node is an idle node,
+> and an idle Flex node can be reclaimed within minutes. Lower its GPU *request* instead
+> (which needs `strategy: Recreate` on the Deployment), so the pod keeps occupying the node
+> while giving up GPUs.
 
 ### Layer 5: Pods and Services
 
 **[Pods](appendix-glossary.md#pod)** are where applications actually run. Key pods in this system:
 
-- **`qwen3-vllm` pod** (namespace `inference`) — Runs the vLLM inference server, using 2 H100 GPUs
-- **JupyterHub hub and proxy pods** (namespace `jupyter`) — Run on the system node pool (no GPU)
-- **User notebook pods** (namespace `jupyter`) — Spawned on demand; GPU notebooks land on the A3 node and request 1 GPU each
-- **[Capacity holder](appendix-glossary.md#capacity-holder) pod** (namespace `default`) — A placeholder that keeps the A3 node from being reclaimed when no other workload is using it (currently scaled to 0 replicas because vLLM is running)
+- **`qwen3-vllm` pod** (namespace `inference`) — Runs the vLLM inference server on 2 H100 Mega GPUs, with a `tcpxo-daemon` sidecar so it shares the fabric stack with the training jobs
+- **JupyterHub hub and proxy pods** (namespace `jupyter`) — Run on `default-pool` (no GPU)
+- **User notebook pods** (namespace `jupyter`) — Spawned on demand; GPU profiles land on an A3 Mega node. The **8-GPU profile is TCPXO-armed** (see [Jupyter User Guide](04-jupyter-notebook-user-guide.md))
+- **[Capacity holder](appendix-glossary.md#capacity-holder) pods** (namespace `default`) — `gpu-holder-tcpxo` (2 replicas × 8 GPUs) and `gpu-holder-tcpxo-partial` (6 GPUs). These are **not** idle waste: they are what stops the Flex nodes being reclaimed. They are always running, never scaled to 0
 
 **[Services](appendix-glossary.md#service)** provide stable network endpoints:
 
@@ -260,9 +300,13 @@ The inference service is deployed via the manifests in [`deploy/inference/`](../
 
 **Key excerpts from the Deployment** (`deploy/inference/vllm-deployment.yaml`):
 
+> **The live manifest is now [`deploy/tcpxo-migration/02-vllm-tcpxo.yaml`](../../deploy/tcpxo-migration/02-vllm-tcpxo.yaml)** — same vLLM version and arguments, but TCPXO-armed and
+> pointed at the Mega accelerator label. The excerpt below is kept because it shows the
+> general shape; copy the tcpxo-migration file if you are deploying.
+
 ```yaml
 nodeSelector:
-  cloud.google.com/gke-accelerator: nvidia-h100-80gb   # Target the H100 node
+  cloud.google.com/gke-accelerator: nvidia-h100-mega-80gb   # A3 Mega (was nvidia-h100-80gb)
 
 tolerations:   # Allow scheduling on GPU/DWS node
 - { key: "nvidia.com/gpu", operator: "Exists", effect: "NoSchedule" }
@@ -410,16 +454,19 @@ singleuser:
     kubespawner_override:
       cpu_limit: 4
       mem_limit: "16G"
-  - display_name: "GPU (1x H100)"
+  - display_name: "GPU (1x H100 Mega)"
     kubespawner_override:
       image: quay.io/jupyter/pytorch-notebook:cuda12-latest
       extra_resource_limits:
         nvidia.com/gpu: "1"
       node_selector:
-        cloud.google.com/gke-accelerator: nvidia-h100-80gb
+        cloud.google.com/gke-accelerator: nvidia-h100-mega-80gb
       tolerations:
       - { key: "nvidia.com/gpu", operator: "Exists", effect: "NoSchedule" }
       - { key: "cloud.google.com/gke-queued", operator: "Exists", effect: "NoSchedule" }
+  # The live deployment adds a THIRD profile, "GPU (8x H100 Mega, TCPXO fabric)", which
+  # takes a whole node and is armed for multi-node NCCL. See
+  # deploy/tcpxo-migration/03-jupyter-values-tcpxo.yaml for the full arming block.
 ```
 
 **Key points:**
@@ -430,19 +477,124 @@ singleuser:
 
 ---
 
-## 6. GPU Allocation on the A3 Node
+## 6. The TCPXO Fabric
 
-The A3 node has **8 H100 GPUs** (numbered 0-7). Here's how they're allocated:
+NVLink makes the 8 GPUs *inside* one node fast. **GPUDirect-TCPXO** is what makes GPUs in
+*different* nodes fast — it lets a GPU DMA straight to a NIC and out to a peer GPU on
+another node, bypassing host memory entirely. Without it, cross-node collectives fall back
+to a single ordinary gVNIC and lose roughly an order of magnitude of bandwidth.
 
-| GPUs | Usage | Details |
-|------|-------|---------|
-| 0-1 | **vLLM inference** | Tensor parallelism (`--tensor-parallel-size 2`), approximately 77 GB used per GPU |
-| 2-7 | **Available for notebooks and other workloads** | Approximately 6 GPUs free for GPU notebooks (each notebook requests 1 GPU) |
-| 0-7 | **Capacity holder** (when vLLM is down) | When no real workload is running, the holder requests all 8 GPUs to keep the node from being reclaimed |
+### What it looks like on a node
 
-**Current state:** vLLM is running (GPUs 0-1), so approximately 6 GPUs are available for notebooks. If you scale vLLM to 0 replicas, you **must** immediately scale the holder (`a3-holder-zone-a` in namespace `default`) to 1 replica to prevent the node from being reclaimed.
+| Piece | Detail |
+|---|---|
+| Extra VPCs | `tcpxo-gpu-net-0` … `tcpxo-gpu-net-7` (+ matching `tcpxo-gpu-sub-*` subnets) |
+| NICs per node | **9** — `eth0` (ordinary traffic on `default`) + `eth1`–`eth8` (fabric) |
+| Network CRs | `gpu-net-0` … `gpu-net-7` (cluster-scoped; pods reference these names) |
+| DaemonSets | `nccl-tcpxo-installer` (drops the FasTrak NCCL plugin, v1.0.17, onto the node) and `device-injector` |
+| Per-pod sidecar | `tcpgpudmarxd-dev:v1.0.22` — the "rxdm" receive-datapath manager |
+| Aperture devices | `/dev/aperture_devices`, populated with the 8 GPU-NIC BDFs |
 
-**Capacity planning:** Each GPU notebook requests 1 GPU. With vLLM using 2 GPUs, you can run up to 6 concurrent GPU notebooks on this node. If you need more, you'd need to provision additional A3 nodes (which would require separate DWS requests and likely exceed the 7-day Flex-Start window per node).
+### Measured throughput
+
+All-reduce bus bandwidth on this cluster:
+
+| GPUs | Nodes | busbw |
+|---|---|---|
+| 8 | 1 | 475 GB/s (NVLink only — never touches the fabric) |
+| 16 | 2 | **317.84 GB/s** |
+| 24 | 3 | 184.03 GB/s |
+
+The fabric lifts the multi-node curve substantially but does not flatten it — adding a
+third node still costs about 42%. Plan job sizes accordingly.
+
+### Arming a pod — the five things that fail quietly
+
+A pod on a TCPXO node is **not** automatically on the fabric. It must opt in, and every
+one of these failure modes produces a pod that looks healthy while running unarmed:
+
+1. **`devices.gke.io/container.tcpxo-daemon` annotation** — injects the GPUs and
+   `/dev/dmabuf_import_helper` into the *sidecar*. Without the dmabuf helper, rxdm logs
+   "Failed to create dmabuf importer context", exits **0**, and the pod looks fine.
+2. **A 9-entry `networking.gke.io/interfaces` list** — `eth0` on `default` plus
+   `eth1`–`eth8` on `gpu-net-0`–`gpu-net-7`.
+3. **No `nodeName`.** Pinning by `nodeName` bypasses the scheduler, so kubelet rejects the
+   pod outright (`UnexpectedAdmissionError`) instead of letting it queue behind a holder.
+   Use `nodeSelector`.
+4. **`NCCL_FASTRAK_LLCM_DEVICE_DIRECTORY=/dev/aperture_devices` on the *workload*
+   container** (not the sidecar), plus the matching `hostPath` mount. Missing either one
+   silently drops the fabric. NCCL's own config checker warns this variable is "expected
+   unset" — **that warning is wrong for TCPXO; ignore it.**
+5. **`chmod 755` on the rxdm entrypoint**, with only `NET_ADMIN` + `NET_BIND_SERVICE`.
+   If you find yourself reaching for `privileged: true`, a device injection is missing.
+
+### The NCCL environment is a contract, not a tuning knob
+
+The FasTrak plugin ships a **Guest Config Checker** that validates the NCCL environment
+against `a3plus_guest_config.textproto`. **14 variables are `POLICY_ENFORCED`** — if one
+does not match, NCCL does not warn, it **aborts or hangs during init**.
+
+So every fabric pod must source the vendor profile before starting the workload:
+
+```bash
+source /usr/local/nvidia/lib64/nccl-env-profile.sh
+exec <your program>
+```
+
+Never hand-write `NCCL_FASTRAK_IFNAME` — the profile discovers the NIC ordering on the
+node it runs on, and the ordering is per-node.
+
+> **This bit the migration.** vLLM was armed but the profile was not sourced. Symptom:
+> the log stopped dead after `vLLM is using nccl==2.21.5`, GPU utilisation 0%, 4 MiB used,
+> and eventually a bare `KeyboardInterrupt: terminated` (the liveness probe killing a
+> process that was actually mid-init). Nothing in the error named the cause. If you see a
+> silent NCCL init hang on this cluster, check the profile first.
+
+### Verifying a pod is really armed
+
+```bash
+kubectl exec -n <ns> <pod> -c <workload> -- ls /sys/class/net        # expect eth0..eth8
+kubectl exec -n <ns> <pod> -c <workload> -- ls /dev/aperture_devices  # expect 8 BDFs
+kubectl logs -n <ns> <pod> -c tcpxo-daemon | tail                     # "Entering the event loop"
+```
+
+Full diagnostics, including the validated 317.84 GB/s pod spec, live in the
+**internode-deepdive** guide (`manifests/tcpxo/workbench-tcpxo.yaml`, `labs/lab-22-fabric-diagnostics`).
+
+---
+
+## 6b. Capacity Watchdog
+
+H100 Mega Flex-Start capacity in `asia-southeast1-c` is scarce, and Flex-Start caps a node
+at **7 days**. A Cloud Scheduler job triggers a **Cloud Run Job** (`gpu-flex-watchdog`,
+`us-central1`) **every 15 minutes** to keep the pool held:
+
+- If the pool has fewer nodes than target but **more than zero**, it does nothing —
+  autoscaler self-heal handles it, and deleting a pool would kill a surviving node.
+- If the pool is **completely empty**, it deletes and recreates the pool. That is not
+  cosmetic: recreation is what clears the autoscaler's scale-up backoff so the pending
+  holder pods re-trigger provisioning immediately.
+- Every run emits a holdings report to Cloud Logging and
+  `gs://hdlab-elideng-gpu-watchdog/holdings-latest.json`.
+
+> ⚠️ **The recreate must carry the 8 `--additional-node-network` flags.** A TCPXO pool
+> recreated without them comes back looking perfectly healthy while the fabric is gone:
+> pods still schedule, NCCL silently falls back to the single-gVNIC path, and throughput
+> drops ~13× with no error anywhere. The watchdog stores those flags per-pool for exactly
+> this reason — keep them in sync with the pool's real `networkConfig`.
+
+> ⚠️ **Instance-level SSH IAM does not survive node replacement.** After any rotation or
+> recreate, re-run [`deploy/ops/grant-node-ssh.sh`](../../deploy/ops/grant-node-ssh.sh)
+> to restore team access.
+
+**The script is not deployed from this repo checkout.** The job runs
+`gcloud storage cat gs://hdlab-elideng-gpu-watchdog/watchdog.sh | bash`, so editing a local
+copy changes nothing until you upload it:
+
+```bash
+gcloud storage cp gpu-flex-watchdog.sh gs://hdlab-elideng-gpu-watchdog/watchdog.sh
+gcloud run jobs execute gpu-flex-watchdog --region=us-central1 --wait   # verify
+```
 
 ---
 
@@ -475,5 +627,13 @@ This architecture guide provides the foundation for understanding the system. To
 
 ---
 
-**Document version:** 2026-07-20
-**Live deployment expiry:** The DWS Flex-Start node expires approximately 2026-07-23 (7-day cap from provisioning on 2026-07-16).
+**Document version:** 2026-08-05 (migrated to `asia-southeast1-c` / A3 Mega / TCPXO)
+**Node expiry:** Each Flex-Start node is capped at 7 days. Rather than tracking a fixed
+expiry date, the [capacity watchdog](#6b-capacity-watchdog) re-grabs the pool automatically
+every 15 minutes. For current node ages:
+
+```bash
+gcloud compute instances list --project hdlab-elideng \
+  --filter="labels.goog-k8s-node-pool-name=a3-mega-tcpxo-flex-pool" \
+  --format="table(name,creationTimestamp,status)"
+```

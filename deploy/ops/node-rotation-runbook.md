@@ -1,9 +1,56 @@
 # Node Rotation Runbook
 
 ## Overview
-DWS Flex-Start A3 nodes have a 7-day lifetime. This runbook documents the **single-replica reschedule** continuity path for node rotation — the model cache PVC (ReadWriteOnce) reattaches in the same zone with a brief serving gap during replacement node provisioning.
+Flex-Start A3 nodes have a 7-day lifetime. This runbook documents the **single-replica reschedule** continuity path for node rotation — the model cache PVC (ReadWriteOnce) reattaches in the same zone with a brief serving gap during replacement node provisioning.
 
 > **User-facing version:** the same 7-day expiry / node-rotation topic is covered for operators in [docs/guides/02e-verify-teardown.md](../../docs/guides/02e-verify-teardown.md) (Step 10).
+
+> ### Updated 2026-08-05 — current target
+>
+> | | |
+> |---|---|
+> | Cluster | `hypercomputer-a3-tcpxo` |
+> | Zone | `asia-southeast1-c` |
+> | Pool | `a3-mega-tcpxo-flex-pool` (3 × `a3-megagpu-8g`) |
+> | Accelerator label | `nvidia-h100-mega-80gb` |
+>
+> ```bash
+> gcloud container clusters get-credentials hypercomputer-a3-tcpxo \
+>   --location asia-southeast1-c --project hdlab-elideng
+> ```
+>
+> **Three things differ from the single-node DWS assumption below.**
+>
+> **1. Re-grabbing is automated.** The [capacity watchdog](../../docs/guides/01-architecture.md#6b-capacity-watchdog)
+> (Cloud Run Job `gpu-flex-watchdog`, every 15 min) recreates the pool when it hits **zero**
+> nodes, which is what clears autoscaler scale-up backoff. Step 1's manual pre-provisioning is
+> usually unnecessary — but check the watchdog actually ran:
+> ```bash
+> gcloud run jobs executions list --job=gpu-flex-watchdog --region=us-central1 --limit=3
+> ```
+>
+> **2. ⚠️ Re-grant SSH after every rotation.** Node SSH access is *instance-level* IAM, so a
+> replacement node comes up with an **empty** policy and the team silently loses access with no
+> error until someone tries to connect:
+> ```bash
+> deploy/ops/grant-node-ssh.sh
+> ```
+>
+> **3. ⚠️ Verify the fabric came back, not just the node.** A pool recreated **without** the 8
+> `--additional-node-network` flags looks completely healthy — pods schedule, nothing errors —
+> while NCCL has silently fallen back to a single gVNIC at roughly **1/13th** the bandwidth.
+> The watchdog stores those flags per-pool, but verify after any manual recreate:
+> ```bash
+> kubectl get network.networking.gke.io          # expect gpu-net-0 .. gpu-net-7
+> kubectl get ds -n kube-system | grep -E 'tcpxo|device-injector'
+> # and from inside a GPU pod:
+> ls /sys/class/net          # expect eth0..eth8 (9 NICs)
+> ls /dev/aperture_devices   # expect 8 entries
+> ```
+>
+> **4. Holders must be re-armed too.** All 24 GPUs are normally held. After rotation confirm
+> `gpu-holder-tcpxo` / `gpu-holder-tcpxo-partial` are Running (see `rearm-holder.sh`) — an
+> unheld Flex node can be reclaimed within minutes.
 
 ## Procedure (Single-Replica Reschedule)
 
