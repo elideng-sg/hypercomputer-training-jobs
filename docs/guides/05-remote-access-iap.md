@@ -225,10 +225,16 @@ CLUSTER=... ZONE=... POOL=... deploy/ops/grant-node-ssh.sh   # any other pool
 
 It grants each team member:
 
-| Role | Why |
-|---|---|
-| `roles/compute.osAdminLogin` | login **+ sudo** on the node |
-| `roles/compute.viewer` | lets `gcloud compute ssh` resolve the instance name (skipped for the project owner, who already has it) |
+| Role | Attached to | Why |
+|---|---|---|
+| `roles/compute.osAdminLogin` | the instance | login **+ sudo** on the node |
+| `roles/compute.viewer` | the instance | lets `gcloud compute ssh` resolve the instance name (skipped for the project owner, who already has it) |
+| `roles/iap.tunnelResourceAccessor` | the instance's **IAP tunnel** resource | lets the tunnel open at all |
+
+Those are the three **instance-scoped** bindings — the ones a rotation destroys. The
+remaining two of the [five bindings](#the-five-bindings-a-guest-actually-needs) a guest needs
+are project- or service-account-scoped, already in place for this team, and survive rotation,
+so the script deliberately leaves them alone.
 
 > ⚠️ **Instance-level IAM does not survive node replacement.** Flex-Start nodes are replaced
 > at the 7-day boundary, on preemption, and on every pool recreate the
@@ -243,47 +249,72 @@ is meant to be using. That is a deliberate trade of convenience for scope — if
 rather have durability, the project-level grant is one command and the script becomes
 unnecessary.
 
-### ⚠️ Two prerequisites are currently NOT satisfied
+### The five bindings a guest actually needs
 
-Instance-level `osAdminLogin` is necessary but **not sufficient**. As verified on
-2026-08-05, two project-level settings still block connection, and both are deliberately
-left for an owner to decide because both widen access beyond the GPU nodes:
+**Team SSH is working — verified end-to-end on 2026-08-05** against all three TCPXO nodes
+(connected, `nvidia-smi` listed 8 GPUs, `/dev/aperture_devices` showed 8 entries).
 
-**1. Nobody holds `roles/iap.tunnelResourceAccessor`.** Without it the tunnel cannot open at
-all, regardless of node-level roles.
+A **project owner** needs none of the below: `roles/owner` silently satisfies four of the
+five. That asymmetry is the whole reason this is fiddly — *your* working SSH tells you
+nothing about whether a teammate can connect. Listed in the order `gcloud compute ssh`
+evaluates them, because each failure masks the ones after it:
+
+| # | Binding | Attach to | Error if missing |
+|---|---|---|---|
+| 1 | custom `sshResolveMinimal` (`compute.projects.get` only) | **project** | `Required 'compute.projects.get' permission` |
+| 2 | `roles/compute.viewer` | the instance | `Required 'compute.instances.get' permission` |
+| 3 | `roles/iap.tunnelResourceAccessor` | **the IAP tunnel resource** for that zone+instance | `Error while connecting [4033: 'not authorized']` |
+| 4 | `roles/compute.osAdminLogin` | the instance | `Permission denied (publickey)` |
+| 5 | `roles/iam.serviceAccountUser` | the node's attached SA (`151935633952-compute@developer.gserviceaccount.com`) | `Permission denied (publickey)` — identical to #4 |
+
+`grant-node-ssh.sh` applies **#2, #3 and #4** — every binding a rotation destroys. #1 and #5
+are project- and service-account-scoped, are already in place for the team, and survive
+rotation.
+
+> ⚠️ **The tunnel grant must be per-instance, and `gcloud` has no convenient command for
+> it.** IAP tunnel permissions live in a **separate resource hierarchy** from Compute, so a
+> *project-level* grant of `roles/iap.tunnelResourceAccessor` is **never consulted and
+> silently does nothing**. This also means checking project IAM proves nothing:
+> `gcloud projects get-iam-policy … --filter='bindings.role=roles/iap.tunnelResourceAccessor'`
+> returns empty even when tunnels work. Use the REST API:
 
 ```bash
-# Check (empty output = nobody has it)
-gcloud projects get-iam-policy hdlab-elideng \
-  --flatten='bindings[].members' \
-  --filter='bindings.role=roles/iap.tunnelResourceAccessor' \
-  --format='value(bindings.members)'
+PN=151935633952; Z=asia-southeast1-c; TOKEN=$(gcloud auth print-access-token)
 
-# Grant, per user (project-level — there is no per-instance equivalent for tunnels)
-gcloud projects add-iam-policy-binding hdlab-elideng \
-  --member='user:SOMEONE@google.com' \
-  --role='roles/iap.tunnelResourceAccessor'
+# Read (an empty policy comes back as just {"etag":"ACAB"})
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  "https://iap.googleapis.com/v1/projects/$PN/iap_tunnel/zones/$Z/instances/<NODE>:getIamPolicy" -d '{}'
+
+# Grant (replaces the policy — include every member you want to keep)
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  "https://iap.googleapis.com/v1/projects/$PN/iap_tunnel/zones/$Z/instances/<NODE>:setIamPolicy" \
+  -d '{"policy":{"bindings":[{"role":"roles/iap.tunnelResourceAccessor",
+       "members":["user:someone@google.com"]}]}}'
 ```
 
-**2. OS Login is not enabled** — there is no `enable-oslogin` metadata key at the project
-level or on the nodes. `roles/compute.osAdminLogin` is an *OS Login* role, so until OS Login
-is on it has nothing to act on and SSH falls back to metadata SSH keys.
+Trap on #1: it **must** be project-level. IAM flows downward only (project → zone →
+instance), so an instance binding can never satisfy a project-level check even when the role
+contains the permission. `roles/browser` is the wrong fix — it carries
+`resourcemanager.projects.get`, a *different* permission.
 
-```bash
-# Enable project-wide (affects EVERY VM in the project, not just the GPU nodes)
-gcloud compute project-info add-metadata --project hdlab-elideng \
-  --metadata enable-oslogin=TRUE
-```
+**On OS Login:** there is **no `enable-oslogin` metadata** at project level or on any node,
+yet OS Login usernames (`ext_elideng_google_com`) work and `osAdminLogin` is effective —
+GKE's Container-Optimized OS node image enables it. So do **not** conclude the role is inert
+from a missing metadata key, and **do not** set `enable-oslogin=TRUE` project-wide to "fix"
+it: that would change SSH authentication on every VM in the project (including
+`ubuntu-secure-desktop`) and can lock out anyone relying on metadata SSH keys.
 
-> Enabling OS Login project-wide changes how SSH authenticates on **all** existing VMs
-> (including `ubuntu-secure-desktop`). Anyone relying on metadata SSH keys there can lose
-> access. Prefer setting `enable-oslogin=TRUE` on the node pool's metadata instead if you
-> want to scope it to the GPU nodes — but note that, like all node metadata, it must be set
-> on the **node pool** so recreated nodes inherit it.
-
-**Already satisfied:** the firewall rule `allow-ssh-from-iap`
+**Also satisfied:** the firewall rule `allow-ssh-from-iap`
 (`35.235.240.0/20` → `tcp:22`, network `default`, enabled) covers the nodes — their `eth0`
 is on `default`. The 8 fabric NICs are on separate VPCs and carry no SSH.
+
+### Team-facing runbook
+
+The team's copy-paste instructions live in a Google Doc, **GPU Node Access — A3 Mega H100
+with TCPXO fabric**, shared to named individuals (not the Cloud audience). Because it names
+specific instances, **it goes stale on every node rotation** — a teammate's old command then
+fails with `The resource ... was not found`, which reads like a permissions problem but means
+the machine is gone. Update it whenever nodes rotate.
 
 ---
 
@@ -293,7 +324,12 @@ is on `default`. The 8 fabric NICs are on separate VPCs and carry no SSH.
 - **vLLM is public with only an API key.** Rotate it if it leaks (`kubectl create secret ... --dry-run=client -o yaml | kubectl apply -f -`, then `kubectl rollout restart deploy/qwen3-vllm`). For stronger protection add **[Cloud Armor](https://cloud.google.com/armor)** (IP allowlist / rate limiting) to `vllm-backendconfig.yaml` via a `securityPolicy`.
 - **JupyterHub has no IAP layer** — the gate is GoogleOAuthenticator's `hosted_domain`. That is real, domain-restricted auth; just be sure `hosted_domain` is set so it's not open to any Google account.
 - **The GPU nodes are Flex-Start (7-day cap).** LBs and certs stay up across node rotation, but the vLLM/notebook **backends** go unavailable while a node is replaced (see [Part 5 — node rotation](02e-verify-teardown.md#step-10-node-rotation-and-the-7-day-expiry)) — expect 502s during that window. The [capacity watchdog](01-architecture.md#6b-capacity-watchdog) re-grabs the pool automatically, but **SSH access must be re-granted by hand** ([Part C](#part-c--ssh-to-the-gpu-nodes-over-iap)).
-- **The OAuth client secret is a plaintext value in the Helm values file.** `deploy/tcpxo-migration/03-jupyter-values-tcpxo.yaml` carries the live `client_secret` inline (carried forward from the previous release so sign-in kept working through the migration). Move it to a Kubernetes secret or `--set` before this repo is shared any wider, and rotate it if it has already leaked.
+- **The OAuth client secret is not in this repo — keep it that way.** **This repository is public.** `deploy/tcpxo-migration/03-jupyter-values-tcpxo.yaml` ships `client_secret: ""` and the real value is passed at install time with `--set-string hub.config.GoogleOAuthenticator.client_secret=...`. The live value is readable from the cluster (note it sits inside the `values.yaml` key of `secret/hub`, not as a flat key):
+  ```bash
+  kubectl get secret hub -n jupyter -o jsonpath='{.data.values\.yaml}' \
+    | base64 -d | awk '/client_secret:/{print $2; exit}'
+  ```
+  It did sit in a plaintext working file during the migration, so **rotating the client secret is still the safe call.**
 
 ## Revert to internal-only
 

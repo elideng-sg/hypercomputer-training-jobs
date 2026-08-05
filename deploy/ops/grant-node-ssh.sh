@@ -6,6 +6,17 @@
 #   ./grant-node-ssh.sh                 # default: the TCPXO pool
 #   CLUSTER=... ZONE=... POOL=... ./grant-node-ssh.sh
 #
+# WHAT IT GRANTS (3 of the 5 bindings a guest needs -- see docs/guides/05-remote-access-iap.md)
+# ---------------------------------------------------------------------------------------------
+#   roles/compute.osAdminLogin        on the instance      -- login + sudo
+#   roles/compute.viewer              on the instance      -- resolve the instance name
+#   roles/iap.tunnelResourceAccessor  on the IAP *tunnel*  -- open the tunnel at all
+#
+# The other two are NOT instance-scoped and so survive rotation -- they are already in
+# place for this team and this script leaves them alone:
+#   custom role sshResolveMinimal (compute.projects.get)  at PROJECT level
+#   roles/iam.serviceAccountUser  on the node's attached service account
+#
 # WHY THIS SCRIPT HAS TO EXIST
 # ----------------------------
 # The access it grants is *instance-level* IAM, and Flex-start GPU nodes are
@@ -28,6 +39,7 @@
 set -uo pipefail
 
 PROJECT="${PROJECT:-hdlab-elideng}"
+PROJECT_NUMBER="${PROJECT_NUMBER:-151935633952}"   # IAP's REST API takes the NUMBER, not the id
 CLUSTER="${CLUSTER:-hypercomputer-a3-tcpxo}"
 ZONE="${ZONE:-asia-southeast1-c}"
 POOL="${POOL:-a3-mega-tcpxo-flex-pool}"
@@ -56,9 +68,29 @@ if [ "${#NODES[@]}" -eq 0 ]; then
   exit 0
 fi
 
+# "user:a@x","user:b@x" -- the members array for the IAP tunnel policy below.
+MEMBERS_JSON=$(printf '"%s",' "${TEAM[@]}"); MEMBERS_JSON="${MEMBERS_JSON%,}"
+
 echo "Pool $POOL -> ${#NODES[@]} node(s)"
 for node in "${NODES[@]}"; do
   echo "--- $node"
+
+  # roles/iap.tunnelResourceAccessor lives in a SEPARATE resource hierarchy from
+  # Compute, so it cannot be granted with `gcloud compute instances
+  # add-iam-policy-binding`, and a project-level grant of it is never consulted --
+  # it silently does nothing. There is no gcloud surface for the per-instance tunnel
+  # resource, hence curl. setIamPolicy REPLACES the policy, which is what we want:
+  # every rotation starts from an empty policy and TEAM is the whole intended list.
+  TUNNEL="https://iap.googleapis.com/v1/projects/${PROJECT_NUMBER}/iap_tunnel/zones/${ZONE}/instances/${node}"
+  curl -sS -X POST \
+      -H "Authorization: Bearer $(gcloud auth print-access-token --project="$PROJECT")" \
+      -H "Content-Type: application/json" \
+      "${TUNNEL}:setIamPolicy" \
+      -d "{\"policy\":{\"bindings\":[{\"role\":\"roles/iap.tunnelResourceAccessor\",\"members\":[${MEMBERS_JSON}]}]}}" \
+      >/dev/null 2>&1 \
+    && echo "    iap.tunnelResourceAccessor  (all ${#TEAM[@]} members)" \
+    || echo "    FAILED iap.tunnelResourceAccessor -- team CANNOT open a tunnel to $node"
+
   for member in "${TEAM[@]}"; do
     gcloud compute instances add-iam-policy-binding "$node" \
       --project="$PROJECT" --zone="$ZONE" \
@@ -81,22 +113,27 @@ for node in "${NODES[@]}"; do
   done
 done
 
-cat <<'NOTE'
+cat <<NOTE
 
-Granted. Two things the team also needs, which are NOT instance-level:
+Granted. Verify the tunnel policy actually took -- an EMPTY policy reads back as
+just {"etag":"ACAB"}, and note that checking PROJECT-level IAM for this role proves
+nothing, because project-level grants of it are never consulted:
 
-  1. roles/iap.tunnelResourceAccessor -- required to open the IAP tunnel at all.
-     Check with:
-       gcloud projects get-iam-policy hdlab-elideng \
-         --flatten='bindings[].members' \
-         --filter='bindings.role=roles/iap.tunnelResourceAccessor' \
-         --format='value(bindings.members)'
-     If empty, no amount of instance-level osAdminLogin will let them connect.
+  curl -sS -X POST -H "Authorization: Bearer \$(gcloud auth print-access-token)" \\
+    -H "Content-Type: application/json" \\
+    "https://iap.googleapis.com/v1/projects/${PROJECT_NUMBER}/iap_tunnel/zones/${ZONE}/instances/${NODES[0]}:getIamPolicy" -d '{}'
 
-  2. The firewall rule allow-ssh-from-iap (35.235.240.0/20 -> tcp:22) must cover
-     the nodes' network. It is currently on `default`, which the TCPXO pool's eth0
-     uses, so this is satisfied.
+Still needed, but NOT instance-scoped -- these survive rotation and are already set:
+
+  * custom project role sshResolveMinimal (compute.projects.get). Must be at PROJECT
+    level: IAM flows downward only, so an instance binding can never satisfy it.
+  * roles/iam.serviceAccountUser on the node's attached service account.
+  * The firewall rule allow-ssh-from-iap (35.235.240.0/20 -> tcp:22) must cover the
+    nodes' network. It is on \`default\`, which the TCPXO pool's eth0 uses. Satisfied.
+
+Then update the team-facing runbook Google Doc -- it names specific instances, so the
+node names above make everyone's copy-pasted command fail with "resource not found".
 
 Users connect with:
-  gcloud compute ssh <node> --zone asia-southeast1-c --tunnel-through-iap
+  gcloud compute ssh <node> --zone ${ZONE} --project ${PROJECT} --tunnel-through-iap
 NOTE
