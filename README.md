@@ -53,9 +53,17 @@ To assist engineering and data science colleagues right across replicating and t
 
 Beyond the training/verification handbooks above, the **[`docs/`](docs/README.md)** directory documents the GKE + H100 **inference endpoint (Qwen3-32B via vLLM)** and **JupyterHub notebook** platform that runs on the same cluster:
 
-- **[Architecture reference](docs/guides/01-architecture.md)** — the system top-down, plus a **[5-part from-scratch deployment series](docs/guides/02a-cluster-setup.md)**.
-- **User guides** — [Inference endpoint](docs/guides/03-inference-endpoint-user-guide.md) and [Jupyter notebooks](docs/guides/04-jupyter-notebook-user-guide.md).
-- **[Remote access](docs/guides/05-remote-access-iap.md)** — the endpoints are exposed to the team over public HTTPS: **vLLM** `https://infer.136.69.110.10.nip.io/v1` (API-key gated) and **JupyterHub** `https://jupyter.34.54.187.199.nip.io` (Google sign-in).
+> **⚠️ Live deployment moved on 2026-08-05.** Both the inference endpoint and JupyterHub now run
+> on cluster **`hypercomputer-a3-tcpxo`** in **`asia-southeast1-c`**, on **3× A3 Mega nodes
+> (24× H100 Mega)** with the **GPUDirect-TCPXO** fabric armed. All other A3 pools have been
+> released. **The team URLs and the vLLM API key are unchanged.** The accelerator label is now
+> `nvidia-h100-mega-80gb` — the old `nvidia-h100-80gb` matches no node. Current manifests:
+> [`deploy/tcpxo-migration/`](deploy/tcpxo-migration/); details in
+> [`docs/README.md`](docs/README.md).
+
+- **[Architecture reference](docs/guides/01-architecture.md)** — the system top-down, including the [TCPXO fabric](docs/guides/01-architecture.md#6-the-tcpxo-fabric) and the [capacity watchdog](docs/guides/01-architecture.md#6b-capacity-watchdog), plus a **[5-part from-scratch deployment series](docs/guides/02a-cluster-setup.md)** (historical — describes the original `us-central1` build).
+- **User guides** — [Inference endpoint](docs/guides/03-inference-endpoint-user-guide.md) and [Jupyter notebooks](docs/guides/04-jupyter-notebook-user-guide.md) (the latter now covers the **8-GPU TCPXO profile**).
+- **[Remote access](docs/guides/05-remote-access-iap.md)** — the endpoints are exposed to the team over public HTTPS: **vLLM** `https://infer.136.69.110.10.nip.io/v1` (API-key gated) and **JupyterHub** `https://jupyter.34.54.187.199.nip.io` (Google sign-in). Also covers **[admin SSH to the GPU nodes over IAP](docs/guides/05-remote-access-iap.md#part-c--ssh-to-the-gpu-nodes-over-iap)**.
 - A **[glossary appendix](docs/guides/appendix-glossary.md)**, Graphviz architecture diagrams (`docs/diagrams/`), and copy-paste-ready HTML exports (`docs/export/`, rebuilt via `scripts/build_docs_export.sh`).
 
 Start at **[docs/README.md](docs/README.md)**.

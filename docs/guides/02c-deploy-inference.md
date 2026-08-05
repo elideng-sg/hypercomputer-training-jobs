@@ -4,6 +4,16 @@
 
 ---
 
+> ### ⚠️ Historical: this describes the ORIGINAL `us-central1` build
+>
+> **The live deployment moved on 2026-08-05** to cluster `hypercomputer-a3-tcpxo` in
+> **`asia-southeast1-c`** on **A3 Mega** nodes with the **GPUDirect-TCPXO** fabric. Read
+> [Part 1's translation table](02a-cluster-setup.md) before copying any command here — the
+> cluster name, region, machine type, and accelerator label have all changed, and
+> `nvidia-h100-80gb` now matches **no node** (pods using it sit in `Pending` forever).
+> Current manifests: [`deploy/tcpxo-migration/`](../../deploy/tcpxo-migration/).
+
+
 **Part 3 of the deployment series.** Requires a provisioned GPU node from [Part 2 — GPU Node Pool & DWS](02b-gpu-nodepool-dws.md).
 
 This part deploys the **[vLLM](appendix-glossary.md#vllm)** inference server serving **[Qwen3-32B](appendix-glossary.md#qwen3-32b)** across 2 of the 8 H100 GPUs, hands the node off from the holder to vLLM gap-free, and exposes it on an internal load balancer.

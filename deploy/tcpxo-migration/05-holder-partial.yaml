@@ -1,0 +1,45 @@
+# deploy/tcpxo-migration/05-holder-partial.yaml
+#
+# Partial capacity holder for the node that shares its GPUs with a real workload.
+#
+# The TCPXO pool has 3 nodes x 8 GPUs. Two are held whole by gpu-holder-tcpxo
+# (replicas=2, 8 GPUs each). The third is split: this holder takes 6 and leaves 2
+# for qwen3-vllm.
+#
+# WHY A SEPARATE DEPLOYMENT INSTEAD OF EDITING THE MAIN HOLDER
+# -----------------------------------------------------------
+# A Deployment's pod template is uniform -- there is no way to say "8 GPUs on two
+# nodes, 6 on the third" in one Deployment. Dropping the main holder's request to 6
+# would strand 2 GPUs unheld on ALL three nodes.
+#
+# strategy: Recreate is required. With the default RollingUpdate, the replacement
+# pod is scheduled before the old one frees its GPUs, so it sits Pending forever on
+# a pool that has no spare capacity -- and the node it was meant to hold can be
+# reclaimed in the gap. Recreate tears down first, which is the safe order when the
+# resource is the thing being contended.
+#
+# Never scale a holder to 0 on a Flex-start pool: an unheld node is a node the
+# platform may take back, and re-grabbing scarce A3 Mega capacity can take days.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gpu-holder-tcpxo-partial
+  namespace: default
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: gpu-holder-tcpxo-partial}
+  template:
+    metadata:
+      labels: {app: gpu-holder-tcpxo-partial}
+    spec:
+      containers:
+      - name: h
+        image: busybox
+        command: ["sh","-c","sleep infinity"]
+        resources:
+          limits: {nvidia.com/gpu: 6}
+      tolerations:
+      - {operator: Exists}

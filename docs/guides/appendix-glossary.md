@@ -31,7 +31,10 @@ NVIDIA's high-speed GPU-to-GPU interconnect technology. Inside a single 8-GPU ma
 
 #### A3 machine
 
-Google Cloud's "A3 High" machine type (`a3-highgpu-8g`): one virtual machine (VM) with **8× H100 80GB** GPUs all wired together with [NVLink and NVSwitch](#nvlink-and-nvswitch). This is the single GPU machine at the center of this architecture.
+Google Cloud's A3 GPU machine family: one virtual machine (VM) with **8× H100 80GB** GPUs all wired together with [NVLink and NVSwitch](#nvlink-and-nvswitch). Two variants matter here:
+
+- **A3 High** (`a3-highgpu-8g`) — the original deployment used this.
+- **A3 Mega** (`a3-megagpu-8g`) — **what production runs on today.** Same 8× H100 80GB, but with the extra NICs required for the [TCPXO fabric](#gpudirect-tcpxo), and it uses the accelerator label `nvidia-h100-mega-80gb`.
 
 #### CUDA
 
@@ -63,7 +66,7 @@ Virtual Private Cloud — the private network your cloud resources live in. Reso
 
 #### Region and zone
 
-A **region** is a geographic area (like `us-central1` for Iowa, USA) containing multiple **zones** (independent data centers like `us-central1-a`, `us-central1-b`, etc.). Resources in the same zone can communicate with the lowest latency.
+A **region** is a geographic area (like `asia-southeast1` for Singapore) containing multiple **zones** (independent data centers like `asia-southeast1-a`, `asia-southeast1-c`, etc.). Resources in the same zone can communicate with the lowest latency. Production runs entirely in **`asia-southeast1-c`** — all GPU nodes must share one zone for the [TCPXO fabric](#gpudirect-tcpxo) to be usable between them.
 
 #### GKE
 
@@ -75,11 +78,11 @@ An open-source platform (often abbreviated **K8s**) for automating deployment, s
 
 #### Node
 
-One machine (virtual machine) that belongs to the cluster and runs workloads ([pods](#pod)). Our GPU node is a single [A3 machine](#a3-machine) with 8 H100 GPUs.
+One machine (virtual machine) that belongs to the cluster and runs workloads ([pods](#pod)). Each of our GPU nodes is an [A3 Mega machine](#a3-machine) with 8 H100 GPUs; there are three of them.
 
 #### Node pool
 
-A group of identical [nodes](#node) that GKE manages as a unit. A node pool can autoscale (add or remove nodes based on demand). Ours is `a3-h100-dws-pool`, which contains one A3 GPU node.
+A group of identical [nodes](#node) that GKE manages as a unit. A node pool can autoscale (add or remove nodes based on demand). Ours is `a3-mega-tcpxo-flex-pool`, which contains **three** A3 Mega GPU nodes (24 GPUs total).
 
 #### Pod
 
@@ -135,7 +138,14 @@ The Kubernetes object that [DWS](#dws-flex-start) uses to request capacity. A [p
 
 #### Capacity holder
 
-A tiny placeholder pod (using the `pause` container, which does nothing but sleep) that occupies the GPU [node](#node) to prevent GKE from scaling it away when no real workload is running. **House rule:** never leave the DWS GPU node idle and unheld — always re-arm the holder immediately after tearing down a workload, to avoid losing the scarce GPU node.
+A tiny placeholder pod (using the `pause` container, which does nothing but sleep) that occupies the GPU [node](#node) to prevent GKE from scaling it away when no real workload is running. **House rule:** never leave the GPU node idle and unheld — always re-arm the holder immediately after tearing down a workload, to avoid losing the scarce GPU node.
+
+In the current deployment holders are not a fallback but the **steady state**: `gpu-holder-tcpxo`
+(2 replicas × 8 GPUs) plus `gpu-holder-tcpxo-partial` (6 GPUs) keep **all 24 GPUs allocated
+around the clock**, because [Flex-Start](#dws-flex-start) reclaims anything idle and scarce
+H100 Mega capacity is not guaranteed to come back. Handing GPUs to real work therefore means
+*shrinking a holder's GPU request* (which needs `strategy: Recreate` on the Deployment) —
+**never scaling it to zero**, which would empty the node and invite reclamation.
 
 #### Taint and toleration
 
@@ -143,7 +153,25 @@ A **taint** marks a [node](#node) so that ordinary [pods](#pod) avoid it; a pod 
 
 #### nodeSelector
 
-A rule in a [pod](#pod) specification to pick [nodes](#node) by label. For example, `cloud.google.com/gke-accelerator: nvidia-h100-80gb` targets the H100 node. Only nodes with that label will be considered for scheduling this pod.
+A rule in a [pod](#pod) specification to pick [nodes](#node) by label. For example, `cloud.google.com/gke-accelerator: nvidia-h100-mega-80gb` targets the A3 Mega GPU nodes. Only nodes with that label will be considered for scheduling this pod — so a **stale label such as the old `nvidia-h100-80gb` matches nothing and leaves the pod `Pending` forever**, with no error explaining why.
+
+#### GPUDirect-TCPXO
+
+Google Cloud's high-speed GPU networking stack for A3 Mega. [NVLink](#nvlink-and-nvswitch)
+makes the 8 GPUs *inside* one machine fast; **TCPXO** makes GPUs in *different* machines
+fast, by letting a GPU send data straight to a network card and out to a peer GPU without
+going through host memory.
+
+It needs 8 dedicated network cards per node (so a node has 9 NICs: `eth0` for ordinary
+traffic, `eth1`–`eth8` for the fabric), a per-pod helper container ("rxdm"), and a specific
+set of NCCL environment variables. Measured on this cluster: **317.84 GB/s** all-reduce
+bandwidth across 16 GPUs.
+
+Two things to know: a pod must **opt in** to the fabric (it is not automatic), and the NCCL
+environment is **validated, not merely suggested** — 14 variables are policy-enforced and a
+mismatch makes NCCL hang or abort during startup rather than warn. Always
+`source /usr/local/nvidia/lib64/nccl-env-profile.sh` first. See
+[Architecture §6](01-architecture.md#6-the-tcpxo-fabric).
 
 ---
 

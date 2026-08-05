@@ -4,15 +4,37 @@
 
 This documentation covers the complete setup, deployment, and operation of a GKE-based AI infrastructure running H100 GPUs for inference and JupyterHub notebooks. It is organized as small, topic-scoped guides (rather than one long document), with a shared glossary appendix and auto-laid-out architecture diagrams.
 
+> ## Current deployment (updated 2026-08-05)
+>
+> | | |
+> |---|---|
+> | Cluster | **`hypercomputer-a3-tcpxo`** |
+> | Zone | **`asia-southeast1-c`** (Singapore) |
+> | GPUs | 3× `a3-megagpu-8g` = **24× H100 Mega 80GB** |
+> | Fabric | **GPUDirect-TCPXO** (317.84 GB/s at 16 GPUs) |
+> | Accelerator label | `nvidia-h100-mega-80gb` |
+> | JupyterHub | `https://jupyter.34.54.187.199.nip.io` |
+> | vLLM | `https://infer.136.69.110.10.nip.io/v1` |
+> | Admin SSH | IAP TCP forwarding — [guide](guides/05-remote-access-iap.md#part-c--ssh-to-the-gpu-nodes-over-iap) |
+>
+> **For users: nothing changed.** Both URLs, the Google sign-in, the vLLM API key, and your
+> Jupyter home directory are all the same as before the migration.
+>
+> **For admins:** the **five-part deployment series below describes the original
+> `us-central1` build and is now historical.** Its concepts still hold, but its cluster
+> names, region, machine type, and accelerator label do not match production — each part
+> carries a banner with the translation. Current manifests live in
+> [`deploy/tcpxo-migration/`](../deploy/tcpxo-migration/).
+
 ## Documentation Guide
 
 ### 1. Understand the system
 
 - **[Architecture Reference](guides/01-architecture.md)** — The system explained top-down: high-level GKE architecture, the layered stack, how the scarce GPU node is obtained via DWS, and how the inference and notebook workloads share the GPUs. **Start here.**
 
-### 2. Deploy it from scratch (five-part series, in order)
+### 2. Deploy it from scratch (five-part series, in order) — *historical, see note above*
 
-1. **[Part 1 — Cluster Setup](guides/02a-cluster-setup.md)** — Project setup, GPU quota, and the regional GKE cluster.
+1. **[Part 1 — Cluster Setup](guides/02a-cluster-setup.md)** — Project setup, GPU quota, and the regional GKE cluster. **Contains the old→new translation table.**
 2. **[Part 2 — GPU Node Pool & DWS](guides/02b-gpu-nodepool-dws.md)** — The A3 node pool, DWS provisioning, namespaces, and storage.
 3. **[Part 3 — Deploy Inference](guides/02c-deploy-inference.md)** — vLLM serving Qwen3-32B.
 4. **[Part 4 — Deploy JupyterHub](guides/02d-deploy-jupyter.md)** — GPU-enabled notebooks.
@@ -25,7 +47,7 @@ This documentation covers the complete setup, deployment, and operation of a GKE
 
 ### 4. Share it with a team
 
-- **[Remote Access — HTTPS + IAP](guides/05-remote-access-iap.md)** — Expose JupyterHub and the vLLM endpoint to teammates who can't reach your VPC directly: external HTTPS load balancers, Identity-Aware Proxy (Google sign-in) for the notebook UI, and an API key for the inference endpoint. No VPN, no `kubectl` for users.
+- **[Remote Access — HTTPS + IAP](guides/05-remote-access-iap.md)** — Expose JupyterHub and the vLLM endpoint to teammates who can't reach your VPC directly: external HTTPS load balancers, Google sign-in for the notebook UI, and an API key for the inference endpoint. No VPN, no `kubectl` for users. **Also covers [SSH to the GPU nodes over IAP TCP forwarding](guides/05-remote-access-iap.md#part-c--ssh-to-the-gpu-nodes-over-iap)** for admins, and how to re-grant it after a node rotation.
 
 ### Reference
 

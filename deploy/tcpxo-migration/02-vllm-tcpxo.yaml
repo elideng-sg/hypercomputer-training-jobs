@@ -1,0 +1,207 @@
+# deploy/tcpxo-migration/02-vllm-tcpxo.yaml
+#
+# qwen3-vllm on the TCPXO pool, armed for GPUDirect-TCPXO.
+#
+# Arming follows manifests/tcpxo/workbench-tcpxo.yaml from the internode-deepdive
+# guide -- the exact shape that measured 317.84 GB/s busbw on this cluster. The five
+# things that fail confusingly are all reproduced here: the tcpxo-daemon device
+# annotation, the 9-entry interface list, NO nodeName, LLCM_DEVICE_DIRECTORY on the
+# workload container, and chmod 755 on the rxdm entrypoint.
+#
+# HONEST CAVEAT ON WHAT THE FABRIC BUYS THIS POD
+# ----------------------------------------------
+# Qwen3-32B here runs tensor-parallel across 2 GPUs on ONE node, so its collectives
+# ride NVLink -- not eth1-eth8. Arming does NOT make this pod's current inference
+# faster; TCPXO only carries traffic that leaves the node. What arming does buy:
+#   * the pod is fabric-ready, so raising --tensor-parallel-size past 8 (or adding
+#     pipeline parallel across nodes) needs a replica bump, not a re-plumb
+#   * it runs on the same NCCL/rxdm stack as the training jobs, so a fabric
+#     regression shows up in inference too instead of hiding until a training run
+# If you want the single-node path to stay maximally simple, the sidecar and the
+# networking annotations are the parts to drop -- nothing else here depends on them.
+#
+# The NCCL config checker warns NCCL_FASTRAK_LLCM_DEVICE_DIRECTORY is "expected
+# unset". That warning is wrong for TCPXO. Ignore it.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qwen3-vllm
+  namespace: inference
+  labels: {app: qwen3-vllm}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: qwen3-vllm}
+  # Recreate, not RollingUpdate: hf-cache is a ReadWriteOnce PD. A rolling update
+  # would start the new pod before the old one released the disk, and the new pod
+  # would sit in ContainerCreating on a Multi-Attach error until the old one died.
+  strategy: {type: Recreate}
+  template:
+    metadata:
+      labels: {app: qwen3-vllm}
+      annotations:
+        # (1) Give the rxdm SIDECAR the GPUs and the dmabuf helper. Without the
+        # dmabuf helper, rxdm exits 0 after "Failed to create dmabuf importer
+        # context" and the pod looks healthy while the fabric is dead.
+        devices.gke.io/container.tcpxo-daemon: |+
+          - path: /dev/nvidia0
+          - path: /dev/nvidia1
+          - path: /dev/nvidia2
+          - path: /dev/nvidia3
+          - path: /dev/nvidia4
+          - path: /dev/nvidia5
+          - path: /dev/nvidia6
+          - path: /dev/nvidia7
+          - path: /dev/nvidiactl
+          - path: /dev/nvidia-uvm
+          - path: /dev/dmabuf_import_helper
+        # (2) eth0 on default + eth1..eth8 on gpu-net-0..7. Names must match the
+        # Network CRs in the cluster (verified present: gpu-net-0 .. gpu-net-7).
+        networking.gke.io/default-interface: 'eth0'
+        networking.gke.io/interfaces: |
+          [
+            {"interfaceName":"eth0","network":"default"},
+            {"interfaceName":"eth1","network":"gpu-net-0"},
+            {"interfaceName":"eth2","network":"gpu-net-1"},
+            {"interfaceName":"eth3","network":"gpu-net-2"},
+            {"interfaceName":"eth4","network":"gpu-net-3"},
+            {"interfaceName":"eth5","network":"gpu-net-4"},
+            {"interfaceName":"eth6","network":"gpu-net-5"},
+            {"interfaceName":"eth7","network":"gpu-net-6"},
+            {"interfaceName":"eth8","network":"gpu-net-7"}
+          ]
+    spec:
+      # (3) nodeSelector only -- never nodeName. Pinning by nodeName bypasses the
+      # scheduler, so kubelet REJECTS the pod outright with UnexpectedAdmissionError
+      # instead of letting it queue behind a capacity holder. Queueing is what makes
+      # a gap-free handover from the holder possible.
+      nodeSelector:
+        cloud.google.com/gke-accelerator: nvidia-h100-mega-80gb
+      tolerations:
+      - {operator: Exists}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: nvidia
+        hostPath: {path: /home/kubernetes/bin/nvidia/lib64}
+      - name: aperture-devices
+        hostPath: {path: /dev/aperture_devices}
+      - name: sys
+        hostPath: {path: /sys}
+      - name: proc-sys
+        hostPath: {path: /proc/sys}
+      - name: hf-cache
+        persistentVolumeClaim: {claimName: hf-cache}
+      - name: shm
+        emptyDir: {medium: Memory, sizeLimit: 16Gi}
+      containers:
+      # (5) rxdm needs chmod 755 on its entrypoint (some tags ship 0644) and only
+      # NET_ADMIN/NET_BIND_SERVICE -- not privileged. Reaching for privileged means
+      # a device injection is missing, not that permissions are too tight.
+      - name: tcpxo-daemon
+        image: us-docker.pkg.dev/gce-ai-infra/gpudirect-tcpxo/tcpgpudmarxd-dev:v1.0.22
+        imagePullPolicy: Always
+        command: ["/bin/sh","-c"]
+        args:
+        - |
+          set -ex
+          chmod 755 /fts/entrypoint_rxdm_container.sh
+          /fts/entrypoint_rxdm_container.sh --num_hops=2 --num_nics=8 --uid= --alsologtostderr
+        securityContext:
+          capabilities:
+            add: ["NET_ADMIN","NET_BIND_SERVICE"]
+        volumeMounts:
+        - {name: nvidia, mountPath: /usr/local/nvidia/lib64}
+        - {name: sys, mountPath: /hostsysfs}
+        - {name: proc-sys, mountPath: /hostprocsysfs}
+        env:
+        - {name: LD_LIBRARY_PATH, value: /usr/local/nvidia/lib64}
+      - name: vllm
+        image: vllm/vllm-openai:v0.8.4
+        imagePullPolicy: IfNotPresent
+        # MUST source nccl-env-profile.sh before starting vLLM.
+        #
+        # Putting the FasTrak plugin on LD_LIBRARY_PATH (which the arming above does)
+        # makes NCCL load it -- and the plugin ships a Guest Config Checker that
+        # validates the NCCL env against a3plus_guest_config.textproto. 14 variables
+        # are POLICY_ENFORCED, and a mismatch does not warn, it kills NCCL init.
+        # With the profile unsourced the NIC list is empty and init HANGS: no log
+        # output past "vLLM is using nccl==2.21.5", 0% GPU, 4 MiB used. The liveness
+        # probe then SIGTERMs the process at 600s and the pod crash-loops with a
+        # bare `KeyboardInterrupt: terminated` that names no cause.
+        #
+        # The profile discovers eth1-eth8 on the node it runs on. Never hand-write
+        # NCCL_FASTRAK_IFNAME -- the ordering is per-node.
+        command: ["/bin/bash","-c"]
+        args:
+        - |
+          set -e
+          if [ -f /usr/local/nvidia/lib64/nccl-env-profile.sh ]; then
+            echo "sourcing vendor NCCL env profile (TCPXO contract)"
+            source /usr/local/nvidia/lib64/nccl-env-profile.sh
+          else
+            echo "WARNING: nccl-env-profile.sh absent -- fabric not armed on this node"
+          fi
+          exec python3 -m vllm.entrypoints.openai.api_server \
+            --model Qwen/Qwen3-32B \
+            --served-model-name qwen3-32b \
+            --tensor-parallel-size 2 \
+            --gpu-memory-utilization 0.90 \
+            --max-model-len 32768 \
+            --host 0.0.0.0 \
+            --port 8000
+        env:
+        - {name: HF_HOME, value: /hf-cache}
+        - name: VLLM_API_KEY
+          valueFrom:
+            secretKeyRef: {name: vllm-api-key, key: api-key}
+        # (4) LLCM directory goes on the WORKLOAD container, with the matching
+        # hostPath mount below. Missing either one silently drops the fabric.
+        - {name: NCCL_FASTRAK_LLCM_DEVICE_DIRECTORY, value: /dev/aperture_devices}
+        - {name: LD_LIBRARY_PATH, value: /usr/local/nvidia/lib64}
+        - {name: NCCL_LIB_DIR, value: /usr/local/nvidia/lib64}
+        securityContext:
+          capabilities: {add: ["IPC_LOCK"]}
+        ports:
+        - {containerPort: 8000, protocol: TCP}
+        resources:
+          limits: {cpu: "24", memory: 200Gi, nvidia.com/gpu: "2"}
+          requests: {cpu: "24", memory: 200Gi, nvidia.com/gpu: "2"}
+        volumeMounts:
+        - {name: hf-cache, mountPath: /hf-cache}
+        - {name: shm, mountPath: /dev/shm}
+        - {name: nvidia, mountPath: /usr/local/nvidia/lib64}
+        - {name: aperture-devices, mountPath: /dev/aperture_devices}
+        readinessProbe:
+          httpGet: {path: /health, port: 8000}
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          failureThreshold: 40
+        livenessProbe:
+          httpGet: {path: /health, port: 8000}
+          # 20 min, not 10. Loading Qwen3-32B across 2 GPUs plus NCCL/FasTrak init
+          # exceeded the old 600s on a cold start, so liveness SIGTERMed a process
+          # that was making progress -- the restart looked like a crash and hid the
+          # real (fabric env) problem underneath. Readiness already gates traffic;
+          # liveness only needs to catch a genuinely wedged server.
+          initialDelaySeconds: 1200
+          periodSeconds: 30
+          failureThreshold: 3
+---
+# ⚠️ This plain ClusterIP Service is SUPERSEDED by the one in 06-vllm-ingress.yaml, which
+# adds the `cloud.google.com/neg` and `backend-config` annotations the public Ingress needs.
+# Both define the same name/namespace, so RE-APPLYING THIS FILE AFTER 06 SILENTLY STRIPS
+# those annotations and breaks the public endpoint (the Ingress backend goes unhealthy while
+# the in-cluster DNS path keeps working, so it looks like a load-balancer problem).
+# If you are re-applying this file on a cluster that serves the public endpoint, apply
+# 06-vllm-ingress.yaml immediately afterwards.
+apiVersion: v1
+kind: Service
+metadata:
+  name: qwen3-vllm
+  namespace: inference
+spec:
+  type: ClusterIP
+  selector: {app: qwen3-vllm}
+  ports:
+  - {port: 8000, targetPort: 8000, protocol: TCP}

@@ -1,0 +1,166 @@
+# deploy/tcpxo-migration/03-jupyter-values-tcpxo.yaml
+#
+# JupyterHub on the TCPXO pool. Helm values overlay for the z2jh chart (4.4.0).
+#
+#   helm upgrade --install jhub jupyterhub/jupyterhub \
+#     --version 4.4.0 --namespace jupyter \
+#     --values deploy/tcpxo-migration/03-jupyter-values-tcpxo.yaml
+#
+# ⚠️ THE OAUTH CLIENT SECRET IS REDACTED FROM THIS FILE -- THIS FILE ALONE WILL NOT DEPLOY.
+# This repository is PUBLIC, so the live secret is deliberately not committed. Supply it at
+# install time from the value stored in the team password manager (or read it back out of the
+# running cluster, which still has it applied):
+#
+# z2jh keeps it inside the `values.yaml` key of secret/hub, not as a flat key:
+#
+#   SECRET=$(kubectl get secret hub -n jupyter -o jsonpath='{.data.values\.yaml}' \
+#     | base64 -d | awk '/client_secret:/{print $2; exit}')
+#   helm upgrade --install jhub jupyterhub/jupyterhub --version 4.4.0 -n jupyter \
+#     --values deploy/tcpxo-migration/03-jupyter-values-tcpxo.yaml \
+#     --set-string hub.config.GoogleOAuthenticator.client_secret="$SECRET"
+#
+# Applying this file WITHOUT that --set leaves the secret empty and every Google sign-in
+# fails with a redirect_uri/invalid_client error -- the hub still starts, so it looks healthy.
+#
+# Carried over from the mega-flex deployment unchanged, so the team sees no
+# difference at the front door:
+#   * GoogleOAuthenticator with the same client_id and the same
+#     oauth_callback_url -- the callback URL is registered in the OAuth client, so
+#     changing it would break sign-in for everyone. It stays pinned to the reused
+#     static IP (jupyter-lb-ip / 34.54.187.199).
+#   * storage.existingClaim wiring is NOT used; instead the pre-created PVCs from
+#     01-static-pvs.yaml are matched by KubeSpawner's default claim-<username>
+#     naming, so elideng / kzuo / samaujs land back on their own disks.
+#
+# The GPU profile gains TCPXO arming. A notebook that requests 8 GPUs and talks to
+# another node now has the fabric available; a 1-GPU notebook is unaffected by the
+# annotations (they are inert without multi-node collectives).
+---
+hub:
+  config:
+    JupyterHub:
+      authenticator_class: google
+    GoogleOAuthenticator:
+      client_id: "151935633952-j5lnigavsvjj2fv551ipf94mmnq3kdh0.apps.googleusercontent.com"
+      # REDACTED -- pass with --set-string at install time (see header). Not committed:
+      # this repo is public.
+      client_secret: ""
+      # Do not change without re-registering the redirect URI in the OAuth client.
+      oauth_callback_url: "https://jupyter.34.54.187.199.nip.io/hub/oauth_callback"
+      hosted_domain:
+      - google.com
+      login_service: "Google"
+      allow_all: true
+  # Reuse the migrated hub DB (user list, tokens, spawner state).
+  db:
+    type: sqlite-pvc
+    pvc:
+      # Bound by 01-static-pvs.yaml to the original 1Gi disk.
+      storageClassName: standard-rwo
+
+proxy:
+  service:
+    type: ClusterIP
+    annotations:
+      cloud.google.com/backend-config: '{"default":"jupyter-backendconfig"}'
+      cloud.google.com/neg: '{"ingress": true}'
+
+prePuller:
+  hook:
+    enabled: false
+  continuous:
+    enabled: true
+  extraImages:
+    gpu-notebook:
+      name: quay.io/jupyter/pytorch-notebook
+      tag: cuda12-latest
+
+scheduling:
+  userPods:
+    tolerations:
+    - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+    - {key: cloud.google.com/gke-queued, operator: Exists, effect: NoSchedule}
+
+singleuser:
+  startTimeout: 1200
+  storage:
+    capacity: 20Gi
+    dynamic:
+      storageClass: premium-rwo
+  profileList:
+  - display_name: "CPU (no GPU)"
+    default: true
+    kubespawner_override:
+      cpu_limit: 4
+      mem_limit: "16G"
+
+  - display_name: "GPU (1x H100 Mega)"
+    kubespawner_override:
+      image: quay.io/jupyter/pytorch-notebook:cuda12-latest
+      extra_resource_limits:
+        nvidia.com/gpu: "1"
+      node_selector:
+        cloud.google.com/gke-accelerator: nvidia-h100-mega-80gb
+      tolerations:
+      - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      - {key: cloud.google.com/gke-queued, operator: Exists, effect: NoSchedule}
+
+  # Full-node profile, TCPXO-armed. Use this for multi-node NCCL work: it takes all
+  # 8 GPUs on one node and plumbs eth1-eth8, matching the 317 GB/s workbench shape.
+  # A single-node notebook gets no speedup from the fabric -- see the caveat in
+  # 02-vllm-tcpxo.yaml -- but this is the profile that can scale out.
+  - display_name: "GPU (8x H100 Mega, TCPXO fabric)"
+    kubespawner_override:
+      image: quay.io/jupyter/pytorch-notebook:cuda12-latest
+      extra_resource_limits:
+        nvidia.com/gpu: "8"
+      node_selector:
+        cloud.google.com/gke-accelerator: nvidia-h100-mega-80gb
+      tolerations:
+      - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      - {key: cloud.google.com/gke-queued, operator: Exists, effect: NoSchedule}
+      extra_annotations:
+        devices.gke.io/container.notebook: |+
+          - path: /dev/nvidia0
+          - path: /dev/nvidia1
+          - path: /dev/nvidia2
+          - path: /dev/nvidia3
+          - path: /dev/nvidia4
+          - path: /dev/nvidia5
+          - path: /dev/nvidia6
+          - path: /dev/nvidia7
+          - path: /dev/nvidiactl
+          - path: /dev/nvidia-uvm
+          - path: /dev/dmabuf_import_helper
+        networking.gke.io/default-interface: 'eth0'
+        networking.gke.io/interfaces: |
+          [
+            {"interfaceName":"eth0","network":"default"},
+            {"interfaceName":"eth1","network":"gpu-net-0"},
+            {"interfaceName":"eth2","network":"gpu-net-1"},
+            {"interfaceName":"eth3","network":"gpu-net-2"},
+            {"interfaceName":"eth4","network":"gpu-net-3"},
+            {"interfaceName":"eth5","network":"gpu-net-4"},
+            {"interfaceName":"eth6","network":"gpu-net-5"},
+            {"interfaceName":"eth7","network":"gpu-net-6"},
+            {"interfaceName":"eth8","network":"gpu-net-7"}
+          ]
+      environment:
+        NCCL_FASTRAK_LLCM_DEVICE_DIRECTORY: /dev/aperture_devices
+        LD_LIBRARY_PATH: /usr/local/nvidia/lib64
+        NCCL_LIB_DIR: /usr/local/nvidia/lib64
+      extra_container_config:
+        securityContext:
+          capabilities:
+            add: ["IPC_LOCK"]
+      volumes:
+      - name: nvidia
+        hostPath: {path: /home/kubernetes/bin/nvidia/lib64}
+      - name: aperture-devices
+        hostPath: {path: /dev/aperture_devices}
+      - name: shm
+        emptyDir: {medium: Memory, sizeLimit: 16Gi}
+      volume_mounts:
+      - {name: nvidia, mountPath: /usr/local/nvidia/lib64}
+      - {name: aperture-devices, mountPath: /dev/aperture_devices}
+      - {name: shm, mountPath: /dev/shm}

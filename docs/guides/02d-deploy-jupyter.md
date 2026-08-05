@@ -4,6 +4,16 @@
 
 ---
 
+> ### ⚠️ Historical: this describes the ORIGINAL `us-central1` build
+>
+> **The live deployment moved on 2026-08-05** to cluster `hypercomputer-a3-tcpxo` in
+> **`asia-southeast1-c`** on **A3 Mega** nodes with the **GPUDirect-TCPXO** fabric. Read
+> [Part 1's translation table](02a-cluster-setup.md) before copying any command here — the
+> cluster name, region, machine type, and accelerator label have all changed, and
+> `nvidia-h100-80gb` now matches **no node** (pods using it sit in `Pending` forever).
+> Current manifests: [`deploy/tcpxo-migration/`](../../deploy/tcpxo-migration/).
+
+
 **Part 4 of the deployment series.** Assumes the GPU node from [Part 2](02b-gpu-nodepool-dws.md) is running (the inference service from [Part 3](02c-deploy-inference.md) is recommended but not strictly required for this part).
 
 This part installs **[JupyterHub](appendix-glossary.md#jupyterhub)** via Helm with a CPU profile and a GPU profile, so users can launch notebooks that land on the A3 node and request an H100. It uses `DummyAuthenticator` (demo password) on an internal LB as the base.

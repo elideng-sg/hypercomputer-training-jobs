@@ -4,6 +4,32 @@
 
 ---
 
+> ### ⚠️ This series describes the ORIGINAL `us-central1` build
+>
+> **The live deployment moved on 2026-08-05** to cluster `hypercomputer-a3-tcpxo` in
+> **`asia-southeast1-c`**, on **A3 Mega** nodes with the **GPUDirect-TCPXO** fabric. The
+> original `us-central1` / `hypercomputer-a3-cluster` A3 High pool has been released.
+>
+> This series is kept as-is because it is still the clearest end-to-end teaching path — the
+> concepts (quota → cluster → GPU pool → workloads) are unchanged. But **the specific
+> cluster name, region, machine type, and accelerator label in these commands no longer
+> match production.** Translate as you read:
+>
+> | This series says | Production is now |
+> |---|---|
+> | `--region us-central1` | `--location asia-southeast1-c` |
+> | `hypercomputer-a3-cluster` | `hypercomputer-a3-tcpxo` |
+> | `a3-h100-dws-pool` | `a3-mega-tcpxo-flex-pool` |
+> | `a3-highgpu-8g` | `a3-megagpu-8g` |
+> | `nvidia-h100-80gb` | `nvidia-h100-mega-80gb` |
+> | 1 node / 8 GPUs | 3 nodes / 24 GPUs |
+> | (no fabric) | 8 TCPXO node networks — see [Architecture §6](01-architecture.md#6-the-tcpxo-fabric) |
+>
+> **To reproduce production rather than this series, use the manifests in
+> [`deploy/tcpxo-migration/`](../../deploy/tcpxo-migration/)**, and read
+> [Architecture §6](01-architecture.md#6-the-tcpxo-fabric) first — a TCPXO pool needs 8
+> additional node networks at *creation* time and cannot be retrofitted.
+
 **Audience:** Technical engineers who are **new to GPUs and Google Cloud** but comfortable with the command line and basic Kubernetes concepts. This is **Part 1** of a five-part series that walks through deploying the complete stack from zero: GKE cluster, H100 GPUs via DWS, vLLM inference (Qwen3-32B), and JupyterHub with GPU notebooks.
 
 > **New to the terminology?** Terms like GKE, DWS, node pool, and tensor parallelism are defined in the **[Glossary appendix](appendix-glossary.md)**.

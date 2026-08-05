@@ -1,0 +1,91 @@
+# deploy/tcpxo-migration/06-vllm-ingress.yaml
+#
+# Restores the team's PUBLIC vLLM endpoint on the TCPXO cluster.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# 03-inference-endpoint-user-guide.md documents `https://infer.136.69.110.10.nip.io/v1`
+# as the endpoint, and every teammate's OpenAI client has that baked in as base_url.
+# During the migration audit the URL answered http=000: the Ingress existed in no
+# cluster, and the reserved global IP `vllm-lb-ip` (136.69.110.10) had zero forwarding
+# rules. It had been torn down at some earlier point while the docs kept advertising it.
+#
+# Since the workload behind it was just migrated, the endpoint is rebuilt HERE rather
+# than deleted from the docs -- reusing the SAME reserved IP so the documented URL,
+# the nip.io hostname, and the cert domain are all unchanged. Nobody has to edit a
+# base_url.
+#
+# The API key is unchanged too: the `vllm-api-key` secret was COPIED to this cluster
+# during the migration, not regenerated, so keys already shared with the team over
+# the password manager still work.
+#
+# Ordering note: unlike the Jupyter Ingress, there is no IP contention to resolve --
+# nothing else was bound to vllm-lb-ip, so this can be applied at any time. The
+# managed cert takes 10-60 min to reach Active; until then HTTPS fails while the
+# in-cluster DNS path (qwen3-vllm.inference.svc.cluster.local:8000) keeps working.
+---
+# The Service in 02-vllm-tcpxo.yaml is a plain ClusterIP. The Ingress needs it to be
+# NEG-backed and pointed at a BackendConfig, so those two annotations are added here.
+# Same name/namespace -> this replaces the Service created by 02, it does not duplicate it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: qwen3-vllm
+  namespace: inference
+  annotations:
+    cloud.google.com/neg: '{"ingress": true}'
+    cloud.google.com/backend-config: '{"default":"vllm-backendconfig"}'
+spec:
+  type: ClusterIP
+  selector: {app: qwen3-vllm}
+  ports:
+  - {port: 8000, targetPort: 8000, protocol: TCP}
+---
+# No IAP on this backend -- vLLM's own VLLM_API_KEY is the gate, which is what keeps
+# the stock OpenAI client working unchanged over HTTPS.
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: vllm-backendconfig
+  namespace: inference
+spec:
+  healthCheck:
+    type: HTTP
+    requestPath: /health
+---
+apiVersion: networking.gke.io/v1beta1
+kind: FrontendConfig
+metadata:
+  name: vllm-frontendconfig
+  namespace: inference
+spec:
+  redirectToHttps:
+    enabled: true
+---
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: vllm-cert
+  namespace: inference
+spec:
+  domains:
+  # Literal, not templated: this must match the reserved IP 136.69.110.10 exactly,
+  # because that is the hostname already published to the team.
+  - "infer.136.69.110.10.nip.io"
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vllm-ingress
+  namespace: inference
+  annotations:
+    kubernetes.io/ingress.class: "gce"
+    kubernetes.io/ingress.global-static-ip-name: "vllm-lb-ip"
+    networking.gke.io/managed-certificates: "vllm-cert"
+    networking.gke.io/v1beta1.FrontendConfig: "vllm-frontendconfig"
+spec:
+  defaultBackend:
+    service:
+      name: qwen3-vllm
+      port:
+        number: 8000

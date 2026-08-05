@@ -16,20 +16,35 @@ Two public **external HTTPS Load Balancers** (one per service — a GKE Ingress 
 - **vLLM** is gated by a **vLLM API key** so the OpenAI client works unchanged.
 - **JupyterHub** is gated by **GoogleOAuthenticator** (Google sign-in restricted to your Workspace domain), replacing the demo `DummyAuthenticator`. Each user gets a real identity and their own home directory.
 
-**Why not IAP?** The IAP OAuth Admin APIs were shut down in early 2026, so the "bring-your-own OAuth client for IAP" path is no longer usable. GoogleOAuthenticator uses a *standard* OAuth 2.0 client (unaffected) and gives equivalent domain-restricted access control. If you later want IAP as an extra edge layer, enable it via Google-managed OAuth in the console.
+**Why not IAP for the web UIs?** The IAP OAuth Admin APIs were shut down in early 2026, so the "bring-your-own OAuth client for IAP" path is no longer usable for *web* access. GoogleOAuthenticator uses a *standard* OAuth 2.0 client (unaffected) and gives equivalent domain-restricted access control. If you later want IAP as an extra edge layer, enable it via Google-managed OAuth in the console.
+
+> **IAP is still used — for SSH.** That shutdown affected IAP's *web/HTTPS* OAuth path only.
+> **IAP TCP forwarding**, which is how admins get a shell on the GPU nodes without public
+> IPs or a VPN, is unaffected and is how node access works today. See
+> **[Part C — SSH to the GPU nodes over IAP](#part-c--ssh-to-the-gpu-nodes-over-iap)**.
 
 **Why nip.io:** Google-managed certs need a publicly-resolvable domain. `nip.io` resolves `anything.<IP>.nip.io` → `<IP>`, giving valid managed TLS with no domain registration. Swap in a real domain later by editing the `ManagedCertificate`, `Ingress`, and `oauth_callback_url`.
 
 Manifests live in [`deploy/expose/`](../../deploy/expose).
 
-> **Current live deployment (project `hdlab-elideng`, region `us-central1`):**
-> - vLLM: **`https://infer.136.69.110.10.nip.io`** (Part A below — already provisioned)
-> - JupyterHub: **`https://jupyter.34.54.187.199.nip.io`** (Part B — awaiting the OAuth client step)
+> **Current live deployment (project `hdlab-elideng`, cluster `hypercomputer-a3-tcpxo`, zone `asia-southeast1-c`):**
+> - vLLM: **`https://infer.136.69.110.10.nip.io`**
+> - JupyterHub: **`https://jupyter.34.54.187.199.nip.io`**
+> - Admin SSH to GPU nodes: **IAP TCP forwarding** ([Part C](#part-c--ssh-to-the-gpu-nodes-over-iap))
 > - The vLLM API key lives in the `vllm-api-key` secret; retrieve it with:
 >   ```bash
 >   kubectl -n inference get secret vllm-api-key -o jsonpath='{.data.api-key}' | base64 -d; echo
 >   ```
 > Certs can take 10–60 min to go **Active** after first provisioning.
+>
+> **Migrated 2026-08-05 (`us-central1` → `asia-southeast1-c`).** Both URLs and the API key
+> are **unchanged** — the same reserved global IPs were reused and the key secret was copied
+> rather than regenerated, so no teammate has to update a `base_url` or re-fetch a key.
+> First get credentials for the new cluster before running any `kubectl` below:
+> ```bash
+> gcloud container clusters get-credentials hypercomputer-a3-tcpxo \
+>   --location asia-southeast1-c --project hdlab-elideng
+> ```
 
 ---
 
@@ -135,6 +150,22 @@ helm upgrade jhub jupyterhub/jupyterhub --namespace jupyter --version 4.4.0 \
 kubectl apply -f deploy/expose/jupyter-ingress.yaml
 ```
 
+> **For the current TCPXO deployment, this whole overlay is already merged into one file.**
+> Use it instead of the two-file overlay above — it carries the OAuth config, the Mega
+> accelerator label, and the TCPXO-armed 8-GPU profile together:
+>
+> ```bash
+> helm upgrade --install jhub jupyterhub/jupyterhub --namespace jupyter --version 4.4.0 \
+>   -f deploy/tcpxo-migration/03-jupyter-values-tcpxo.yaml --timeout 15m
+> kubectl apply -f deploy/tcpxo-migration/04-jupyter-ingress.yaml
+> ```
+>
+> **The static IP can only serve one Ingress at a time.** A global static IP binds to exactly
+> one forwarding rule, so if an Ingress in another cluster still holds `jupyter-lb-ip`, the
+> new one stays `ADDRESS`-less until the old one is deleted. That delete-then-create window
+> is an unavoidable brief outage on the team URL — it is why the URL is preserved rather than
+> reissued.
+
 ### B5. Verify
 
 ```bash
@@ -150,12 +181,119 @@ Access is anyone in `hosted_domain`. To restrict further, set `allow_all: false`
 
 ---
 
+## Part C — SSH to the GPU nodes over IAP
+
+**Audience:** admins and ML engineers who need a real shell *on the node* — to run
+`nvidia-smi`, inspect `/dev/aperture_devices`, read rxdm logs, or debug the fabric.
+Notebook and inference users do **not** need this.
+
+The GPU nodes have **no external IP**. Access goes through **IAP TCP forwarding**: `gcloud`
+opens a tunnel from Google's IAP range (`35.235.240.0/20`) to port 22 on the node, so
+nothing is exposed to the internet and no VPN is required.
+
+### Connecting
+
+```bash
+# List the current GPU nodes (names change on every rotation — never hard-code one)
+gcloud compute instances list --project hdlab-elideng \
+  --filter="labels.goog-k8s-node-pool-name=a3-mega-tcpxo-flex-pool" \
+  --format="table(name,status,creationTimestamp)"
+
+# SSH via the IAP tunnel
+gcloud compute ssh <node-name> \
+  --zone asia-southeast1-c \
+  --project hdlab-elideng \
+  --tunnel-through-iap
+```
+
+Useful once you are on a node:
+
+```bash
+nvidia-smi                       # GPU health and who is using what
+ls /sys/class/net                # expect eth0..eth8 — 9 NICs means the fabric is plumbed
+ls /dev/aperture_devices         # expect 8 GPU-NIC BDFs
+```
+
+### Granting a teammate access
+
+Access is **instance-level** IAM, so it must be re-applied after every node rotation:
+
+```bash
+deploy/ops/grant-node-ssh.sh                          # defaults to the TCPXO pool
+CLUSTER=... ZONE=... POOL=... deploy/ops/grant-node-ssh.sh   # any other pool
+```
+
+It grants each team member:
+
+| Role | Why |
+|---|---|
+| `roles/compute.osAdminLogin` | login **+ sudo** on the node |
+| `roles/compute.viewer` | lets `gcloud compute ssh` resolve the instance name (skipped for the project owner, who already has it) |
+
+> ⚠️ **Instance-level IAM does not survive node replacement.** Flex-Start nodes are replaced
+> at the 7-day boundary, on preemption, and on every pool recreate the
+> [capacity watchdog](01-architecture.md#6b-capacity-watchdog) performs. A new node is a new
+> IAM resource with an **empty** policy, so the team silently loses SSH with no error
+> anywhere until someone tries to connect. **Re-run `grant-node-ssh.sh` after any rotation.**
+
+**Why not just grant at project level?** `roles/compute.osAdminLogin` project-wide would
+survive rotation, but it grants root-equivalent login on *every* VM in the project. The
+instance-level grant plus a re-arm script keeps the blast radius at the GPU nodes the team
+is meant to be using. That is a deliberate trade of convenience for scope — if you would
+rather have durability, the project-level grant is one command and the script becomes
+unnecessary.
+
+### ⚠️ Two prerequisites are currently NOT satisfied
+
+Instance-level `osAdminLogin` is necessary but **not sufficient**. As verified on
+2026-08-05, two project-level settings still block connection, and both are deliberately
+left for an owner to decide because both widen access beyond the GPU nodes:
+
+**1. Nobody holds `roles/iap.tunnelResourceAccessor`.** Without it the tunnel cannot open at
+all, regardless of node-level roles.
+
+```bash
+# Check (empty output = nobody has it)
+gcloud projects get-iam-policy hdlab-elideng \
+  --flatten='bindings[].members' \
+  --filter='bindings.role=roles/iap.tunnelResourceAccessor' \
+  --format='value(bindings.members)'
+
+# Grant, per user (project-level — there is no per-instance equivalent for tunnels)
+gcloud projects add-iam-policy-binding hdlab-elideng \
+  --member='user:SOMEONE@google.com' \
+  --role='roles/iap.tunnelResourceAccessor'
+```
+
+**2. OS Login is not enabled** — there is no `enable-oslogin` metadata key at the project
+level or on the nodes. `roles/compute.osAdminLogin` is an *OS Login* role, so until OS Login
+is on it has nothing to act on and SSH falls back to metadata SSH keys.
+
+```bash
+# Enable project-wide (affects EVERY VM in the project, not just the GPU nodes)
+gcloud compute project-info add-metadata --project hdlab-elideng \
+  --metadata enable-oslogin=TRUE
+```
+
+> Enabling OS Login project-wide changes how SSH authenticates on **all** existing VMs
+> (including `ubuntu-secure-desktop`). Anyone relying on metadata SSH keys there can lose
+> access. Prefer setting `enable-oslogin=TRUE` on the node pool's metadata instead if you
+> want to scope it to the GPU nodes — but note that, like all node metadata, it must be set
+> on the **node pool** so recreated nodes inherit it.
+
+**Already satisfied:** the firewall rule `allow-ssh-from-iap`
+(`35.235.240.0/20` → `tcp:22`, network `default`, enabled) covers the nodes — their `eth0`
+is on `default`. The 8 fabric NICs are on separate VPCs and carry no SSH.
+
+---
+
 ## Security notes & gotchas
 
 - **Managed-cert provisioning isn't instant** (10–60 min). It needs the Ingress live with the static IP attached; nip.io resolves immediately. If stuck `Provisioning` >1 hour, confirm the Ingress has the reserved IP.
 - **vLLM is public with only an API key.** Rotate it if it leaks (`kubectl create secret ... --dry-run=client -o yaml | kubectl apply -f -`, then `kubectl rollout restart deploy/qwen3-vllm`). For stronger protection add **[Cloud Armor](https://cloud.google.com/armor)** (IP allowlist / rate limiting) to `vllm-backendconfig.yaml` via a `securityPolicy`.
 - **JupyterHub has no IAP layer** — the gate is GoogleOAuthenticator's `hosted_domain`. That is real, domain-restricted auth; just be sure `hosted_domain` is set so it's not open to any Google account.
-- **The GPU node is DWS Flex-Start (7-day cap).** LBs and certs stay up across node rotation, but the vLLM/notebook **backends** go unavailable while the node is replaced (see [Part 5 — node rotation](02e-verify-teardown.md#step-10-node-rotation-and-the-7-day-expiry)) — expect 502s during that window.
+- **The GPU nodes are Flex-Start (7-day cap).** LBs and certs stay up across node rotation, but the vLLM/notebook **backends** go unavailable while a node is replaced (see [Part 5 — node rotation](02e-verify-teardown.md#step-10-node-rotation-and-the-7-day-expiry)) — expect 502s during that window. The [capacity watchdog](01-architecture.md#6b-capacity-watchdog) re-grabs the pool automatically, but **SSH access must be re-granted by hand** ([Part C](#part-c--ssh-to-the-gpu-nodes-over-iap)).
+- **The OAuth client secret is a plaintext value in the Helm values file.** `deploy/tcpxo-migration/03-jupyter-values-tcpxo.yaml` carries the live `client_secret` inline (carried forward from the previous release so sign-in kept working through the migration). Move it to a Kubernetes secret or `--set` before this repo is shared any wider, and rotate it if it has already leaked.
 
 ## Revert to internal-only
 
@@ -169,5 +307,7 @@ gcloud compute addresses delete jupyter-lb-ip vllm-lb-ip --global --project hdla
 ```
 
 ---
+
+**Document version:** 2026-08-05 — added Part C (SSH over IAP) and migrated all cluster/zone references to `hypercomputer-a3-tcpxo` / `asia-southeast1-c`.
 
 **Related:** [Architecture Reference](01-architecture.md) · [Deployment series](02a-cluster-setup.md) · [Inference User Guide](03-inference-endpoint-user-guide.md) · [Jupyter User Guide](04-jupyter-notebook-user-guide.md) · [Glossary](appendix-glossary.md)
