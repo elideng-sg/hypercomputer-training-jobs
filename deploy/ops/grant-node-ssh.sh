@@ -6,8 +6,9 @@
 #   ./grant-node-ssh.sh                 # default: the TCPXO pool
 #   CLUSTER=... ZONE=... POOL=... ./grant-node-ssh.sh
 #
-# WHAT IT GRANTS (3 of the 5 bindings a guest needs -- see docs/guides/05-remote-access-iap.md)
-# ---------------------------------------------------------------------------------------------
+# WHAT IT APPLIES (see docs/guides/05-remote-access-iap.md)
+# ---------------------------------------------------------
+#   enable-oslogin=TRUE               instance metadata    -- makes osAdminLogin effective
 #   roles/compute.osAdminLogin        on the instance      -- login + sudo
 #   roles/compute.viewer              on the instance      -- resolve the instance name
 #   roles/iap.tunnelResourceAccessor  on the IAP *tunnel*  -- open the tunnel at all
@@ -74,6 +75,27 @@ MEMBERS_JSON=$(printf '"%s",' "${TEAM[@]}"); MEMBERS_JSON="${MEMBERS_JSON%,}"
 echo "Pool $POOL -> ${#NODES[@]} node(s)"
 for node in "${NODES[@]}"; do
   echo "--- $node"
+
+  # enable-oslogin=TRUE is what makes roles/compute.osAdminLogin actually do anything.
+  # Without it gcloud falls back to writing an SSH key into instance/project metadata,
+  # which needs compute.instances.setMetadata -- a permission guests do not (and should
+  # not) have, so they fail with:
+  #     Required 'compute.instances.setMetadata' permission for '...'
+  # while the project OWNER sails through, because an owner can write metadata. That
+  # asymmetry is why this went unnoticed: testing as the owner exercises the fallback
+  # path, not the path the team uses.
+  #
+  # Set per-instance, deliberately:
+  #   * NOT project-wide -- that changes SSH auth on every VM in the project, and this
+  #     project has project-level `ssh-keys` metadata in use elsewhere.
+  #   * NOT via node-pool metadata -- changing pool metadata recreates nodes, and these
+  #     are scarce Flex-Start A3 Mega nodes that may not come back.
+  gcloud compute instances add-metadata "$node" \
+    --project="$PROJECT" --zone="$ZONE" \
+    --metadata enable-oslogin=TRUE \
+    --quiet >/dev/null 2>&1 \
+    && echo "    enable-oslogin=TRUE" \
+    || echo "    FAILED enable-oslogin -- guests will hit a setMetadata error"
 
   # roles/iap.tunnelResourceAccessor lives in a SEPARATE resource hierarchy from
   # Compute, so it cannot be granted with `gcloud compute instances

@@ -223,24 +223,27 @@ deploy/ops/grant-node-ssh.sh                          # defaults to the TCPXO po
 CLUSTER=... ZONE=... POOL=... deploy/ops/grant-node-ssh.sh   # any other pool
 ```
 
-It grants each team member:
+It applies, per node:
 
-| Role | Attached to | Why |
+| What | Attached to | Why |
 |---|---|---|
+| `enable-oslogin=TRUE` (**metadata**) | the instance | makes `osAdminLogin` effective at all — without it guests fail on `setMetadata` |
 | `roles/compute.osAdminLogin` | the instance | login **+ sudo** on the node |
 | `roles/compute.viewer` | the instance | lets `gcloud compute ssh` resolve the instance name (skipped for the project owner, who already has it) |
 | `roles/iap.tunnelResourceAccessor` | the instance's **IAP tunnel** resource | lets the tunnel open at all |
 
-Those are the three **instance-scoped** bindings — the ones a rotation destroys. The
-remaining two of the [five bindings](#the-five-bindings-a-guest-actually-needs) a guest needs
-are project- or service-account-scoped, already in place for this team, and survive rotation,
-so the script deliberately leaves them alone.
+Those are the four **instance-scoped** things — the ones a rotation destroys. The other two of
+the [six a guest needs](#the-five-bindings-a-guest-actually-needs) are project- or
+service-account-scoped, already in place for this team, and survive rotation, so the script
+deliberately leaves them alone.
 
-> ⚠️ **Instance-level IAM does not survive node replacement.** Flex-Start nodes are replaced
-> at the 7-day boundary, on preemption, and on every pool recreate the
+> ⚠️ **Instance-level IAM and metadata do not survive node replacement.** Flex-Start nodes are
+> replaced at the 7-day boundary, on preemption, and on every pool recreate the
 > [capacity watchdog](01-architecture.md#6b-capacity-watchdog) performs. A new node is a new
-> IAM resource with an **empty** policy, so the team silently loses SSH with no error
-> anywhere until someone tries to connect. **Re-run `grant-node-ssh.sh` after any rotation.**
+> IAM resource with an **empty** policy and no `enable-oslogin` key, so the team silently
+> loses SSH with no error anywhere until someone tries to connect.
+> **Re-run `grant-node-ssh.sh` after any rotation** — and remember the owner will not notice
+> the breakage, because an owner can write metadata and so still gets in.
 
 **Why not just grant at project level?** `roles/compute.osAdminLogin` project-wide would
 survive rotation, but it grants root-equivalent login on *every* VM in the project. The
@@ -251,13 +254,14 @@ unnecessary.
 
 ### The five bindings a guest actually needs
 
-**Team SSH is working — verified end-to-end on 2026-08-05** against all three TCPXO nodes
-(connected, `nvidia-smi` listed 8 GPUs, `/dev/aperture_devices` showed 8 entries).
+...plus one metadata key, so **six** things in total. The original five are IAM; #6 is not,
+which is exactly why it was missed.
 
-A **project owner** needs none of the below: `roles/owner` silently satisfies four of the
-five. That asymmetry is the whole reason this is fiddly — *your* working SSH tells you
-nothing about whether a teammate can connect. Listed in the order `gcloud compute ssh`
-evaluates them, because each failure masks the ones after it:
+A **project owner** needs none of them: `roles/owner` satisfies all six. That asymmetry is
+the whole reason this is fiddly — *your* working SSH tells you nothing about whether a
+teammate can connect, and it is how #6 stayed hidden until Alex hit it on 2026-08-05. Listed
+in the order `gcloud compute ssh` evaluates them, because each failure masks the ones after
+it:
 
 | # | Binding | Attach to | Error if missing |
 |---|---|---|---|
@@ -266,10 +270,14 @@ evaluates them, because each failure masks the ones after it:
 | 3 | `roles/iap.tunnelResourceAccessor` | **the IAP tunnel resource** for that zone+instance | `Error while connecting [4033: 'not authorized']` |
 | 4 | `roles/compute.osAdminLogin` | the instance | `Permission denied (publickey)` |
 | 5 | `roles/iam.serviceAccountUser` | the node's attached SA (`151935633952-compute@developer.gserviceaccount.com`) | `Permission denied (publickey)` — identical to #4 |
+| 6 | `enable-oslogin=TRUE` — **metadata, not IAM** | the instance | `Required 'compute.instances.setMetadata' permission` |
 
-`grant-node-ssh.sh` applies **#2, #3 and #4** — every binding a rotation destroys. #1 and #5
+`grant-node-ssh.sh` applies **#2, #3, #4 and #6** — everything a rotation destroys. #1 and #5
 are project- and service-account-scoped, are already in place for the team, and survive
 rotation.
+
+#6 is not an IAM binding at all, which is why it is easy to miss and why it is listed last
+despite being checked first in practice — see [below](#binding-6-enable-oslogintrue-metadata-not-iam).
 
 > ⚠️ **The tunnel grant must be per-instance, and `gcloud` has no convenient command for
 > it.** IAP tunnel permissions live in a **separate resource hierarchy** from Compute, so a
@@ -297,12 +305,52 @@ instance), so an instance binding can never satisfy a project-level check even w
 contains the permission. `roles/browser` is the wrong fix — it carries
 `resourcemanager.projects.get`, a *different* permission.
 
-**On OS Login:** there is **no `enable-oslogin` metadata** at project level or on any node,
-yet OS Login usernames (`ext_elideng_google_com`) work and `osAdminLogin` is effective —
-GKE's Container-Optimized OS node image enables it. So do **not** conclude the role is inert
-from a missing metadata key, and **do not** set `enable-oslogin=TRUE` project-wide to "fix"
-it: that would change SSH authentication on every VM in the project (including
-`ubuntu-secure-desktop`) and can lock out anyone relying on metadata SSH keys.
+### Binding #6: `enable-oslogin=TRUE` (metadata, not IAM)
+
+`roles/compute.osAdminLogin` is an **OS Login** role. If OS Login is not switched on for the
+node, the role has nothing to act on and `gcloud` silently falls back to **writing an SSH key
+into instance/project metadata** — which needs `compute.instances.setMetadata`, a permission
+guests do not and should not have. A teammate gets:
+
+```
+Updating project ssh metadata...failed.
+Updating instance ssh metadata...failed.
+ERROR: (gcloud.compute.ssh) Could not add SSH key to instance metadata ...
+ - Required 'compute.instances.setMetadata' permission for '...instances/<node>'
+```
+
+**COS does not enable OS Login by itself** — an earlier version of this guide claimed it did,
+which was wrong. The key was absent from project metadata and from every node, and
+`constraints/compute.requireOsLogin` is not enforced. The reason it looked enabled is a trap
+worth knowing: the owner's node username, `ext_elideng_google_com`, is just this
+workstation's **local** username, and there was a **metadata SSH key under exactly that
+name** — so the owner had been using the metadata path all along while appearing to use OS
+Login. Testing as an owner exercises the fallback, not the path the team uses.
+
+Set it **per instance** — `grant-node-ssh.sh` now does this automatically:
+
+```bash
+gcloud compute instances add-metadata <node> \
+  --project hdlab-elideng --zone asia-southeast1-c \
+  --metadata enable-oslogin=TRUE
+```
+
+Two things **not** to do:
+
+- **Not project-wide.** It changes SSH authentication on every VM in the project (including
+  `ubuntu-secure-desktop`), and this project *does* have project-level `ssh-keys` metadata in
+  use — anyone depending on it elsewhere could lose access.
+- **Not via node-pool metadata.** Changing a pool's metadata recreates its nodes, and these
+  are scarce Flex-Start A3 Mega nodes that may not come back at all.
+
+Setting it on a running instance needs no reboot and does not disturb workloads (verified:
+all pods stayed `Running`, all nodes `Ready`). Because it is instance metadata, it **dies
+with the node** — same rotation problem as bindings #2–#4.
+
+**Verified with a non-owner.** A throwaway service account holding exactly the five bindings
+and **no** `setMetadata` permission connected successfully, landing as a real OS Login
+account (`sa_1042826306…`, uid `2779788392`) with no metadata write attempted. The probe and
+all of its bindings were removed afterwards.
 
 **Also satisfied:** the firewall rule `allow-ssh-from-iap`
 (`35.235.240.0/20` → `tcp:22`, network `default`, enabled) covers the nodes — their `eth0`
