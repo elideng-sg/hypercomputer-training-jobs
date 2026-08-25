@@ -30,6 +30,25 @@ kubectl -n inference describe service qwen3-vllm
 
 The `hf-cache` PVC (ReadWriteOnce) reattaches to the new node automatically.
 
+### Step 4: Re-grant human access to the new node — **easy to forget, fails silently**
+
+A replacement node is a **new IAM resource with an empty policy**, so every
+instance-scoped grant the team relies on is gone. Nothing reports this: the pod
+reschedules, serving resumes, dashboards are green, and the first symptom is a
+teammate failing to connect days later. The project **owner will not notice**, because
+`roles/owner` satisfies these checks by other means.
+
+```bash
+deploy/ops/grant-node-ssh.sh        # SSH over IAP  (roster: ssh-team.txt)
+deploy/ops/grant-node-vm-ops.sh     # reset/stop/start (roster: vm-ops-team.txt)
+```
+
+Both are idempotent, discover nodes by the pool label rather than by name, and are safe
+to run whenever you are unsure. Neither implies the other — SSH lets you *use* a node,
+VM ops lets you *reboot* it. Run whichever the roster files say people need, then update
+the team-facing SSH runbook Doc, which names specific instances and so breaks on every
+rotation.
+
 ## Notes
 - **PVCs (Persistent Disk):** Reattach automatically in the same zone (ReadWriteOnce allows one node at a time).
 - **Kueue auto-reprovision:** A pending pod triggers Kueue to auto-reprovision a node if capacity is available.

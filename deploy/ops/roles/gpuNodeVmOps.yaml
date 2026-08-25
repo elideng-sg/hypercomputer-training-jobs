@@ -1,0 +1,29 @@
+title: "GPU Node VM Ops"
+description: >-
+  Instance-scoped VM lifecycle ops on the Flex-start GPU nodes: reset, stop/start,
+  suspend/resume, metadata/labels/tags, serial console. EXCLUDES
+  compute.instances.delete on purpose: these are GKE-managed scarce Flex-Start
+  nodes, removed by resizing the pool, never by deleting the VM.
+stage: GA
+includedPermissions:
+  # Resolve the instance. Redundant with roles/compute.viewer (already granted for
+  # SSH) but keeps this role usable on its own.
+  - compute.instances.get
+  # The core ops verbs. reset is the safe one on a Flex node -- a hard reboot keeps
+  # the DWS lease. stop/suspend do NOT (see the warning in grant-node-vm-ops.sh).
+  - compute.instances.reset
+  - compute.instances.stop
+  - compute.instances.start
+  - compute.instances.startWithEncryptionKey
+  - compute.instances.suspend
+  - compute.instances.resume
+  # Diagnostics for a wedged node that will not accept SSH -- the usual reason to
+  # want VM ops on a GPU node in the first place.
+  - compute.instances.getSerialPortOutput
+  - compute.instances.getGuestAttributes
+  - compute.instances.getScreenshot
+  # Instance attributes. setMetadata is also what lets an ops holder set
+  # enable-oslogin=TRUE themselves after a rotation instead of waiting on the owner.
+  - compute.instances.setMetadata
+  - compute.instances.setLabels
+  - compute.instances.setTags
