@@ -31,3 +31,11 @@ venv/
 
 # gcluster render / blueprint compose output
 lab/build/
+
+# Access rosters for the GPU-node grant scripts. THIS REPOSITORY IS PUBLIC, and these
+# files list named employees against the machines they can log into or reboot. The
+# *.example templates are tracked so the mechanism stays discoverable; the real rosters
+# are not. Recover a lost roster from the live IAM policy, not from memory -- see the
+# header of deploy/ops/vm-ops-team.txt.example.
+deploy/ops/ssh-team.txt
+deploy/ops/vm-ops-team.txt

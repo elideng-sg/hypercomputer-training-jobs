@@ -1,0 +1,31 @@
+# TEMPLATE. Copy to vm-ops-team.txt (same directory) and fill in real addresses:
+#
+#     cp vm-ops-team.txt.example vm-ops-team.txt
+#
+# vm-ops-team.txt itself is deliberately .gitignore'd: THIS REPOSITORY IS PUBLIC, and a
+# roster is a list of named employees plus the machines they can reboot. The template is
+# tracked so the mechanism is discoverable; the roster is not.
+#
+# That means the real roster exists only on whoever's workstation ran the grant. It is
+# the single source of truth for grant-node-vm-ops.sh and there is no backup -- if you
+# rebuild a checkout, recover it from the live IAM policy rather than guessing:
+#
+#     gcloud compute instances get-iam-policy <node> --zone <zone> \
+#       --flatten='bindings[].members' \
+#       --filter='bindings.role:roles/gpuNodeVmOps' --format='value(bindings.members)'
+#
+# ---------------------------------------------------------------------------------
+#
+# Users allowed VM-level ops (reset / stop / start / metadata / serial console) on the
+# GPU nodes of the Flex-start pool. Read by grant-node-vm-ops.sh.
+#
+# Keep this list STRICTLY SMALLER than ssh-team.txt. SSH lets you use a node; VM ops
+# lets you take it away from everyone else. Do not copy the SSH roster in wholesale.
+#
+# Unlike the IAP tunnel grant in grant-node-ssh.sh, these bindings are applied with
+# `add-iam-policy-binding`, which is ADDITIVE -- so granting one person ad-hoc does NOT
+# evict anybody. Still add the line here, or the next node rotation drops them.
+#
+# One member per line, in `user:<email>` form. Blank lines and # comments ignored.
+
+user:someone@example.com            # added YYYY-MM-DD, why they need VM ops

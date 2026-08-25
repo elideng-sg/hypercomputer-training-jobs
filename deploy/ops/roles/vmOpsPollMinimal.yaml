@@ -1,0 +1,10 @@
+title: "VM Ops Poll Minimal"
+description: >-
+  PROJECT-level companion to gpuNodeVmOps. Zone operations are zone-scoped, so an
+  instance-level binding can never satisfy the read gcloud performs while waiting
+  for a stop/start/reset. IAM flows downward only -- same trap as
+  sshResolveMinimal. Read-only.
+stage: GA
+includedPermissions:
+  - compute.zoneOperations.get
+  - compute.zoneOperations.list
