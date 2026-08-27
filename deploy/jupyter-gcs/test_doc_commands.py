@@ -222,6 +222,65 @@ def test_worked_notebook_defines_my_bucket_before_it_is_used():
     assert use_at is None, f"MY_BUCKET used in cell {use_at}, defined in {define_at}"
 
 
+# `gcloud storage rsync [-flags] <source>`, capturing the source only when it is a
+# LOCAL path (`~/...`, `/...`, `./...`), quoted or not. A `gs://` source is someone
+# else's data being pulled in, which says nothing about whether this cell wrote
+# anything.
+#
+# The optional quote matters: without it `rsync -r "~/scratch/ckpt"` does not match
+# and the cell is skipped silently -- the same kind of hole that let an unfixed 403
+# sit behind a green suite in #22. A source spelled with a variable (`$HOME/...`)
+# still escapes this; write paths literally in the notebook.
+RSYNC_SOURCE = re.compile(
+    r"""gcloud storage rsync\s+(?:-\S+\s+)*["']?"""
+    r"""(?P<src>(?:~|\.{0,2}/)[\w./-]*)(?=["'\s])"""
+)
+
+
+def test_worked_notebook_never_syncs_a_directory_it_left_empty():
+    """A cell that rsyncs a directory nothing has written to prints
+    ``Completed files 0 | 0B`` and demonstrates nothing.
+
+    Found by running the notebook on the cluster on 2026-08-27: the checkpoint
+    cell did ``mkdir -p ~/scratch/ckpt``, left a comment where a training loop's
+    write would go, and then synced it -- so the bucket had no ``checkpoints/``
+    prefix at all afterwards, and a user could not tell the pattern from a
+    no-op. A cell that runs has to do the thing it is teaching.
+    """
+    nb = json.loads(
+        (REPO_ROOT / "deploy/jupyter/examples/dataset_to_gcs.ipynb").read_text()
+    )
+    for i, cell in enumerate(nb.get("cells", [])):
+        if cell.get("cell_type") != "code":
+            continue
+        src = "".join(cell.get("source", []))
+        # Commented-out lines are illustrations, not things the cell runs. Cell 10
+        # carries a `# !gcloud storage rsync -r gs://...` example, and judging it
+        # would be judging prose.
+        live = "\n".join(
+            line for line in src.splitlines() if not line.lstrip().startswith("#")
+        )
+        match = RSYNC_SOURCE.search(live)
+        if not match:
+            continue
+        source_dir = match.group("src")
+        # Lines that touch the directory for a reason other than creating it or
+        # syncing it -- i.e. something that puts a file in it.
+        writers = [
+            line
+            for line in src.splitlines()
+            if source_dir in line
+            and not line.lstrip().startswith("#")
+            and "mkdir" not in line
+            and "rsync" not in line
+        ]
+        assert writers, (
+            f"cell {i} syncs {source_dir}, but nothing in that cell writes a file "
+            "there, so it copies zero bytes and proves nothing. Have the cell "
+            "create a stand-in file before the sync."
+        )
+
+
 @pytest.mark.parametrize(
     "path",
     [
