@@ -14,7 +14,7 @@
 # z2jh keeps it inside the `values.yaml` key of secret/hub, not as a flat key:
 #
 #   SECRET=$(kubectl get secret hub -n jupyter -o jsonpath='{.data.values\.yaml}' \
-#     | base64 -d | awk '/client_secret:/{print $2; exit}')
+#     | base64 -d | awk '/client_secret:/ && !seen {v=$2; seen=1} END{print v}')
 #   helm upgrade --install jhub jupyterhub/jupyterhub --version 4.4.0 -n jupyter \
 #     --values deploy/tcpxo-migration/03-jupyter-values-tcpxo.yaml \
 #     --set-string hub.config.GoogleOAuthenticator.client_secret="$SECRET"
@@ -75,7 +75,7 @@ prePuller:
     # cold image pull. singleuser.image is pre-pulled by the chart already.
     gpu-notebook:
       name: asia-southeast1-docker.pkg.dev/hdlab-elideng/lab-images/pytorch-notebook-gcs
-      tag: v1
+      tag: v2
 
 scheduling:
   userPods:
@@ -85,12 +85,17 @@ scheduling:
 
 singleuser:
   startTimeout: 1200
-  # CPU default. Slim (~2GB) but carries gcloud, gcsfs and huggingface_hub so
-  # that ~/gcs is actually usable without a GPU node. Built from
+  # CPU default. Slim (~2GB) but carries gcloud, gcsfs, pandas and huggingface_hub
+  # so that ~/gcs is actually usable without a GPU node. Built from
   # deploy/jupyter-gcs/image/Dockerfile.
+  #
+  # Tags are bumped, never overwritten. The notebook containers pull with
+  # IfNotPresent, so re-pushing an existing tag leaves every node that already
+  # cached it running the old image -- a rebuild that appears to do nothing.
+  # v2 adds pandas/pyarrow, missing from the minimal-notebook base.
   image:
     name: asia-southeast1-docker.pkg.dev/hdlab-elideng/lab-images/notebook-gcs
-    tag: v1
+    tag: v2
   storage:
     capacity: 20Gi
     dynamic:
@@ -104,7 +109,7 @@ singleuser:
 
   - display_name: "GPU (1x H100 Mega)"
     kubespawner_override:
-      image: asia-southeast1-docker.pkg.dev/hdlab-elideng/lab-images/pytorch-notebook-gcs:v1
+      image: asia-southeast1-docker.pkg.dev/hdlab-elideng/lab-images/pytorch-notebook-gcs:v2
       extra_resource_limits:
         nvidia.com/gpu: "1"
       node_selector:
@@ -119,7 +124,7 @@ singleuser:
   # 02-vllm-tcpxo.yaml -- but this is the profile that can scale out.
   - display_name: "GPU (8x H100 Mega, TCPXO fabric)"
     kubespawner_override:
-      image: asia-southeast1-docker.pkg.dev/hdlab-elideng/lab-images/pytorch-notebook-gcs:v1
+      image: asia-southeast1-docker.pkg.dev/hdlab-elideng/lab-images/pytorch-notebook-gcs:v2
       extra_resource_limits:
         nvidia.com/gpu: "8"
       node_selector:
@@ -171,14 +176,29 @@ singleuser:
         securityContext:
           capabilities:
             add: ["IPC_LOCK"]
+      # MAPS, not lists -- and that is a correctness requirement, not style.
+      #
+      # z2jh sets c.KubeSpawner.volumes / volume_mounts to dicts keyed by volume
+      # name (see the storage_type == "dynamic" block in the chart's
+      # jupyterhub_config.py) precisely so that a profile override MERGES with
+      # them. Supply a list here instead and it REPLACES the whole thing --
+      # taking the user's home PVC with it. A pod spawned on this profile then
+      # has no /home/jovyan mount at all: the notebook still opens, and every
+      # file the user saves is lost when the pod is replaced.
+      #
+      # Verified against a live 8-GPU spawn on 2026-08-27, which came up with
+      # only nvidia/aperture/shm mounted and no claim-<user>.
       volumes:
-      - name: nvidia
-        hostPath: {path: /home/kubernetes/bin/nvidia/lib64}
-      - name: aperture-devices
-        hostPath: {path: /dev/aperture_devices}
-      - name: shm
-        emptyDir: {medium: Memory, sizeLimit: 16Gi}
+        nvidia:
+          name: nvidia
+          hostPath: {path: /home/kubernetes/bin/nvidia/lib64}
+        aperture-devices:
+          name: aperture-devices
+          hostPath: {path: /dev/aperture_devices}
+        shm:
+          name: shm
+          emptyDir: {medium: Memory, sizeLimit: 16Gi}
       volume_mounts:
-      - {name: nvidia, mountPath: /usr/local/nvidia/lib64}
-      - {name: aperture-devices, mountPath: /dev/aperture_devices}
-      - {name: shm, mountPath: /dev/shm}
+        nvidia: {name: nvidia, mountPath: /usr/local/nvidia/lib64}
+        aperture-devices: {name: aperture-devices, mountPath: /dev/aperture_devices}
+        shm: {name: shm, mountPath: /dev/shm}

@@ -18,7 +18,10 @@ PROJECT="${PROJECT:-hdlab-elideng}"
 # location, so this is also called lab-images.
 REGION="${REGION:-asia-southeast1}"
 REPO="${REPO:-lab-images}"
-TAG="${TAG:-v1}"
+# Bump this when the Dockerfile changes; do not re-push an existing tag. Notebook
+# containers pull IfNotPresent, so a node that already cached the tag keeps the
+# old image and the rebuild silently has no effect.
+TAG="${TAG:-v2}"
 TARGET="${TARGET:-both}"
 PUSH="${PUSH:-1}"
 BUILDER="${BUILDER:-cloudbuild}"

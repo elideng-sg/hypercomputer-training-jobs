@@ -330,48 +330,98 @@ def gcsfuse_volume(bucket: str, name: str = "gcs-workspace", read_only: bool = F
         },
     }
     if read_only:
+        # Read-only is a CSI-level concept here, NOT a mountOption. The driver
+        # forwards every comma-separated mountOption to gcsfuse as a `--flag`, and
+        # gcsfuse has no `read_only` flag: adding one makes the mount fail with
+        #     gcsfuse failed with error: Error: unknown flag: --read_only
+        # and the notebook container then wedges in a retry loop on
+        # "transport endpoint is not connected" rather than failing outright.
+        # Observed live on 2026-08-27. `csi.readOnly` (plus readOnly on the
+        # volumeMount, set by the caller) is what actually enforces it.
         vol["csi"]["readOnly"] = True
-        vol["csi"]["volumeAttributes"]["mountOptions"] += ",read_only"
     return vol
 
 
-def apply_to_spawner(spawner, names: dict, shared_bucket: str | None = None) -> None:
-    """Point the spawner at the user's own identity and mount their bucket.
+WORKSPACE_VOLUME = "gcs-workspace"
+SHARED_VOLUME = "gcs-shared"
+HOME = "/home/jovyan"
 
-    Everything here is set as Python objects. Nothing goes through string
-    templating on purpose: KubeSpawner runs annotation values through
-    ``str.format()``, which is what broke GPU spawns with
-    ``KeyError: '"interfaceName"'`` when literal JSON braces reached it.
+FUSE_ANNOTATIONS = {
+    "gke-gcsfuse/volumes": "true",
+    "gke-gcsfuse/cpu-limit": "500m",
+    "gke-gcsfuse/memory-limit": "2Gi",
+    # gcsfuse buffers writes to local disk. Too small a limit here is what makes
+    # a multi-GB dataset download die partway.
+    "gke-gcsfuse/ephemeral-storage-limit": "100Gi",
+}
+
+
+def apply_to_spawner(spawner, names: dict, shared_bucket: str | None = None) -> None:
+    """Point the spawner at the user's own identity, and stash the names.
+
+    Deliberately does NOT touch ``spawner.volumes``. Two independent reasons,
+    both learned from a live spawn that came up with no ``~/gcs`` at all:
+
+    1. KubeSpawner applies a profile's ``kubespawner_override`` *after*
+       ``pre_spawn_hook``. A profile that supplies ``volumes`` as a list (the
+       TCPXO one does) replaces whatever this hook had put there.
+    2. z2jh sets ``c.KubeSpawner.volumes`` to a **dict** keyed by volume name so
+       that overrides merge. ``list(spawner.volumes)`` on a dict silently yields
+       the *key strings*, which would corrupt the volume list rather than fail.
+
+    The mounts are therefore injected by ``modify_pod_hook`` instead, which runs
+    on the finished manifest and is immune to both.
     """
     spawner.service_account = names["ksa"]
+    spawner._gcs_workspace = {"names": names, "shared": shared_bucket}
 
-    volumes = list(spawner.volumes or [])
-    mounts = list(spawner.volume_mounts or [])
 
-    volumes.append(gcsfuse_volume(names["bucket"]))
-    mounts.append({"name": "gcs-workspace", "mountPath": "/home/jovyan/gcs"})
+def _vol_name(entry) -> str | None:
+    """Name of a volume/mount that may be a dict or a kubernetes model object."""
+    if isinstance(entry, dict):
+        return entry.get("name")
+    return getattr(entry, "name", None)
 
-    if shared_bucket:
-        volumes.append(gcsfuse_volume(shared_bucket, name="gcs-shared", read_only=True))
-        mounts.append(
-            {"name": "gcs-shared", "mountPath": "/home/jovyan/shared", "readOnly": True}
-        )
 
-    spawner.volumes = volumes
-    spawner.volume_mounts = mounts
+def apply_to_pod(pod, names: dict, shared_bucket: str | None = None,
+                 container_name: str = "notebook") -> None:
+    """Inject the gcsfuse volumes into the pod that is about to be submitted.
 
-    annotations = dict(spawner.extra_annotations or {})
-    annotations.update(
-        {
-            "gke-gcsfuse/volumes": "true",
-            "gke-gcsfuse/cpu-limit": "500m",
-            "gke-gcsfuse/memory-limit": "2Gi",
-            # gcsfuse buffers writes to local disk. Too small a limit here is
-            # what makes a multi-GB dataset download die partway.
-            "gke-gcsfuse/ephemeral-storage-limit": "100Gi",
-        }
+    Appends plain dicts alongside whatever model objects KubeSpawner already
+    built; the kubernetes client serializes a mixed list element by element, so
+    the dict keys here are camelCase to match what the API expects.
+    """
+    container = next(
+        (c for c in (pod.spec.containers or []) if _vol_name(c) == container_name), None
     )
-    spawner.extra_annotations = annotations
+    if container is None:
+        # Fail closed rather than return a pod whose ~/gcs is quietly absent.
+        have = [_vol_name(c) for c in (pod.spec.containers or [])]
+        raise WorkspaceError(f"no {container_name!r} container in pod; found {have}")
+
+    volumes = list(pod.spec.volumes or [])
+    mounts = list(container.volume_mounts or [])
+    existing = {_vol_name(v) for v in volumes}
+
+    wanted = [(WORKSPACE_VOLUME, names["bucket"], f"{HOME}/gcs", False)]
+    if shared_bucket:
+        wanted.append((SHARED_VOLUME, shared_bucket, f"{HOME}/shared", True))
+
+    for vol_name, bucket, path, read_only in wanted:
+        if vol_name in existing:  # already injected -- keep this idempotent
+            continue
+        volumes.append(gcsfuse_volume(bucket, name=vol_name, read_only=read_only))
+        mount = {"name": vol_name, "mountPath": path}
+        if read_only:
+            mount["readOnly"] = True
+        mounts.append(mount)
+
+    pod.spec.volumes = volumes
+    container.volume_mounts = mounts
+
+    annotations = dict(pod.metadata.annotations or {})
+    annotations.update(FUSE_ANNOTATIONS)
+    pod.metadata.annotations = annotations
 
 
 def _env(name: str, default: str | None = None) -> str:
@@ -441,3 +491,22 @@ async def pre_spawn_hook(spawner):  # pragma: no cover - needs cluster + cloud
     spawner.log.info(
         "GCS workspace ready for %r: bucket=%s ksa=%s", username, names["bucket"], names["ksa"]
     )
+
+
+async def modify_pod_hook(spawner, pod):  # pragma: no cover - exercised via apply_to_pod
+    """Inject the mounts into the final manifest. MUST return the pod."""
+    stash = getattr(spawner, "_gcs_workspace", None)
+    if not stash:
+        # pre_spawn_hook is what fills this in, and it raises on failure, so an
+        # empty stash means the hooks are misconfigured rather than that the user
+        # has no workspace. Refuse instead of starting a pod without ~/gcs.
+        raise WorkspaceError(
+            "GCS workspace names were never stashed -- is pre_spawn_hook wired up? "
+            "Your notebook was not started -- tell the lab admin."
+        )
+    try:
+        apply_to_pod(pod, stash["names"], shared_bucket=stash["shared"])
+    except Exception as exc:
+        spawner.log.exception("GCS workspace mount injection failed")
+        raise WorkspaceError(f"Could not attach your GCS workspace: {exc}") from exc
+    return pod
