@@ -43,6 +43,7 @@
 - **Per-user isolation:** Each user gets their own notebook server pod with dedicated resources
 - **GPU or CPU profiles:** CPU-only, 1× H100 Mega, or a full 8-GPU fabric-armed node
 - **Persistent home directory:** Your files are saved to a 20 GB persistent volume that survives server restarts
+- **Private GCS workspace:** `~/gcs` is your own Cloud Storage bucket for datasets and artifacts — unlimited size, no one else can read it, created automatically on first login (see [Section 7](#7-persistence--what-survives-restarts))
 - **Public access with Google sign-in:** Reachable at **`https://jupyter.34.54.187.199.nip.io`** — sign in with your Workspace Google account (restricted to your organization's domain). No VPN or `kubectl` needed.
 
 ### Live deployment values
@@ -52,7 +53,7 @@
 - **Cluster / zone:** `hypercomputer-a3-tcpxo` in `asia-southeast1-c`
 - **GPU hardware:** 3× `a3-megagpu-8g` nodes = 24× NVIDIA H100 **Mega** 80GB
 - **CPU profile:** 4 CPU cores, 16 GB RAM, no GPU
-- **Storage per user:** 20 GB persistent disk (GCP `premium-rwo` SSD)
+- **Storage per user:** 20 GB persistent disk (GCP `premium-rwo` SSD) for `~`, plus a private GCS bucket mounted at `~/gcs`
 
 ---
 
@@ -350,8 +351,74 @@ This code will run on the H100 GPU, providing significantly faster training than
 
 ## 7. Persistence — What Survives Restarts
 
+You have **two** places to keep things, and choosing the right one matters:
+
+| Where | What it is | Size | Use it for |
+|---|---|---|---|
+| `~` (`/home/jovyan`) | 20 GB persistent disk (`premium-rwo` SSD) | 20 GB, fixed | notebooks, code, git checkouts, `requirements.txt` |
+| `~/gcs` | **your own private GCS bucket** | effectively unlimited | datasets, model weights, checkpoints, results |
+| `~/shared` | shared GCS bucket, **read-only** | — | common datasets someone already downloaded |
+
+**Put large data in `~/gcs`, not in `~`.** The home disk is 20 GB and filling it
+will wedge your notebook.
+
+### Your GCS workspace (`~/gcs`)
+
+`~/gcs` is a Cloud Storage bucket of your own, created automatically the first
+time you log in. **No one else can read it** — not other users, not by accident.
+Your notebook has its own cloud identity, so there are no keys to set up:
+
+```bash
+gcloud auth list        # you, automatically
+gcloud storage ls       # your bucket
+ls -la ~/gcs
+```
+
+Download a dataset straight into it:
+
+```bash
+mkdir -p ~/gcs/datasets
+curl -fsSL https://example.com/big.tar.gz -o ~/gcs/datasets/big.tar.gz
+
+# Hugging Face — point the cache at GCS too, or it fills your 20 GB home disk
+export HF_HOME=~/gcs/.cache/huggingface
+huggingface-cli download --repo-type dataset stanfordnlp/imdb --local-dir ~/gcs/datasets/imdb
+```
+
+Read it back either as ordinary files or as `gs://` URLs:
+
+```python
+import pandas as pd
+df = pd.read_csv("~/gcs/datasets/foo.csv")          # through the mount
+df = pd.read_csv("gs://<your-bucket>/datasets/foo.csv")  # via gcsfs, faster for one big read
+```
+
+**For anything above a few GB, don't copy through the mount.** `~/gcs` is a
+filesystem shim over object storage, not a transfer tool. Use `gcloud storage`,
+which is parallel and never stages data on this pod:
+
+```bash
+gcloud storage rsync -r gs://some-public-dataset gs://<your-bucket>/datasets/foo
+```
+
+Things that will surprise you about `~/gcs`:
+
+- **It is not a POSIX filesystem.** No hard links, no atomic directory rename,
+  and a partial write rewrites the whole object. Don't put a git repo, a SQLite
+  database, or a conda environment there.
+- **Empty directories don't really exist** — `mkdir ~/gcs/foo` can vanish until
+  something is written inside it.
+- **`ls` on a huge prefix is slow** — it is a paginated API call, not a directory read.
+- **Write training checkpoints to local disk and sync deliberately.** A loop that
+  writes every step directly into `~/gcs` will be slow.
+- **There is no quota.** Nothing stops you filling the bucket and running up the
+  bill. Delete what you're finished with.
+
+A worked example lives in `deploy/jupyter/examples/dataset_to_gcs.ipynb`.
+
 ### Persistent (survives restarts)
 
+- **Your GCS workspace (`~/gcs`):** survives everything — pod restarts, disk loss, cluster rebuilds
 - **Your home directory (`/home/jovyan`):** All notebooks, scripts, data files, and subdirectories you create are saved to a 20 GB persistent disk (GCP `premium-rwo` SSD)
 - **File contents:** Everything written to disk in your home directory
 

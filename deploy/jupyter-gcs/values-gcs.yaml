@@ -1,0 +1,86 @@
+# deploy/jupyter-gcs/values-gcs.yaml
+#
+# Helm values OVERLAY that turns on per-user GCS workspaces. Applied on top of
+# the TCPXO base values, never on its own:
+#
+#   helm upgrade --install jhub jupyterhub/jupyterhub --version 4.4.0 -n jupyter \
+#     --values deploy/tcpxo-migration/03-jupyter-values-tcpxo.yaml \
+#     --values deploy/jupyter-gcs/values-gcs.yaml \
+#     --set-file hub.extraFiles.gcs_workspaces.stringData=deploy/jupyter-gcs/gcs_workspaces.py \
+#     --set-string hub.config.GoogleOAuthenticator.client_secret="$SECRET"
+#
+# Use deploy/jupyter-gcs/install.sh, which does exactly that with the secret read
+# back out of the cluster.
+#
+# This overlay deliberately defines NO lists. Helm replaces lists rather than
+# merging them, so declaring e.g. profileList here would silently drop the
+# TCPXO GPU profiles from the base file.
+#
+# PREREQUISITES -- in this order, or the deployment is unsafe:
+#   1. deploy/jupyter-gcs/setup-iam.sh has run (custom roles, hub bindings, RBAC).
+#   2. The GCS FUSE CSI driver addon is enabled on the cluster.
+# Reason for the ordering: this overlay sets blockWithIptables=false, which
+# re-exposes the metadata server to user pods. That is only acceptable once each
+# user pod runs as its own KSA -- see the singleuser section below.
+---
+hub:
+  # Mounted as a Secret by the chart. `stringData` is intentionally absent: it is
+  # supplied with --set-file so the module has exactly one copy in the repo. A
+  # `helm upgrade` that forgets the --set-file FAILS at template time, which is
+  # the behaviour we want -- a hub running without the hook would hand users a
+  # notebook with no workspace.
+  extraFiles:
+    gcs_workspaces:
+      mountPath: /usr/local/etc/jupyterhub/gcs_workspaces.py
+
+  extraEnv:
+    GCS_WORKSPACE_PROJECT: "hdlab-elideng"
+    GCS_WORKSPACE_PROJECT_NUMBER: "151935633952"
+    GCS_WORKSPACE_WORKLOAD_POOL: "hdlab-elideng.svc.id.goog"
+    GCS_WORKSPACE_BUCKET_PREFIX: "hdlab-elideng-jupyter-"
+    GCS_WORKSPACE_LOCATION: "asia-southeast1"
+    # Read-only common datasets, mounted at ~/shared. Set to "" to disable.
+    GCS_WORKSPACE_SHARED_BUCKET: "hdlab-elideng-jupyter-shared"
+    # POD_NAMESPACE is already injected by the chart via fieldRef.
+
+  extraConfig:
+    # Runs inside jupyterhub_config.py. The module lives next to z2jh.py, which
+    # the chart's own config imports the same way.
+    01-gcs-workspaces: |
+      import sys
+      if "/usr/local/etc/jupyterhub" not in sys.path:
+          sys.path.insert(0, "/usr/local/etc/jupyterhub")
+      import gcs_workspaces
+      c.KubeSpawner.pre_spawn_hook = gcs_workspaces.pre_spawn_hook
+
+singleuser:
+  cloudMetadata:
+    # MANDATORY for this feature, and the one security-posture change here.
+    #
+    # The chart's default (true) runs an init container that iptables-DROPs
+    # 169.254.169.254, so nothing in the pod -- notebook or gcsfuse sidecar --
+    # can obtain a token. With it false, a notebook can reach the metadata
+    # server and mint a token for the identity it runs as.
+    #
+    # That is safe ONLY because the pre_spawn_hook sets a per-user KSA whose
+    # sole GCS grant is that user's own bucket. Before this change the reachable
+    # identity was the shared `default` SA, which is exactly why the block
+    # existed. Do not flip this without the hook in place.
+    blockWithIptables: false
+
+  networkPolicy:
+    egressAllowRules:
+      # SECOND, INDEPENDENT GATE -- both are required.
+      #
+      # The chart's singleuser NetworkPolicy puts 169.254.169.254/32 in the
+      # `except` list of its allow-all egress rule and permits only DNS ports to
+      # it. This cluster runs GKE Dataplane V2 (ADVANCED_DATAPATH), so that
+      # policy is enforced: with only blockWithIptables=false, notebooks still
+      # cannot reach the metadata server on port 80 and every token fetch times
+      # out.
+      #
+      # Easy to miss, because a hand-run debug pod is not labeled
+      # `component: singleuser-server` and so is not selected by this policy --
+      # it will happily reach GCS while real notebooks cannot. Same reasoning as
+      # blockWithIptables above: only acceptable with the per-user KSA in place.
+      cloudMetadataServer: true

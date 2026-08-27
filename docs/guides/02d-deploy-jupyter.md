@@ -181,6 +181,34 @@ graphics rendering and parallel computations, making it ideal for AI and machine
 
 **Success:** Notebooks can reach the inference service via in-cluster DNS.
 
+### 7.7 Optional: per-user GCS workspaces
+
+To give each user a private Cloud Storage bucket mounted at `~/gcs` — so datasets
+and artifacts live in GCS instead of a 20 GB disk — deploy the add-on in
+[`deploy/jupyter-gcs/`](../../deploy/jupyter-gcs/README.md).
+
+It layers a Helm overlay on top of the values above and provisions a bucket, a
+per-user Kubernetes ServiceAccount, and a Workload Identity binding on first
+login. Three things to know before you start:
+
+1. **The order is not optional.** `setup-iam.sh` must run before `install.sh`.
+   The overlay re-exposes the cloud metadata server to user pods, which is only
+   safe once each pod runs as its own ServiceAccount rather than the shared
+   `default` one. `install.sh` preflights this and refuses to proceed otherwise.
+2. **It needs the GCS FUSE CSI driver addon** on the cluster.
+3. **It replaces the notebook images** with builds that carry `gcloud`, `gcsfs`
+   and `google-cloud-storage`; the stock images have none of them.
+
+```bash
+deploy/jupyter-gcs/setup-iam.sh
+deploy/jupyter-gcs/image/build.sh
+deploy/jupyter-gcs/install.sh
+```
+
+The design rationale — including why this is a bucket per user rather than a
+folder per user — is in
+[the design spec](../superpowers/specs/2026-08-26-jupyter-gcs-workspaces-design.md).
+
 ---
 
 ← Previous: **[Part 3 — Deploy Inference](02c-deploy-inference.md)**  |  Next: **[Part 5 — Verify & Teardown](02e-verify-teardown.md)** →
