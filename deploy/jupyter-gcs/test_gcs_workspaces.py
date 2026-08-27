@@ -15,6 +15,7 @@ import copy
 
 import pytest
 
+import gcs_workspaces
 from gcs_workspaces import (
     BUCKET_NAME_LIMIT,
     RESERVED_NAMES,
@@ -426,9 +427,41 @@ def test_mounts_the_users_own_bucket_at_home_gcs():
 
 def test_gcsfuse_mount_options_make_the_directory_writable_by_jovyan():
     opts = gcsfuse_volume("b")["csi"]["volumeAttributes"]["mountOptions"]
-    # uid/gid 1000 is jovyan; without it the mount is root-owned and read-only
-    # in practice. implicit-dirs makes "folders" created by other tools visible.
-    assert "uid=1000" in opts and "gid=1000" in opts and "implicit-dirs" in opts
+    # Without uid/gid the mount is root-owned and read-only in practice.
+    # implicit-dirs makes "folders" created by other tools visible.
+    assert "uid=1000" in opts and "implicit-dirs" in opts
+
+
+def test_mount_gid_matches_the_chart_not_the_uid():
+    """z2jh runs the notebook as uid 1000 / fsGid 100 -- jovyan:users, not
+    jovyan:jovyan. gid=1000 would group-own the mount to a group the user is not
+    in; the uid match hides it, so only a test keeps it honest."""
+    assert gcs_workspaces.MOUNT_UID == 1000
+    assert gcs_workspaces.MOUNT_GID == 100
+    opts = gcsfuse_volume("b")["csi"]["volumeAttributes"]["mountOptions"]
+    assert "gid=100" in opts and "gid=1000" not in opts
+
+
+def test_provisioner_is_built_once_per_process():
+    """Each build makes a CoreV1Api, which owns an aiohttp session nobody closes.
+    Rebuilding per spawn leaks sockets in a process that runs for months."""
+    calls = []
+
+    def fake_build():
+        calls.append(1)
+        return object()
+
+    original, gcs_workspaces._PROVISIONER = gcs_workspaces.build_provisioner, None
+    gcs_workspaces.build_provisioner = fake_build
+    try:
+        first = gcs_workspaces.get_provisioner()
+        second = gcs_workspaces.get_provisioner()
+    finally:
+        gcs_workspaces.build_provisioner = original
+        gcs_workspaces._PROVISIONER = None
+
+    assert first is second
+    assert len(calls) == 1
 
 
 def test_existing_profile_volumes_are_preserved():

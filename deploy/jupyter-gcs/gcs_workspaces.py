@@ -308,6 +308,16 @@ class WorkspaceProvisioner:
 # -- spawner wiring -----------------------------------------------------------
 
 
+# The mount has to be owned by the identity the notebook actually runs as. z2jh
+# 4.4.0 defaults to singleuser.uid=1000 / singleuser.fsGid=100 (jovyan:users in
+# the docker-stacks images), and neither values file overrides them. Getting the
+# gid wrong is quietly survivable -- the uid still matches, so owner bits carry
+# the day -- which is exactly why it is worth pinning correctly here rather than
+# discovering it from a group-permission bug later.
+MOUNT_UID = 1000
+MOUNT_GID = 100
+
+
 def gcsfuse_volume(bucket: str, name: str = "gcs-workspace", read_only: bool = False) -> dict:
     vol = {
         "name": name,
@@ -315,7 +325,7 @@ def gcsfuse_volume(bucket: str, name: str = "gcs-workspace", read_only: bool = F
             "driver": "gcsfuse.csi.storage.gke.io",
             "volumeAttributes": {
                 "bucketName": bucket,
-                "mountOptions": "implicit-dirs,uid=1000,gid=1000",
+                "mountOptions": f"implicit-dirs,uid={MOUNT_UID},gid={MOUNT_GID}",
             },
         },
     }
@@ -391,11 +401,33 @@ def build_provisioner():  # pragma: no cover - needs cluster + cloud
     )
 
 
+_PROVISIONER = None
+
+
+def get_provisioner():
+    """One provisioner for the life of the hub process.
+
+    Not just an optimisation. ``client.CoreV1Api()`` builds an ApiClient that
+    owns an ``aiohttp.ClientSession``, and nothing closes it -- building one per
+    spawn leaks a session and its sockets every time anyone starts a server, in a
+    process that is meant to run for months. Reusing it also stops us
+    re-resolving credentials against the metadata server on every spawn.
+
+    No lock: the hook runs on the hub's single event loop and
+    ``build_provisioner`` is synchronous, so there is no await between the check
+    and the assignment for a second spawn to interleave into.
+    """
+    global _PROVISIONER
+    if _PROVISIONER is None:
+        _PROVISIONER = build_provisioner()
+    return _PROVISIONER
+
+
 async def pre_spawn_hook(spawner):  # pragma: no cover - needs cluster + cloud
     username = spawner.user.name
     shared = os.environ.get("GCS_WORKSPACE_SHARED_BUCKET") or None
     try:
-        provisioner = build_provisioner()
+        provisioner = get_provisioner()
         names = await provisioner.ensure(username)
         apply_to_spawner(spawner, names, shared_bucket=shared)
     except Exception as exc:
