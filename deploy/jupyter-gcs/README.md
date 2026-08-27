@@ -21,8 +21,11 @@ Design rationale and the live evidence behind it:
 ```bash
 # in a notebook terminal
 gcloud storage rsync -r gs://some-public-dataset ~/gcs/datasets/foo   # bulk: fast
-huggingface-cli download org/model --local-dir ~/gcs/models/thing     # also fine
+hf download org/model --local-dir ~/gcs/models/thing                 # also fine
 ```
+
+`hf`, not `huggingface-cli` — the image ships `huggingface_hub` 1.x, where the
+old entry point is a stub that downloads nothing.
 
 Use `gcloud storage` (not `cp` through the mount) for anything above a few GB —
 gcsfuse is a filesystem shim, not a transfer tool.

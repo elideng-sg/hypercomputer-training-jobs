@@ -643,7 +643,11 @@
 <p>Worth putting in <code>~/.bashrc</code>, since the rest of this section uses it:</p>
 <pre><code class="language-bash">export MY_BUCKET=&quot;$(findmnt -n -o SOURCE ~/gcs)&quot;<br>gcloud storage ls &quot;gs://$MY_BUCKET/&quot;        # this works -- it names your bucket</code></pre>
 <p>Download a dataset straight into it:</p>
-<pre><code class="language-bash">mkdir -p ~/gcs/datasets<br>curl -fsSL https://example.com/big.tar.gz -o ~/gcs/datasets/big.tar.gz<br><br># Hugging Face — point the cache at GCS too, or it fills your 20 GB home disk<br>export HF_HOME=~/gcs/.cache/huggingface<br>huggingface-cli download --repo-type dataset stanfordnlp/imdb --local-dir ~/gcs/datasets/imdb</code></pre>
+<pre><code class="language-bash">mkdir -p ~/gcs/datasets<br>curl -fsSL https://example.com/big.tar.gz -o ~/gcs/datasets/big.tar.gz<br><br># Hugging Face — point the cache at GCS too, or it fills your 20 GB home disk<br>export HF_HOME=~/gcs/.cache/huggingface<br>hf download --repo-type dataset stanfordnlp/imdb --local-dir ~/gcs/datasets/imdb</code></pre>
+<p>The command is <code>hf</code>, <strong>not</strong> <code>huggingface-cli</code>. This image ships</p>
+<p><code>huggingface_hub</code> 1.x, where the old name is a stub that prints</p>
+<p><code>huggingface-cli is deprecated and no longer works</code> and downloads nothing —</p>
+<p>while still exiting in a way that is easy to miss inside a pipeline.</p>
 <p>Read it back either as ordinary files or as <code>gs://</code> URLs:</p>
 <pre><code class="language-python">import pandas as pd<br>df = pd.read_csv(&quot;~/gcs/datasets/foo.csv&quot;)          # through the mount<br>df = pd.read_csv(&quot;gs://&lt;your-bucket&gt;/datasets/foo.csv&quot;)  # via gcsfs, faster for one big read</code></pre>
 <p><strong>For anything above a few GB, don&#x27;t copy through the mount.</strong> <code>~/gcs</code> is a</p>

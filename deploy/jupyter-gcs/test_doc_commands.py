@@ -22,6 +22,20 @@ to be sanitized:
 
     findmnt -n -o SOURCE ~/gcs      # -> hdlab-elideng-jupyter-<user>
 
+A second end-to-end run on 2026-08-27, after the fix above had been merged, found
+two more commands in the same documents that cannot work:
+
+* Cell 13 of the worked notebook still called the bare list -- as
+  ``subprocess.check_output(["gcloud", "storage", "ls"])``. The first version of
+  this file matched only the shell spelling, anchored to end of line, so the suite
+  stayed green over an unfixed 403. Hence ``BARE_LIST_ARGV``.
+* ``huggingface-cli download`` prints "deprecated and no longer works" and
+  downloads nothing under huggingface_hub 1.x, which this image ships. The
+  replacement is ``hf download``. Hence ``DEAD_ENTRYPOINTS``.
+
+The lesson each time is the same: a command in a document is only as good as the
+last time somebody ran it on the live cluster.
+
     pytest deploy/jupyter-gcs/ -q
 """
 
@@ -34,7 +48,27 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # `gcloud storage ls` / `gsutil ls` with nothing after it but a comment.
-BARE_LIST = re.compile(r"\b(?:gcloud storage|gsutil)\s+ls\s*(?:#.*)?$")
+# re.M so this also works when scanning a multi-line block, not just one line.
+BARE_LIST = re.compile(r"\b(?:gcloud storage|gsutil)\s+ls\s*(?:#.*)?$", re.M)
+
+# The same command spelled as an argv list, which is how Python calls it:
+#     subprocess.check_output(["gcloud", "storage", "ls"])
+# The first version of this file only had BARE_LIST, which is anchored to end of
+# line and therefore matched nothing here -- so cell 13 of the worked notebook
+# kept the 403 through a fix that was supposed to remove it, and the suite still
+# went green. An argv list is a command too.
+BARE_LIST_ARGV = re.compile(
+    r"""\[\s*(?P<q>["'])"""
+    r"""(?:gcloud(?P=q)\s*,\s*(?P=q)storage|gsutil)"""
+    r"""(?P=q)\s*,\s*(?P=q)ls(?P=q)\s*\]"""
+)
+
+# Entry points that exist but do nothing. `huggingface-cli` was removed in
+# huggingface_hub 1.x: it prints "deprecated and no longer works" and downloads
+# nothing, so a user following the guide gets an empty directory. Prose may still
+# name it (to warn people off), so only flag it outside backticks.
+DEAD_ENTRYPOINTS = ("huggingface-cli",)
+INLINE_CODE = re.compile(r"`[^`]*`")
 
 # An admin with project-level Storage permissions legitimately can list buckets;
 # those invocations name the project explicitly, so they are not user-facing.
@@ -74,6 +108,79 @@ def test_no_doc_tells_a_user_to_run_a_bare_gcloud_storage_ls():
         "`findmnt -n -o SOURCE ~/gcs` to get the bucket name, then name the "
         "bucket explicitly:\n  " + "\n  ".join(offenders)
     )
+
+
+def test_no_doc_calls_a_bare_gcloud_storage_ls_as_an_argv_list():
+    """Same defect as above, spelled the way Python spells it. Kept separate so a
+    failure names the shape that is wrong."""
+    offenders = [
+        f"{path.relative_to(REPO_ROOT)}:{where}: {line.strip()}"
+        for path, where, line in doc_lines()
+        if BARE_LIST_ARGV.search(line)
+    ]
+    assert not offenders, (
+        "These lines call `gcloud storage ls` with no bucket as an argv list, "
+        "which 403s exactly like the shell form. Get the name from the mount "
+        "(`findmnt -n -o SOURCE ~/gcs`) and name the bucket:\n  "
+        + "\n  ".join(offenders)
+    )
+
+
+def test_no_doc_invokes_an_entrypoint_that_no_longer_works():
+    """`huggingface-cli download ...` exits non-zero having downloaded nothing.
+    Mentions inside backticks are fine -- the guides name it to warn people off."""
+    offenders = []
+    for path, where, line in doc_lines():
+        bare = INLINE_CODE.sub("", line)
+        for dead in DEAD_ENTRYPOINTS:
+            if dead in bare:
+                offenders.append(
+                    f"{path.relative_to(REPO_ROOT)}:{where}: {line.strip()}"
+                )
+    assert not offenders, (
+        "`huggingface-cli` was removed in huggingface_hub 1.x -- it prints a "
+        "deprecation notice and downloads nothing. Use `hf` instead:\n  "
+        + "\n  ".join(offenders)
+    )
+
+
+def test_the_hand_authored_google_doc_source_stays_in_step():
+    """docs/export/jupyter-gcs-workspace-user-guide.html has no Markdown source --
+    it is written by hand and uploaded to the internal Doc -- so the checks above
+    cannot reach it. Guard the two commands that were wrong in it."""
+    doc = REPO_ROOT / "docs/export/jupyter-gcs-workspace-user-guide.html"
+    assert doc.exists(), doc
+    text = doc.read_text()
+
+    # Only <pre> blocks: the surrounding prose deliberately names the broken
+    # commands in order to warn people off them, so a plain substring search over
+    # the whole file flags the warnings themselves. The HTML comment header goes
+    # too -- it is maintainer notes about the Docs importer, not document content,
+    # and it quotes both broken commands while explaining them.
+    body = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+    blocks = re.findall(r"<pre[^>]*>(.*?)</pre>", body, re.S)
+    assert blocks, "no <pre> blocks -- has the Doc source been restructured?"
+
+    # Transcript blocks that show a command together with the error it produces
+    # are counter-examples: §3 and §7 quote the bare `gcloud storage ls` 403 on
+    # purpose, to demonstrate that the isolation holds. Those are the point, not
+    # a defect, so judge only the blocks that read as instructions.
+    commands = "\n".join(
+        b for b in blocks if "ERROR" not in b and "DENIED" not in b
+    )
+
+    for bad in ("huggingface-cli", '"gcloud", "storage", "ls"'):
+        assert bad not in commands, (
+            f"{doc.relative_to(REPO_ROOT)} runs `{bad}` in a code block, which does "
+            "not work. Fix it here AND re-upload the Doc -- this file is the Doc's "
+            "source, so the two drift apart silently."
+        )
+    for bare in BARE_LIST.finditer(commands):
+        raise AssertionError(
+            f"{doc.relative_to(REPO_ROOT)} runs a bare `{bare.group(0)}` in a code "
+            "block; it 403s. Use `findmnt -n -o SOURCE ~/gcs`."
+        )
+    assert "hf download" in commands, "the Doc source no longer shows how to download"
 
 
 def test_the_supported_bucket_discovery_command_is_documented():

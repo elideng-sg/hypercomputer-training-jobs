@@ -46,10 +46,15 @@ hostnames and bucket names. Do not share outside google.com.</p>
 
 <p><i>Audience: anyone using the HDLab JupyterHub on the A3-Mega TCPXO cluster.<br>
 Last verified end-to-end on the live cluster: 27 Aug 2026.<br>
+Rev 3, 27 Aug 2026 — the Hugging Face download command is
+<span style="font-family:'Courier New'">hf download</span>, not
+<span style="font-family:'Courier New'">huggingface-cli download</span>, which in this image
+downloads nothing at all (§4b).<br>
 Rev 2, 27 Aug 2026 — corrected how you find your bucket name. The first
 revision said to run a bare <span style="font-family:'Courier New'">gcloud storage ls</span>, which always fails with a 403;
 use <span style="font-family:'Courier New'">findmnt -n -o SOURCE ~/gcs</span> instead (§3). Nothing about your permissions
 changed.<br>
+Neither correction changed anything about your permissions or your workspace.<br>
 Owner: elideng@google.com</i></p>
 
 <h2>1. What you get, in one paragraph</h2>
@@ -231,8 +236,16 @@ bucket and you discover it much later.</p>
 # home disk, and a large model or dataset will fill it.
 export HF_HOME=~/gcs/.cache/huggingface
 
-huggingface-cli download --repo-type dataset stanfordnlp/imdb \
+hf download --repo-type dataset stanfordnlp/imdb \
   --local-dir ~/gcs/datasets/imdb</pre>
+
+<p>The command is <span style="font-family:'Courier New'">hf</span>, <b>not</b>
+<span style="font-family:'Courier New'">huggingface-cli</span>. This image ships
+<span style="font-family:'Courier New'">huggingface_hub</span> 1.x, in which the
+old name still exists but is a stub: it prints
+<i>&ldquo;huggingface-cli is deprecated and no longer works&rdquo;</i>, downloads
+nothing, and exits non-zero. Inside a notebook cell that is easy to scroll past,
+so you are left with an empty directory and no obvious reason why.</p>
 
 <p>Put that <span style="font-family:'Courier New'">export</span> in <span style="font-family:'Courier New'">~/.bashrc</span> so you cannot forget it.</p>
 
