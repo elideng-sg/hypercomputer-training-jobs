@@ -400,8 +400,13 @@ curl -fsSL https://example.com/big.tar.gz -o ~/gcs/datasets/big.tar.gz
 
 # Hugging Face — point the cache at GCS too, or it fills your 20 GB home disk
 export HF_HOME=~/gcs/.cache/huggingface
-huggingface-cli download --repo-type dataset stanfordnlp/imdb --local-dir ~/gcs/datasets/imdb
+hf download --repo-type dataset stanfordnlp/imdb --local-dir ~/gcs/datasets/imdb
 ```
+
+The command is `hf`, **not** `huggingface-cli`. This image ships
+`huggingface_hub` 1.x, where the old name is a stub that prints
+`huggingface-cli is deprecated and no longer works` and downloads nothing —
+while still exiting in a way that is easy to miss inside a pipeline.
 
 Read it back either as ordinary files or as `gs://` URLs:
 
