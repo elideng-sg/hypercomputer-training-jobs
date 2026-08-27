@@ -53,7 +53,10 @@ CONDITION_EXPR="resource.name.startsWith(\"projects/_/buckets/${BUCKET_PREFIX}\"
 
 run() {
   if [[ -n "$DRY_RUN" ]]; then
-    printf 'DRY_RUN: %q ' "$@"; echo
+    # One line per command, on stderr. stderr matters: several call sites end in
+    # >/dev/null to hide gcloud's policy dump, which would otherwise swallow the
+    # dry-run output too and make an IAM change look like it was skipped.
+    { printf 'DRY_RUN:'; printf ' %q' "$@"; echo; } >&2
   else
     "$@"
   fi

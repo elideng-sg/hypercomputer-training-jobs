@@ -51,7 +51,13 @@ hub:
       if "/usr/local/etc/jupyterhub" not in sys.path:
           sys.path.insert(0, "/usr/local/etc/jupyterhub")
       import gcs_workspaces
+      # Two hooks, and the split is load-bearing. pre_spawn_hook provisions the
+      # bucket/KSA and sets the pod's identity. The mounts have to go in via
+      # modify_pod_hook because a profile's kubespawner_override is applied
+      # AFTER pre_spawn_hook and replaces spawner.volumes outright -- a live
+      # spawn on the TCPXO profile came up with no ~/gcs at all that way.
       c.KubeSpawner.pre_spawn_hook = gcs_workspaces.pre_spawn_hook
+      c.KubeSpawner.modify_pod_hook = gcs_workspaces.modify_pod_hook
 
 singleuser:
   cloudMetadata:

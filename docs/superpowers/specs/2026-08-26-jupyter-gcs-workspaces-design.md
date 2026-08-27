@@ -167,10 +167,52 @@ Live verification:
   - **Resolution:** went back to the owner rather than substituting silently (as this spec committed to doing). Owner chose the documented fallback, **one bucket per user**. Re-verified live with probe `r1b-probe`: FUSE `ls`/write/read/nested-dir/20MB-file all worked, SDK listing of the own bucket worked, all four negative controls denied, zero `FailedMount` events. §1–§3 rewritten accordingly.
 - **R5 — a second, independent metadata gate that the spike had masked.** `singleuser.cloudMetadata.blockWithIptables: false` alone is **not sufficient**. The chart's singleuser NetworkPolicy `except`-lists `169.254.169.254/32` and allows only DNS ports to it, and this cluster runs Dataplane V2 (`ADVANCED_DATAPATH`), so it is enforced — notebooks would still have failed every token fetch. Found by rendering the chart and reading the policy, *not* by the live probe: a hand-run probe pod is not labeled `component: singleuser-server`, so the policy never selected it and the probe reached GCS while real notebooks could not have. Fix: `singleuser.networkPolicy.egressAllowRules.cloudMetadataServer: true`. **Generalisable lesson: a spike pod that skips the labels the real workload carries can skip its policies too.**
 
+## Verified findings (live end-to-end, 2026-08-27)
+
+The first real spawn found the feature non-functional, in a way no unit test could have caught. Four defects, in the order they surfaced.
+
+- **E1 — the mounts never reached the pod. `pre_spawn_hook` is the wrong hook for volumes.** The spawn *succeeded*: provisioning logged fine, the pod ran as `jupyter-user-elideng` — and had no CSI volumes, no `~/gcs`, no `~/shared`, no gcloud identity. Root cause is kubespawner's `_apply_overrides`:
+
+  ```python
+  if isinstance(v, dict) and isinstance(getattr(self, k), dict):
+      recursive_update(getattr(self, k), v)   # dicts MERGE
+  else:
+      setattr(self, k, v)                     # everything else REPLACES
+  ```
+
+  A profile's `kubespawner_override` is applied **after** `pre_spawn_hook`, so anything the hook appended to `spawner.volumes` was thrown away by the TCPXO profile's list-form `volumes`. Compounding it: z2jh sets `c.KubeSpawner.volumes` to a **dict keyed by volume name**, so `list(spawner.volumes)` silently yields the *key strings* rather than failing. **Fix:** inject volumes/mounts/annotations from `modify_pod_hook`, which runs on the final manifest after all overrides. `pre_spawn_hook` keeps only what it is allowed to own — the KSA — and stashes the names on the spawner. Both hooks are now wired in `values-gcs.yaml`, and the split is load-bearing.
+
+- **E2 — pre-existing data-loss bug, found only because E1 forced a look at the manifest.** The TCPXO 8-GPU profile supplied `volumes`/`volume_mounts` as **lists**, so by the rule above it *replaced* the chart's dict — deleting the user's home PVC. An 8-GPU pod had only `nvidia`/`aperture-devices`/`shm` and **no `/home/jovyan` mount at all**. The notebook still opened, which is exactly why nobody noticed: every file saved on that profile was lost when the pod was replaced. **Fix:** the profile now uses maps keyed by volume name, so it merges. `test_profile_volume_overrides_are_mappings_not_lists` fails on any profile that regresses this, in any values file in the repo.
+
+- **E3 — `read_only` is not a gcsfuse flag.** The shared-dataset volume set `mountOptions: …,read_only`; the CSI driver forwards each mountOption as `--<flag>`, so the mount failed with `gcsfuse failed with error: Error: unknown flag: --read_only`. The failure mode is nastier than a clean error: the sidecar had already started, so the notebook container retried forever on `transport endpoint is not connected` and the pod sat `Pending` until the spawn timed out. Read-only is a CSI-level concept — `csi.readOnly` plus `readOnly` on the volumeMount, both of which were already set and were sufficient on their own. A unit test had *asserted the broken behaviour*; it is now inverted into a guard that every mountOption is a flag gcsfuse actually has.
+
+- **E4 — the slim CPU image could not open a dataset.** `minimal-notebook` ships no `pandas`, so a freshly downloaded `iris.csv` in `~/gcs` raised `ModuleNotFoundError` — while the Dockerfile's own header claimed `pd.read_csv("gs://…")` worked. Added `pandas` and `pyarrow` (parquet is what most real datasets arrive as) and extended the build-time smoke test to import them. The GPU base already had pandas.
+  - Images are now **`v2`**. Tags are bumped, never re-pushed: notebook containers pull `IfNotPresent`, so overwriting a tag leaves every node that cached it running the old image — a rebuild that appears to do nothing. `build.sh` defaults to `v2` and says so.
+
+**All three profiles then verified live, in a real spawn, as the real user identity:**
+
+| Check | CPU (default) | GPU 1x | GPU 8x TCPXO |
+|---|---|---|---|
+| `~/gcs` writable, owned `1000:100` (`jovyan:users`) | ✅ | — | ✅ |
+| `~/shared` present and **read-only** (`touch` → `Read-only file system`) | ✅ | — | ✅ |
+| Home PVC `volume-elideng:/home/jovyan` mounted (E2) | ✅ | — | ✅ |
+| Write via FUSE → visible via `gcloud storage` / SDK / `gcsfs` | ✅ | — | ✅ |
+| `pandas.read_csv("gs://…")` native path | ✅ | — | ✅ |
+| Parquet round trip through the mount | ✅ | — | ✅ |
+| HTTP dataset download straight into `~/gcs` | ✅ | — | — |
+| 512 MB write through the sidecar — 132 MB/s, landed in GCS | ✅ | — | — |
+| 8 GPUs + `eth0`–`eth8` + `/dev/aperture_devices` intact | — | — | ✅ |
+| **Isolation: another user's bucket denied** (`storage.objects.list` denied) | ✅ | — | ✅ |
+| **Isolation: project-wide bucket listing denied** (`storage.buckets.list` denied) | ✅ | — | — |
+
+The 1-GPU profile was not spawned separately: it differs from the 8-GPU profile only in GPU count and in carrying none of the volume overrides that E2 was about, so it is strictly the easier case of a profile already verified.
+
+**Generalisable lesson, and the reason E1/E2 survived a careful review:** every unit test passed, provisioning logged success, and the notebook started. The feature was verified against the object the hook *hands over*, never against the manifest Kubernetes *actually ran*. A spawn that succeeds is not evidence that what you attached is attached.
+
 ## Open items
 
-- Sidecar resource values (`gke-gcsfuse/memory-limit` 2Gi, `ephemeral-storage-limit` 100Gi) are reasoned, not measured. Tune against a real multi-GB download.
-- Images are tagged `v1` off moving base tags, so `v1` is not a reproducible build. Pin bases by digest before relying on it for a published result.
+- Sidecar resource values (`gke-gcsfuse/memory-limit` 2Gi, `ephemeral-storage-limit` 100Gi) are reasoned, not measured. A 512 MB write sustained 132 MB/s with no sidecar pressure; still untested against a multi-GB download.
+- Images are tagged `v2` off moving base tags, so `v2` is not a reproducible build. Pin bases by digest before relying on it for a published result.
 - Base images (`minimal-notebook`, `pytorch-notebook:cuda12-latest`) are moving tags — deliberate for a lab, wrong for anything reproducible.
 - Spike leftovers to clean up: bucket `gs://hdlab-elideng-jupyter-asiasoutheast1` with its `users/spiketest*` managed folders, buckets `gs://hdlab-elideng-jupyter-spiketest{,2}`, custom role `jupyterWorkspaceBucketMeta`, KSAs `jupyter-user-spiketest{,2}`, and the finished probe pods.
 - The GPU nodes still sit on `1.35.6-gke.1641000` behind the pool target (R3) and auto-upgrade will re-wedge.
@@ -184,7 +226,11 @@ Live verification:
 4. The hub cannot read or write any object in any bucket. **Weakened by the pivot:** still true for object access, but the hub now holds `setIamPolicy` on prefix-matching buckets and so *could* grant itself object access to a workspace. See §3 for why this is unavoidable with auto-provisioning and how it is bounded.
 5. The existing TCPXO 8-GPU profile still spawns and still has its 9 interfaces.
 
-Status against these criteria at time of writing: 1–3 and 5 are verified by unit tests and by the live `r1b-probe` mechanism test, but **not yet by a real end-to-end user login** — the cluster changes and the images have not been applied. That is the remaining verification step, and criterion 3 is the one that actually matters.
+Status: **1, 2, 3 and 5 are verified live end-to-end** on 2026-08-27, as the real user identity in a real spawned notebook, on both the CPU and the 8-GPU TCPXO profile — see *Verified findings (live end-to-end, 2026-08-27)*. Criterion 3, the one that actually matters, is confirmed in both directions: another user's bucket is denied `storage.objects.list` and the project is denied `storage.buckets.list`, by SDK and by CLI, from inside the notebook. Criterion 5 holds with the 8 GPUs, `eth0`–`eth8` and the aperture devices all intact — and the profile now *also* keeps its home PVC, which it had been silently dropping before this work (E2).
+
+Criterion 4 is unchanged and remains as qualified above: no hub object access, but the hub holds `setIamPolicy` on prefix-matching buckets.
+
+Getting to that status took four live defects (E1–E4), two of them invisible to a green test suite and a successful spawn.
 
 ## Related
 

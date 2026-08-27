@@ -41,12 +41,22 @@ USER ${NB_UID}
 # for anything the filesystem abstraction cannot express (resumable uploads,
 # composing, metadata). huggingface_hub and kaggle are the two dataset sources
 # the team actually uses.
+#
+# pandas and pyarrow are here for the slim base only in effect: the GPU base
+# (pytorch-notebook, via scipy-notebook) already ships them, but
+# minimal-notebook does NOT. Without them the header's promise above is false on
+# the CPU profile -- verified live on 2026-08-27, where a freshly downloaded
+# iris.csv in ~/gcs could not be opened because `import pandas` raised
+# ModuleNotFoundError. pyarrow covers parquet, which is what most real datasets
+# arrive as.
 RUN set -eux; \
     mamba install --yes -c conda-forge \
       gcsfs \
       google-cloud-storage \
       "huggingface_hub>=0.24" \
-      kaggle; \
+      kaggle \
+      pandas \
+      pyarrow; \
     mamba clean --all -f -y; \
     fix-permissions "${CONDA_DIR}"; \
     fix-permissions "/home/${NB_USER}"
@@ -55,7 +65,7 @@ RUN set -eux; \
 # first spawn twenty minutes into a node pull.
 RUN set -eux; \
     gcloud --version; \
-    python -c "import gcsfs, google.cloud.storage, huggingface_hub; print('gcs toolchain ok')"
+    python -c "import gcsfs, google.cloud.storage, huggingface_hub, pandas, pyarrow; print('gcs toolchain ok')"
 
 # ~/gcs and ~/shared are created by the gcsfuse CSI mounts at pod start. They are
 # deliberately NOT mkdir'd here: an empty directory baked into the image would

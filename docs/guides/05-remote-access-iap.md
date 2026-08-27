@@ -375,7 +375,7 @@ the machine is gone. Update it whenever nodes rotate.
 - **The OAuth client secret is not in this repo — keep it that way.** **This repository is public.** `deploy/tcpxo-migration/03-jupyter-values-tcpxo.yaml` ships `client_secret: ""` and the real value is passed at install time with `--set-string hub.config.GoogleOAuthenticator.client_secret=...`. The live value is readable from the cluster (note it sits inside the `values.yaml` key of `secret/hub`, not as a flat key):
   ```bash
   kubectl get secret hub -n jupyter -o jsonpath='{.data.values\.yaml}' \
-    | base64 -d | awk '/client_secret:/{print $2; exit}'
+    | base64 -d | awk '/client_secret:/ && !seen {v=$2; seen=1} END{print v}'
   ```
   It did sit in a plaintext working file during the migration, so **rotating the client secret is still the safe call.**
 

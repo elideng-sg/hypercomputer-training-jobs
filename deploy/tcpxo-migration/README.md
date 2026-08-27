@@ -42,7 +42,7 @@ kubectl apply -f 02-vllm-tcpxo.yaml
 # It is still live in the cluster, so you can read it back rather than hunting for it.
 # z2jh keeps it inside the `values.yaml` key of secret/hub, not as a flat key:
 SECRET=$(kubectl get secret hub -n jupyter -o jsonpath='{.data.values\.yaml}' \
-  | base64 -d | awk '/client_secret:/{print $2; exit}')
+  | base64 -d | awk '/client_secret:/ && !seen {v=$2; seen=1} END{print v}')
 helm upgrade --install jhub jupyterhub/jupyterhub -n jupyter --version 4.4.0 \
   -f 03-jupyter-values-tcpxo.yaml --timeout 15m \
   --set-string hub.config.GoogleOAuthenticator.client_secret="$SECRET"

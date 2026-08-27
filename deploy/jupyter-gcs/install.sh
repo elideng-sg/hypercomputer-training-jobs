@@ -66,8 +66,12 @@ echo "hub IAM and RBAC in place"
 # 4. The OAuth client secret is not in the repo (public repo). Read it back out
 # of the running release, where it is stored inside the values.yaml key of
 # secret/hub rather than as a flat key.
+# awk must NOT `exit` on the first match here. Under `set -o pipefail` an early
+# exit closes the pipe, `base64 -d` dies of SIGPIPE, the pipeline reports 141 and
+# `set -e` kills this script -- silently, right after the last "ok" line. Match
+# into a variable and print once at END instead.
 SECRET="$(kubectl get secret hub -n "$NAMESPACE" -o jsonpath='{.data.values\.yaml}' \
-  | base64 -d | awk '/client_secret:/{print $2; exit}' | tr -d '"')"
+  | base64 -d | awk '/client_secret:/ && !seen {v=$2; seen=1} END{print v}' | tr -d '"')"
 if [[ -z "$SECRET" ]]; then
   cat >&2 <<'EOF'
 Could not recover the Google OAuth client_secret from secret/hub.
