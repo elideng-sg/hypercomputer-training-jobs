@@ -1,0 +1,42 @@
+# Extra Kubernetes RBAC for the hub, on top of what the z2jh chart grants.
+#
+# The chart's own Role covers pods, persistentvolumeclaims, secrets and
+# services; it has no hook for adding rules, so this is a separate Role and
+# RoleBinding. Being separate is also why `helm upgrade` will not clobber it.
+#
+#   kubectl apply -f deploy/jupyter-gcs/hub-rbac-extra.yaml
+#
+# The hook needs to look up a user's ServiceAccount and create it on first
+# login. Deliberately no `delete`, `patch` or `update`: the hub must not be able
+# to repoint an existing user's identity, which is how one user would end up
+# with another user's bucket. Removing a user is an admin action, not something
+# an internet-facing hub can do.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: hub-gcs-workspaces
+  namespace: jupyter
+  labels:
+    app: jupyterhub
+    component: gcs-workspace
+rules:
+- apiGroups: [""]
+  resources: ["serviceaccounts"]
+  verbs: ["get", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: hub-gcs-workspaces
+  namespace: jupyter
+  labels:
+    app: jupyterhub
+    component: gcs-workspace
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: hub-gcs-workspaces
+subjects:
+- kind: ServiceAccount
+  name: hub
+  namespace: jupyter

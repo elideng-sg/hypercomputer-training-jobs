@@ -1,0 +1,26 @@
+# Cloud Build config for the notebook images. Driven by build.sh.
+#
+# The default 10-minute build timeout is not enough: the CUDA target pulls a ~9GB
+# base and then runs a mamba solve. The default e2-medium worker is also slow at
+# both, hence the bigger machine.
+timeout: 3600s
+
+options:
+  machineType: E2_HIGHCPU_8
+  diskSizeGb: 200          # base image + layers + push staging
+  logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _BASE_IMAGE: quay.io/jupyter/minimal-notebook:latest
+  _IMAGE: unset            # build.sh always supplies this
+
+steps:
+- name: gcr.io/cloud-builders/docker
+  args:
+  - build
+  - --build-arg=BASE_IMAGE=${_BASE_IMAGE}
+  - --tag=${_IMAGE}
+  - .
+
+images:
+- ${_IMAGE}

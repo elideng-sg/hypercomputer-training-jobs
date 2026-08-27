@@ -52,6 +52,22 @@ kubectl apply -f 06-vllm-ingress.yaml
 deploy/ops/grant-node-ssh.sh          # instance-level SSH IAM for the team
 ```
 
+> ### ⚠️ If per-user GCS workspaces are deployed, do not run the bare `helm upgrade` above
+>
+> [`deploy/jupyter-gcs/`](../jupyter-gcs/README.md) layers a second values file on
+> top of `03-jupyter-values-tcpxo.yaml`. A `helm upgrade` with only `-f 03-...` drops
+> that overlay, and the failure is quiet: the `pre_spawn_hook` disappears, so pods
+> still start — just with no `~/gcs` mount and no per-user identity. Use
+> `deploy/jupyter-gcs/install.sh` instead; it passes both files.
+>
+> ```bash
+> # extraConfig lands inside the values.yaml key of secret/hub, not in cm/hub:
+> kubectl get secret hub -n jupyter -o jsonpath='{.data.values\.yaml}' \
+>   | base64 -d | grep -c gcs_workspaces
+> ```
+>
+> Non-zero means the overlay is live and this is the path you must use.
+
 ## Verified after migration
 
 - vLLM `2/2 Running, 0 restarts`; `/v1/models` returns `qwen3-32b` and a chat completion

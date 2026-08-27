@@ -1,7 +1,11 @@
 # Per-User GCS Workspaces for JupyterHub on TCPXO — Design Spec
 
 - **Date:** 2026-08-26
-- **Status:** Approved (design); spec pending review → implementation plan
+- **Status:** Implemented. **Revised mid-build:** the approved managed-folder
+  isolation mechanism failed live verification (R1 below) and was replaced, with
+  the owner's explicit agreement, by **one bucket per user**. §1–§3 describe the
+  shipped design; the original managed-folder design is preserved in R1 so the
+  reasoning is not lost. Code in [`deploy/jupyter-gcs/`](../../../deploy/jupyter-gcs/README.md).
 - **Cluster:** `hypercomputer-a3-tcpxo`, zone `asia-southeast1-c`, project `hdlab-elideng` (project number `151935633952`)
 - **Branch:** `feat/jupyter-gcs-workspaces`, based on `worktree-tcpxo-migration` (**not** `main` — the TCPXO JupyterHub config exists only on that branch)
 - **Depends on:** live JupyterHub (z2jh chart 4.4.0, release `jhub`, ns `jupyter`, Google OAuth), Workload Identity pool `hdlab-elideng.svc.id.goog`
@@ -16,29 +20,30 @@ Today a notebook has no cloud identity at all: user pods run as the shared `defa
 
 | Dimension | Decision |
 |-----------|----------|
-| Isolation | **One bucket + one GCS managed folder per user**, per-folder IAM (list included) |
+| Isolation | **One bucket per user**, bucket-level IAM. *(Revised — was one bucket + a managed folder per user; see R1.)* |
 | Provisioning | **Hub auto-provisions on first login** (`pre_spawn_hook`), no admin step |
 | Access path | **FUSE mount *and* CLI/SDK** — `~/gcs` for filesystem workflows, `gcloud storage`/`gcsfs` for bulk |
-| Bucket | **New regional bucket in `asia-southeast1`**, co-located with the cluster |
+| Bucket | **Regional, `asia-southeast1`**, co-located with the cluster |
 | Per-user identity | One KSA per user + **direct Workload Identity federation** (no GSA per user) |
-| Hierarchical namespace | **Off** — keeps managed folders unambiguous (see Verified findings) |
+| Hierarchical namespace | **Off** — no longer load-bearing once managed folders were dropped |
 | Deprovisioning | **Out of scope.** Nothing is ever deleted automatically |
 
 ## 1. Storage layout
 
-Bucket `gs://hdlab-elideng-jupyter-asiasoutheast1` — region `asia-southeast1`, uniform bucket-level access, public access prevention enforced, HNS off.
+**One bucket per user**, plus one shared bucket:
 
 ```
-gs://hdlab-elideng-jupyter-asiasoutheast1/
-├── users/<username>/     managed folder, one per user — private workspace
-└── shared/               managed folder — read-only to all users, admin-writable
+gs://hdlab-elideng-jupyter-<sanitized>    private workspace, one per user
+gs://hdlab-elideng-jupyter-shared         read-only to all users, admin-writable
 ```
 
-"Admin-writable" means a human with project-level `roles/storage.admin` populates `shared/` by hand. No automation writes there, and neither the hub nor any user KSA can.
+Every bucket: region `asia-southeast1`, uniform bucket-level access, public access prevention enforced, HNS off, label `managed-by=jupyterhub-gcs-workspaces`.
 
-`users/<username>/` holds datasets, checkpoints and any other artifacts. `shared/` exists so a large public dataset is downloaded once rather than once per user.
+Buckets cost nothing in themselves — GCS bills stored bytes, not buckets — and this makes isolation a property of the resource boundary rather than of a condition expression. The trade is a flat namespace: there is no single prefix listing to enumerate all workspaces, so `gcloud storage ls --project` plus the label is how an admin finds them.
 
-**Username sanitization.** The JupyterHub username becomes both a KSA name and a folder name, so it is normalized: lowercase, non-conforming characters to `-`, collapse repeats, strip leading/trailing `-`, truncate to 57 chars, and append `-` + first 5 hex of the SHA-256 of the original name **whenever normalization changed anything** (so `a.b` and `a-b` cannot collide). The mapping is recorded as a KSA annotation `lab.hdlab/jupyterhub-username` holding the original name. Current users (`elideng`, `samaujs`, `kzuo`) pass through unchanged.
+"Admin-writable" for the shared bucket means a human with project-level `roles/storage.admin` populates it by hand. No automation writes there. It exists so a large public dataset is downloaded once rather than once per user, and it is granted read-only to the namespace's whole principal set (`principalSet://…/namespace/jupyter`) rather than per user — so the hook never touches its policy and its policy does not grow with the user count.
+
+**Username sanitization.** The JupyterHub username becomes both a KSA name and a bucket suffix, so it is normalized: lowercase, non-conforming characters to `-`, collapse repeats, strip leading/trailing `-`, and truncate to fit. The bucket-name limit is 63 characters and the prefix `hdlab-elideng-jupyter-` consumes 22, so the sanitized name is capped at **41** characters (computed from the configured prefix, not hardcoded). A `-` plus the first 5 hex of the SHA-256 of the original name is appended **whenever normalization changed anything** (so `a.b` and `a-b` cannot collide) **or the result is a reserved name** — `shared`, `hub`, `default`, `admin`, `public`. Without that reservation a user called `shared` would have been granted `objectUser` on the shared dataset bucket. The mapping is recorded as a KSA annotation `lab.hdlab/jupyterhub-username` holding the original name. Current users (`elideng`, `samaujs`, `kzuo`) pass through unchanged.
 
 ## 2. Per-user identity
 
@@ -51,30 +56,38 @@ gs://hdlab-elideng-jupyter-asiasoutheast1/
 
 | Resource | Role | Why |
 |---|---|---|
-| managed folder `users/<u>/` | `roles/storage.objectUser` | read/write/delete **and list** within their own folder |
-| managed folder `shared/` | `roles/storage.objectViewer` | read common datasets |
-| bucket (whole) | custom `jupyterWorkspaceBucketMeta` = **`storage.buckets.get` only** | gcsfuse needs bucket metadata at mount time; exposes no object names |
+| `gs://hdlab-elideng-jupyter-<u>` (their own bucket) | `roles/storage.objectUser` | read/write/delete **and list** their own workspace |
+| `gs://hdlab-elideng-jupyter-shared` | `roles/storage.objectViewer`, granted to the namespace principal set | read common datasets |
 
-The bucket-level grant is deliberately the narrowest thing that lets gcsfuse start. Granting a normal bucket-level reader role instead would hand every user a listing of everyone's data and defeat the whole design.
+Nothing else. A user's principal appears in exactly one workspace bucket's policy — their own — so cross-user access is not a matter of getting a condition right; the permission simply does not exist. Bucket-level `objectUser` is safe *because* the bucket is the unit of ownership, which is precisely what the managed-folder design could not achieve (R1).
 
 ## 3. Hub auto-provisioning (the privileged component)
 
-Chosen for self-service, so the hub needs a GCP identity. It is boxed in tightly:
+Chosen for self-service, so the hub needs a GCP identity. **Direct Workload Identity federation for the hub KSA too** — no GSA at all, an improvement on the originally specced `jhub-provisioner@` GSA, since it removes a key-bearing identity from the design.
 
-- Hub KSA `hub` → WI → GSA `jhub-provisioner@hdlab-elideng.iam.gserviceaccount.com`.
-- That GSA is bound **only on this one bucket** to custom role `jupyterWorkspaceProvisioner`:
-  `storage.managedFolders.create`, `.get`, `.list`, `.getIamPolicy`, `.setIamPolicy`.
-- Consequently the hub **cannot read or write a single object**, cannot touch another bucket, cannot create buckets, and holds nothing at project level.
-- Hub's k8s Role gains `serviceaccounts: [get, create]` — no `delete`, no `patch`.
+Per-user buckets force one uncomfortable consequence: the hub needs `storage.buckets.create`, and **that permission cannot be name-scoped** — it is evaluated against the *project*, so an IAM condition on `resource.name` never matches and such a binding grants nothing. The mitigation is to split the grant in two, so only the harmless half is unconditioned:
 
-`pre_spawn_hook` (in `hub.extraConfig`), idempotent, runs on every spawn:
+| Custom role | Permissions | Binding |
+|---|---|---|
+| `jupyterWorkspaceBucketCreate` | `storage.buckets.create` | project, **unconditioned** |
+| `jupyterWorkspaceBucketIam` | `storage.buckets.get`, `.getIamPolicy`, `.setIamPolicy` | project, conditioned on `resource.name.startsWith("projects/_/buckets/hdlab-elideng-jupyter-")` |
+
+- The hub holds **no object permissions at all** — it cannot read or write a single object in any bucket.
+- It cannot touch the IAM of any bucket outside the workspace prefix, so it cannot grant itself access to e.g. `hdlab-elideng-userdata`.
+- It can create buckets anywhere in the project. That is a cost and noise risk, not a confidentiality one, and it is unavoidable as described above.
+- **Residual risk, stated plainly:** holding `setIamPolicy` on prefix-matching buckets means a compromised hub could grant itself object access to a user's workspace. This is inherent to auto-provisioning — whatever creates per-user IAM can also subvert it. Bounded to the prefix, recorded in Cloud Audit Logs (`SetIamPolicy` is admin-activity, on by default). The alternative is admin-provisioned workspaces. This weakens success criterion 4 and is called out there.
+- Hub's k8s RBAC gains `serviceaccounts: [get, create]` via a separate Role (`deploy/jupyter-gcs/hub-rbac-extra.yaml`; the chart exposes no hook for extra rules, and being separate means `helm upgrade` will not clobber it). No `delete`, no `patch`, no `update` — the hub must not be able to repoint an existing user's identity.
+
+`pre_spawn_hook` (wired via `hub.extraConfig`), idempotent, runs on every spawn — the steady state is two reads:
 
 1. Sanitize the username.
-2. Ensure KSA exists (create if absent, annotated with the original username).
-3. Ensure managed folder `users/<u>/` exists.
-4. Ensure the folder IAM binding exists (read-modify-write on the folder policy, preserving other bindings).
-5. Verify effective access with a bounded retry — `testIamPermissions` on the folder for the user's principal, retried with backoff up to a fixed ceiling (IAM propagation is not instant; the first mount can otherwise 403).
-6. Set `spawner.service_account` and attach the two CSI volumes with `only-dir` computed **in Python**, never via string templating.
+2. Ensure KSA `jupyter-user-<sanitized>` exists (create if absent, annotated with the original username). A 409 is tolerated as a lost race with a concurrent spawn.
+3. Ensure bucket `hdlab-elideng-jupyter-<sanitized>` exists (UBLA + PAP enforced at creation, so an accidental ACL cannot make it public). A 409 is tolerated.
+4. Ensure the bucket-level `objectUser` binding for the user's principal exists — read-modify-write preserving the etag and every other binding, so an admin binding is never clobbered.
+5. If a binding was just added, poll until it reads back, with bounded backoff. IAM is eventually consistent and the first mount would otherwise 403.
+6. Set `spawner.service_account` and attach the CSI volumes, all as Python objects — never via string templating (see R4).
+
+Implemented against `kubernetes_asyncio` + `google.auth`/`requests` REST calls, because the z2jh hub image ships those but has **neither** `google-cloud-storage` nor the synchronous `kubernetes` client. The blocking GCS half runs in an executor so a slow IAM poll does not stall the hub's event loop.
 
 **Fails closed.** If any step fails the spawn aborts with an actionable message. Handing a user a notebook whose `~/gcs` silently is not theirs — or is someone else's — is the one outcome worth failing a spawn to avoid.
 
@@ -85,18 +98,28 @@ Chosen for self-service, so the hub needs a GCP identity. It is boxed in tightly
 - **GCS FUSE CSI driver** enabled on the cluster (done — see Verified findings).
 - **`singleuser.cloudMetadata.blockWithIptables: false`** — mandatory. Nothing can authenticate to GCS while 169.254.169.254 is DROPped, and the block applies to the whole pod network namespace, so it disables the gcsfuse sidecar too.
 
-  This is the one security-posture change in the design, and it is only acceptable *because* of §2: the identity a user can now reach through the metadata server is their own folder-scoped KSA. Before this change the reachable identity would have been the shared `default` SA, which is exactly why the block was there. **The block must not be lifted before per-user KSAs are in place** — the ordering is a correctness requirement, not a preference.
+  This is the one security-posture change in the design, and it is only acceptable *because* of §2: the identity a user can now reach through the metadata server is their own bucket-scoped KSA. Before this change the reachable identity would have been the shared `default` SA, which is exactly why the block was there. **The block must not be lifted before per-user KSAs are in place** — the ordering is a correctness requirement, not a preference, and `install.sh` preflights it.
+- **`singleuser.networkPolicy.egressAllowRules.cloudMetadataServer: true`** — equally mandatory, and a **second, independent gate** (see R5). The chart's singleuser NetworkPolicy puts `169.254.169.254/32` in the `except` list of its allow-all egress rule and permits only DNS ports to it. This cluster runs GKE Dataplane V2 (`ADVANCED_DATAPATH`), so that policy is enforced: with only `blockWithIptables: false`, notebooks still cannot reach the metadata server on port 80 and every token fetch times out. Same ordering requirement as above.
 - Mounts (CSI inline ephemeral volumes, `gcsfuse.csi.storage.gke.io`):
 
 | Path | Contents | Options |
 |---|---|---|
-| `/home/jovyan/gcs` | their workspace | `only-dir=users/<u>`, `implicit-dirs`, uid/gid 1000 |
-| `/home/jovyan/shared` | common datasets | `only-dir=shared`, `read_only: true` |
+| `/home/jovyan/gcs` | their own bucket | `implicit-dirs`, uid/gid 1000 |
+| `/home/jovyan/shared` | shared bucket | `implicit-dirs`, uid/gid 1000, `read_only`, `readOnly: true` |
+
+No `only-dir` any more — the bucket *is* the workspace.
 
 - **The 20Gi `premium-rwo` PVC stays as `/home/jovyan`.** Code, notebooks, git checkouts and in-progress checkpoints belong on a real disk; GCS holds data and finished artifacts. Putting the home directory itself on FUSE breaks Jupyter's checkpoint/atomic-rename behavior.
 - Sidecar gets explicit resources via annotations (`gke-gcsfuse/cpu-limit`, `memory-limit`, `ephemeral-storage-limit`). The **ephemeral-storage limit is what makes multi-GB dataset downloads work** — gcsfuse buffers writes to local disk, and the default is too small for a 50GB download.
-- New image `asia-southeast1-docker.pkg.dev/hdlab-elideng/lab-images/pytorch-notebook-gcs:<tag>` = `quay.io/jupyter/pytorch-notebook:cuda12-latest` + `gcloud` CLI + `gcsfs` + `google-cloud-storage` + `huggingface_hub[cli]` + `kaggle`. The current image has none of these. Added to `prePuller.extraImages`.
-  A **new Artifact Registry repo in `asia-southeast1`** — the existing `lab-images` is in `asia-east1`, and this is a ~10GB CUDA image pulled on every new node.
+- **Two** images from one `Dockerfile` (`BASE_IMAGE` build arg), because the CPU profile should not pull a 10GB CUDA image to read a CSV:
+
+| Image | Base | Used by |
+|---|---|---|
+| `notebook-gcs:v1` (~2GB) | `quay.io/jupyter/minimal-notebook` | `singleuser.image` → CPU profile |
+| `pytorch-notebook-gcs:v1` (~10GB) | `quay.io/jupyter/pytorch-notebook:cuda12-latest` | both GPU profiles, `prePuller.extraImages` |
+
+  Both add `gcloud`/`gsutil` + `gcsfs` + `google-cloud-storage` + `huggingface_hub` + `kaggle`, none of which the stock images have. The GPU base is unchanged from what the GPU profiles already ran, so CUDA and torch behaviour does not move. Build-time smoke test (`gcloud --version`, import check) so a broken image fails in Cloud Build rather than on a user's first spawn.
+  A **new Artifact Registry repo in `asia-southeast1`** — the existing `lab-images` is in `asia-east1`, and this is a ~10GB CUDA image pulled on every new node. Repo names need only be unique per location, so it is also called `lab-images`.
 - Example notebook `deploy/jupyter/examples/dataset_to_gcs.ipynb`: download (HF / `curl`) → land in `~/gcs` → read back both as files and via `gcsfs` → and explicitly **when to stop using FUSE** and switch to `gcloud storage rsync` for bulk.
 
 ## 5. Failure modes
@@ -112,10 +135,9 @@ Chosen for self-service, so the hub needs a GCP identity. It is boxed in tightly
 
 ## 6. Testing
 
-Pure logic, unit-tested with pytest (no cluster needed):
-- username sanitizer: idempotence, collision resistance, length, annotation round-trip
-- hook logic against a faked GCS/k8s client: creates-when-absent, no-op-when-present, fails-closed-on-error
-- `test_profile_annotations.py` — cherry-picked from `fix/jupyter-tcpxo-spawn` (it does not exist on this branch), then extended to cover the new mounts and profiles (see R4)
+Pure logic, unit-tested with pytest, no cluster and no cloud — `cd deploy/jupyter-gcs && pytest -q`, also run as an `install.sh` preflight. 58 tests:
+- `test_gcs_workspaces.py` — username sanitizer (stability, collision resistance, length, reserved names, annotation round-trip); provisioner against faked GCS/k8s clients (creates-when-absent, no-op-when-present, etag/binding preservation, IAM convergence and give-up, 409 races tolerated, non-API exceptions not swallowed, fails-closed); spawner wiring (existing GPU profile volumes preserved, no braces in annotation values, two users get different buckets and neither appears in the other's policy).
+- `test_profile_annotations.py` — carried over from `fix/jupyter-tcpxo-spawn` (it did not exist on this branch), converted to pytest and extended to assert the *rendered* annotation is the 9-interface JSON GKE expects, not merely that `format()` did not raise (see R4).
 
 Live verification:
 1. **Negative control — the isolation proof.** User A must get 403 listing *and* reading user B's folder, and 403 listing the bucket root. This is the test that decides whether the design is sound; everything else is plumbing.
@@ -135,24 +157,39 @@ Live verification:
 - **Notebook image gap confirmed:** no `gcloud`, no `gsutil`, no `google-cloud-storage`, no `gcsfs`. Internet egress from user pods works.
 - `hub.extraConfig` is currently `{}` — no conflict with the new hook.
 - Hub Role currently covers `pods, persistentvolumeclaims, secrets, services` only — `serviceaccounts` must be added.
-- **R4 — pre-existing repo defect, in a file this work must edit.** The live hub runs the TCPXO interfaces annotation with **doubled** braces; `deploy/tcpxo-migration/03-jupyter-values-tcpxo.yaml` on the tip branch has **single** braces, which reproduces the production `KeyError: '"interfaceName"'` (kubespawner runs annotation values through `str.format()`). The fix and its test exist only on the stale side branch `fix/jupyter-tcpxo-spawn`, which is 7 commits behind. Two files describe the same config and the newer one is the broken one. This work will fix the braces and consolidate to a single source of truth that matches live, and is the reason the hook computes `only-dir` in Python rather than by templating.
+- **R4 — pre-existing repo defect, in a file this work must edit.** The live hub runs the TCPXO interfaces annotation with **doubled** braces; `deploy/tcpxo-migration/03-jupyter-values-tcpxo.yaml` on the tip branch has **single** braces, which reproduces the production `KeyError: '"interfaceName"'` (kubespawner runs annotation values through `str.format()`). The fix and its test exist only on the stale side branch `fix/jupyter-tcpxo-spawn`, which is 7 commits behind. Two files describe the same config and the newer one is the broken one. **Fixed:** `deploy/tcpxo-migration/03-jupyter-values-tcpxo.yaml` now carries the doubled braces (verified against the rendered chart output, which matches live), with a comment explaining why they must stay doubled, and `test_profile_annotations.py` fails if anyone un-doubles them. It is also why the hook builds volumes and annotations as Python objects rather than by templating.
+
+- **R1 (the crux) — FAILED. The managed-folder design does not work.** Tested live with KSA `jupyter-user-spiketest` holding `objectUser` on managed folder `users/spiketest/` plus `storage.buckets.get` on the bucket:
+  - **CSI mount failed:** `MountVolume.SetUp failed … PermissionDenied … Caller does not have storage.objects.list access to the … bucket. Permission 'storage.objects.list' denied on resource '//storage.googleapis.com/projects/_/buckets/hdlab-elideng-jupyter-asiasoutheast1'`.
+  - `skipCSIBucketAccessCheck: "true"` did **not** help — it relocated the identical denial into the sidecar ("sidecar bucket access check error").
+  - **SDK probe:** writing and reading inside the own folder worked, `buckets.get` worked, **listing the own folder was DENIED**, and all four negative controls were correctly denied.
+  - **Conclusion:** managed-folder IAM grants read/write but not listing, because `storage.objects.list` is evaluated at *bucket* scope regardless of prefix. Granting it bucket-wide to fix the mount would expose every user's object names to every user — which defeats the entire design. There is no isolation-preserving variant of the managed-folder approach.
+  - **Resolution:** went back to the owner rather than substituting silently (as this spec committed to doing). Owner chose the documented fallback, **one bucket per user**. Re-verified live with probe `r1b-probe`: FUSE `ls`/write/read/nested-dir/20MB-file all worked, SDK listing of the own bucket worked, all four negative controls denied, zero `FailedMount` events. §1–§3 rewritten accordingly.
+- **R5 — a second, independent metadata gate that the spike had masked.** `singleuser.cloudMetadata.blockWithIptables: false` alone is **not sufficient**. The chart's singleuser NetworkPolicy `except`-lists `169.254.169.254/32` and allows only DNS ports to it, and this cluster runs Dataplane V2 (`ADVANCED_DATAPATH`), so it is enforced — notebooks would still have failed every token fetch. Found by rendering the chart and reading the policy, *not* by the live probe: a hand-run probe pod is not labeled `component: singleuser-server`, so the policy never selected it and the probe reached GCS while real notebooks could not have. Fix: `singleuser.networkPolicy.egressAllowRules.cloudMetadataServer: true`. **Generalisable lesson: a spike pod that skips the labels the real workload carries can skip its policies too.**
 
 ## Open items
 
-- **R1 (crux) — not yet verified:** that gcsfuse mounts successfully with *folder-scoped* IAM plus `only-dir`, given object listing is normally a bucket-level permission. Managed folders exist precisely to scope listing, so this is expected to work, but it is unproven and needs a live pod. **If it fails, the fallback is one bucket per user** — a different design that changes §1–§3, and requires going back to the user, not a silent substitution.
-- Whether gcsfuse additionally demands `storage.objects.list` at bucket level. If it does, the only isolation-preserving answer is the per-user-bucket fallback, since a bucket-level list grant exposes every user's object names.
-- Sidecar resource values (memory / ephemeral-storage) to be tuned against a real multi-GB download rather than guessed.
+- Sidecar resource values (`gke-gcsfuse/memory-limit` 2Gi, `ephemeral-storage-limit` 100Gi) are reasoned, not measured. Tune against a real multi-GB download.
+- Images are tagged `v1` off moving base tags, so `v1` is not a reproducible build. Pin bases by digest before relying on it for a published result.
+- Base images (`minimal-notebook`, `pytorch-notebook:cuda12-latest`) are moving tags — deliberate for a lab, wrong for anything reproducible.
+- Spike leftovers to clean up: bucket `gs://hdlab-elideng-jupyter-asiasoutheast1` with its `users/spiketest*` managed folders, buckets `gs://hdlab-elideng-jupyter-spiketest{,2}`, custom role `jupyterWorkspaceBucketMeta`, KSAs `jupyter-user-spiketest{,2}`, and the finished probe pods.
+- The GPU nodes still sit on `1.35.6-gke.1641000` behind the pool target (R3) and auto-upgrade will re-wedge.
+- `docs/export/*.html` are generated and were not regenerated for the doc edits.
 
 ## Success criteria
 
 1. A user signs in, gets a notebook, and `~/gcs` is their own GCS workspace with no admin action.
 2. `curl`/`huggingface-cli` a dataset into `~/gcs`; it persists after the pod dies; it is readable next session.
 3. **User A provably cannot list or read user B's workspace** — by FUSE or by SDK.
-4. The hub cannot read or write any object in the bucket.
+4. The hub cannot read or write any object in any bucket. **Weakened by the pivot:** still true for object access, but the hub now holds `setIamPolicy` on prefix-matching buckets and so *could* grant itself object access to a workspace. See §3 for why this is unavoidable with auto-provisioning and how it is bounded.
 5. The existing TCPXO 8-GPU profile still spawns and still has its 9 interfaces.
+
+Status against these criteria at time of writing: 1–3 and 5 are verified by unit tests and by the live `r1b-probe` mechanism test, but **not yet by a real end-to-end user login** — the cluster changes and the images have not been applied. That is the remaining verification step, and criterion 3 is the one that actually matters.
 
 ## Related
 
-- `docs/guides/02d-deploy-jupyter.md`, `docs/guides/04-jupyter-notebook-user-guide.md` — need updating for `~/gcs`
-- `deploy/tcpxo-migration/03-jupyter-values-tcpxo.yaml` — the values file this work edits (see R4)
-- `deploy/ops/node-rotation-runbook.md` — home for the R3 auto-upgrade note
+- [`deploy/jupyter-gcs/README.md`](../../../deploy/jupyter-gcs/README.md) — the implementation: operator runbook, deployment order, security posture, troubleshooting
+- `deploy/jupyter/examples/dataset_to_gcs.ipynb` — worked example: download → land in `~/gcs` → read back → when to stop using FUSE
+- `docs/guides/02d-deploy-jupyter.md` §7.7, `docs/guides/04-jupyter-notebook-user-guide.md` §7 — updated for `~/gcs`
+- `deploy/tcpxo-migration/03-jupyter-values-tcpxo.yaml` — base values; brace fix and new images landed here (see R4)
+- `deploy/ops/node-rotation-runbook.md` — R3 auto-upgrade wedge documented here

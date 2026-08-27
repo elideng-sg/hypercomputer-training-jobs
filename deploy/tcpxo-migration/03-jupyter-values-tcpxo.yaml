@@ -71,9 +71,11 @@ prePuller:
   continuous:
     enabled: true
   extraImages:
+    # Pulled onto every node so a GPU notebook does not spend 10 minutes on a
+    # cold image pull. singleuser.image is pre-pulled by the chart already.
     gpu-notebook:
-      name: quay.io/jupyter/pytorch-notebook
-      tag: cuda12-latest
+      name: asia-southeast1-docker.pkg.dev/hdlab-elideng/lab-images/pytorch-notebook-gcs
+      tag: v1
 
 scheduling:
   userPods:
@@ -83,6 +85,12 @@ scheduling:
 
 singleuser:
   startTimeout: 1200
+  # CPU default. Slim (~2GB) but carries gcloud, gcsfs and huggingface_hub so
+  # that ~/gcs is actually usable without a GPU node. Built from
+  # deploy/jupyter-gcs/image/Dockerfile.
+  image:
+    name: asia-southeast1-docker.pkg.dev/hdlab-elideng/lab-images/notebook-gcs
+    tag: v1
   storage:
     capacity: 20Gi
     dynamic:
@@ -96,7 +104,7 @@ singleuser:
 
   - display_name: "GPU (1x H100 Mega)"
     kubespawner_override:
-      image: quay.io/jupyter/pytorch-notebook:cuda12-latest
+      image: asia-southeast1-docker.pkg.dev/hdlab-elideng/lab-images/pytorch-notebook-gcs:v1
       extra_resource_limits:
         nvidia.com/gpu: "1"
       node_selector:
@@ -111,7 +119,7 @@ singleuser:
   # 02-vllm-tcpxo.yaml -- but this is the profile that can scale out.
   - display_name: "GPU (8x H100 Mega, TCPXO fabric)"
     kubespawner_override:
-      image: quay.io/jupyter/pytorch-notebook:cuda12-latest
+      image: asia-southeast1-docker.pkg.dev/hdlab-elideng/lab-images/pytorch-notebook-gcs:v1
       extra_resource_limits:
         nvidia.com/gpu: "8"
       node_selector:
@@ -133,17 +141,27 @@ singleuser:
           - path: /dev/nvidia-uvm
           - path: /dev/dmabuf_import_helper
         networking.gke.io/default-interface: 'eth0'
+        # Braces are DOUBLED on purpose -- do not "clean this up".
+        #
+        # kubespawner passes every extra_annotations value through str.format()
+        # in _expand_user_properties() so that {username} and {userid} expand.
+        # A literal "{" therefore reads as the start of a replacement field, and
+        # single braces here killed every GPU spawn before pod creation with
+        #     KeyError: '"interfaceName"'
+        # "{{" is the format() escape for a literal "{". The rendered annotation
+        # that GKE receives has single braces, which is what this must produce.
+        # Covered by deploy/jupyter-gcs/test_profile_annotations.py.
         networking.gke.io/interfaces: |
           [
-            {"interfaceName":"eth0","network":"default"},
-            {"interfaceName":"eth1","network":"gpu-net-0"},
-            {"interfaceName":"eth2","network":"gpu-net-1"},
-            {"interfaceName":"eth3","network":"gpu-net-2"},
-            {"interfaceName":"eth4","network":"gpu-net-3"},
-            {"interfaceName":"eth5","network":"gpu-net-4"},
-            {"interfaceName":"eth6","network":"gpu-net-5"},
-            {"interfaceName":"eth7","network":"gpu-net-6"},
-            {"interfaceName":"eth8","network":"gpu-net-7"}
+            {{"interfaceName":"eth0","network":"default"}},
+            {{"interfaceName":"eth1","network":"gpu-net-0"}},
+            {{"interfaceName":"eth2","network":"gpu-net-1"}},
+            {{"interfaceName":"eth3","network":"gpu-net-2"}},
+            {{"interfaceName":"eth4","network":"gpu-net-3"}},
+            {{"interfaceName":"eth5","network":"gpu-net-4"}},
+            {{"interfaceName":"eth6","network":"gpu-net-5"}},
+            {{"interfaceName":"eth7","network":"gpu-net-6"}},
+            {{"interfaceName":"eth8","network":"gpu-net-7"}}
           ]
       environment:
         NCCL_FASTRAK_LLCM_DEVICE_DIRECTORY: /dev/aperture_devices

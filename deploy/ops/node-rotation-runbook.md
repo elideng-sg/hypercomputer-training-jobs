@@ -82,6 +82,45 @@ The `hf-cache` PVC (ReadWriteOnce) reattaches to the new node automatically.
 - **Kueue auto-reprovision:** A pending pod triggers Kueue to auto-reprovision a node if capacity is available.
 - **Capacity caveat:** If no A3 capacity is available, the gap window extends until capacity is granted.
 
+## Node auto-upgrade wedges and blocks all cluster changes
+
+**Observed 2026-08-22 → 2026-08-26 on `a3-mega-tcpxo-flex-pool`.** An
+`UPGRADE_NODES` operation sat in `RUNNING` for ~2.5 days and locked out *every*
+cluster configuration change — unrelated commands failed with
+`FAILED_PRECONDITION: ... CLUSTER_ALREADY_HAS_OPERATION`.
+
+**Why it wedges:** the pool autoscales to `totalMaxNodeCount: 3` and normally runs
+exactly 3 nodes, all packed with `gpu-holder-tcpxo` pods that exist to hold scarce
+DWS Flex-Start A3-mega capacity. A surge upgrade has nowhere to place the
+replacement node, and draining one would hand back capacity that may not be
+reacquirable. So it waits forever.
+
+**Diagnose before blaming your own command:**
+
+```bash
+gcloud container operations list --project hdlab-elideng --zone asia-southeast1-c \
+  --filter='status!=DONE'
+```
+
+**Unblock** (fast, does not drain nodes):
+
+```bash
+gcloud container operations cancel <OPERATION_ID> --zone asia-southeast1-c
+```
+
+**This recurs.** `autoUpgrade: true` on release channel `REGULAR` means GKE
+retries. After the 2026-08-26 cancel the GPU nodes sit on `1.35.6-gke.1641000`
+while the pool target is `1.35.6-gke.1710000`. Durable fixes — both need an
+owner's decision, since they touch scarce GPU capacity:
+
+1. Set a **maintenance exclusion** on the pool, or
+2. Raise the max node count so a surge upgrade has room.
+
+**Do not pipe `gcloud` through `head` or `tail`.** It masks the exit code, and
+that hid this exact failure once — a command that had actually failed with
+`CLUSTER_ALREADY_HAS_OPERATION` appeared to succeed. Use `set -o pipefail` or
+capture the exit code explicitly.
+
 ## Zero-Downtime Overlap (Not Currently Configured)
 
 **True zero-downtime overlap** (2 replicas across two nodes during rotation) is **NOT possible with the current setup** and would require:
