@@ -21,6 +21,7 @@ from gcs_workspaces import (
     RESERVED_NAMES,
     WorkspaceError,
     WorkspaceProvisioner,
+    apply_to_pod,
     apply_to_spawner,
     bucket_name,
     gcsfuse_volume,
@@ -412,17 +413,127 @@ class FakeSpawner:
         self.service_account = None
 
 
+class FakeContainer:
+    """Stands in for a V1Container: attribute access, snake_case volume_mounts."""
+
+    def __init__(self, name, volume_mounts=None):
+        self.name = name
+        self.volume_mounts = volume_mounts
+
+
+class _Spec:
+    def __init__(self, containers, volumes):
+        self.containers = containers
+        self.volumes = volumes
+
+
+class _Meta:
+    def __init__(self, annotations):
+        self.annotations = annotations
+
+
+class FakePod:
+    """Stands in for the V1Pod that KubeSpawner hands to modify_pod_hook."""
+
+    def __init__(self, containers=None, volumes=None, annotations=None):
+        if containers is None:
+            containers = [FakeContainer("notebook")]
+        self.spec = _Spec(containers, volumes)
+        self.metadata = _Meta(annotations)
+
+    @property
+    def notebook(self):
+        return next(c for c in self.spec.containers if c.name == "notebook")
+
+    def volume_names(self):
+        return [v["name"] if isinstance(v, dict) else v.name for v in self.spec.volumes]
+
+    def mount_paths(self):
+        return {m["name"]: m["mountPath"] for m in self.notebook.volume_mounts}
+
+
 def test_mounts_the_users_own_bucket_at_home_gcs():
     p = make_provisioner()
     names = p.names_for("elideng")
-    spawner = FakeSpawner()
-    apply_to_spawner(spawner, names)
+    pod = FakePod()
+    apply_to_pod(pod, names)
 
-    assert spawner.service_account == "jupyter-user-elideng"
-    vol = spawner.volumes[0]
+    vol = pod.spec.volumes[0]
     assert vol["csi"]["driver"] == "gcsfuse.csi.storage.gke.io"
     assert vol["csi"]["volumeAttributes"]["bucketName"] == "hdlab-elideng-jupyter-elideng"
-    assert {"name": "gcs-workspace", "mountPath": "/home/jovyan/gcs"} in spawner.volume_mounts
+    assert pod.mount_paths()["gcs-workspace"] == "/home/jovyan/gcs"
+
+
+def test_spawner_gets_the_identity_and_nothing_else():
+    """apply_to_spawner must set the KSA and stash, but must NOT touch volumes.
+
+    z2jh makes spawner.volumes a *dict* keyed by volume name; the old code did
+    list(spawner.volumes), which silently yields the key strings and corrupts the
+    volume list instead of failing. Leaving it alone is the fix.
+    """
+    p = make_provisioner()
+    chart_shape = {"volume-elideng": {"name": "volume-elideng"}}
+    spawner = FakeSpawner(volumes=dict(chart_shape))
+    apply_to_spawner(spawner, p.names_for("elideng"))
+
+    assert spawner.service_account == "jupyter-user-elideng"
+    assert spawner.volumes == chart_shape  # untouched, still a dict
+    assert spawner._gcs_workspace["names"]["bucket"] == "hdlab-elideng-jupyter-elideng"
+
+
+def test_mount_survives_a_profile_that_replaces_spawner_volumes():
+    """The live failure this whole split exists for.
+
+    KubeSpawner applies kubespawner_override AFTER pre_spawn_hook, and a profile
+    supplying `volumes` as a list replaces the trait outright. Injecting at
+    modify_pod_hook time means the profile cannot win.
+    """
+    p = make_provisioner()
+    names = p.names_for("elideng")
+    spawner = FakeSpawner(volumes={"volume-elideng": {"name": "volume-elideng"}})
+    apply_to_spawner(spawner, names)
+
+    # ... profile override lands here, wiping the trait ...
+    spawner.volumes = [{"name": "nvidia"}, {"name": "shm"}]
+
+    # ... and the pod is still built with the GCS mount present.
+    pod = FakePod(volumes=[{"name": "nvidia"}, {"name": "shm"}])
+    apply_to_pod(pod, spawner._gcs_workspace["names"])
+    assert "gcs-workspace" in pod.volume_names()
+
+
+def test_a_pods_home_mount_is_never_dropped():
+    """Whatever the pod already had -- home PVC included -- must survive."""
+    p = make_provisioner()
+    pod = FakePod(
+        containers=[
+            FakeContainer("notebook", volume_mounts=[
+                {"name": "volume-elideng", "mountPath": "/home/jovyan"}
+            ])
+        ],
+        volumes=[{"name": "volume-elideng"}, {"name": "nvidia"}],
+    )
+    apply_to_pod(pod, p.names_for("elideng"))
+
+    assert pod.volume_names() == ["volume-elideng", "nvidia", "gcs-workspace"]
+    assert pod.mount_paths()["volume-elideng"] == "/home/jovyan"
+
+
+def test_apply_to_pod_is_idempotent():
+    p = make_provisioner()
+    names = p.names_for("elideng")
+    pod = FakePod()
+    apply_to_pod(pod, names, shared_bucket="hdlab-elideng-jupyter-shared")
+    apply_to_pod(pod, names, shared_bucket="hdlab-elideng-jupyter-shared")
+    assert pod.volume_names() == ["gcs-workspace", "gcs-shared"]
+
+
+def test_a_pod_without_a_notebook_container_fails_closed():
+    """Better to refuse the spawn than to return a pod with no ~/gcs."""
+    p = make_provisioner()
+    pod = FakePod(containers=[FakeContainer("something-else")])
+    with pytest.raises(WorkspaceError, match="notebook"):
+        apply_to_pod(pod, p.names_for("elideng"))
 
 
 def test_gcsfuse_mount_options_make_the_directory_writable_by_jovyan():
@@ -468,23 +579,27 @@ def test_existing_profile_volumes_are_preserved():
     """The TCPXO 8-GPU profile brings nvidia/aperture/shm volumes; appending must
     not drop them or the GPU profile stops working."""
     p = make_provisioner()
-    spawner = FakeSpawner(
+    pod = FakePod(
+        containers=[
+            FakeContainer("notebook", volume_mounts=[
+                {"name": "nvidia", "mountPath": "/usr/local/nvidia/lib64"}
+            ])
+        ],
         volumes=[{"name": "nvidia"}, {"name": "shm"}],
-        volume_mounts=[{"name": "nvidia", "mountPath": "/usr/local/nvidia/lib64"}],
-        extra_annotations={"networking.gke.io/default-interface": "eth0"},
+        annotations={"networking.gke.io/default-interface": "eth0"},
     )
-    apply_to_spawner(spawner, p.names_for("elideng"))
+    apply_to_pod(pod, p.names_for("elideng"))
 
-    assert [v["name"] for v in spawner.volumes] == ["nvidia", "shm", "gcs-workspace"]
-    assert spawner.volume_mounts[0]["name"] == "nvidia"
-    assert spawner.extra_annotations["networking.gke.io/default-interface"] == "eth0"
+    assert pod.volume_names() == ["nvidia", "shm", "gcs-workspace"]
+    assert pod.notebook.volume_mounts[0]["name"] == "nvidia"
+    assert pod.metadata.annotations["networking.gke.io/default-interface"] == "eth0"
 
 
 def test_sidecar_annotations_include_an_ephemeral_storage_limit():
     p = make_provisioner()
-    spawner = FakeSpawner()
-    apply_to_spawner(spawner, p.names_for("elideng"))
-    ann = spawner.extra_annotations
+    pod = FakePod()
+    apply_to_pod(pod, p.names_for("elideng"))
+    ann = pod.metadata.annotations
     assert ann["gke-gcsfuse/volumes"] == "true"
     # gcsfuse stages writes on local disk; this limit is what lets a multi-GB
     # dataset download finish instead of dying partway.
@@ -494,30 +609,47 @@ def test_sidecar_annotations_include_an_ephemeral_storage_limit():
 def test_annotation_values_contain_no_braces():
     """KubeSpawner runs annotation values through str.format(). A literal brace
     is what produced the production KeyError: '"interfaceName"'."""
-    p = make_provisioner()
-    spawner = FakeSpawner()
-    apply_to_spawner(spawner, p.names_for("elideng"), shared_bucket="hdlab-elideng-jupyter-shared")
-    for k, v in spawner.extra_annotations.items():
+    for k, v in gcs_workspaces.FUSE_ANNOTATIONS.items():
         assert "{" not in v and "}" not in v, k
 
 
 def test_shared_bucket_is_mounted_read_only_when_configured():
     p = make_provisioner()
-    spawner = FakeSpawner()
-    apply_to_spawner(spawner, p.names_for("elideng"), shared_bucket="hdlab-elideng-jupyter-shared")
+    pod = FakePod()
+    apply_to_pod(pod, p.names_for("elideng"), shared_bucket="hdlab-elideng-jupyter-shared")
 
-    shared_vol = [v for v in spawner.volumes if v["name"] == "gcs-shared"][0]
+    shared_vol = [v for v in pod.spec.volumes if v["name"] == "gcs-shared"][0]
     assert shared_vol["csi"]["readOnly"] is True
-    assert "read_only" in shared_vol["csi"]["volumeAttributes"]["mountOptions"]
-    shared_mount = [m for m in spawner.volume_mounts if m["name"] == "gcs-shared"][0]
+    shared_mount = [m for m in pod.notebook.volume_mounts if m["name"] == "gcs-shared"][0]
     assert shared_mount["readOnly"] is True
+    assert shared_mount["mountPath"] == "/home/jovyan/shared"
+
+
+def test_mount_options_are_only_flags_gcsfuse_actually_has():
+    """Every mountOption is handed to gcsfuse as `--<option>`, so an invented one
+    breaks the mount. `read_only` was the real case: the CSI driver reported
+
+        gcsfuse failed with error: Error: unknown flag: --read_only
+
+    and because the sidecar had already started, the notebook container did not
+    fail cleanly -- it retried forever on "transport endpoint is not connected"
+    and the pod sat Pending until the spawn timed out. Read-only belongs in
+    csi.readOnly, which the test above pins. Observed live on 2026-08-27.
+    """
+    allowed = {"implicit-dirs", "uid", "gid"}
+    for read_only in (False, True):
+        opts = gcsfuse_volume("b", read_only=read_only)["csi"]["volumeAttributes"][
+            "mountOptions"
+        ]
+        for opt in opts.split(","):
+            assert opt.split("=")[0] in allowed, f"unknown gcsfuse flag {opt!r}"
 
 
 def test_no_shared_mount_when_not_configured():
     p = make_provisioner()
-    spawner = FakeSpawner()
-    apply_to_spawner(spawner, p.names_for("elideng"))
-    assert [v["name"] for v in spawner.volumes] == ["gcs-workspace"]
+    pod = FakePod()
+    apply_to_pod(pod, p.names_for("elideng"))
+    assert pod.volume_names() == ["gcs-workspace"]
 
 
 def test_two_users_get_different_buckets_end_to_end():
@@ -532,9 +664,13 @@ def test_two_users_get_different_buckets_end_to_end():
     apply_to_spawner(sa, a)
     apply_to_spawner(sb, b)
     assert sa.service_account != sb.service_account
+
+    pa, pb = FakePod(), FakePod()
+    apply_to_pod(pa, a)
+    apply_to_pod(pb, b)
     assert (
-        sa.volumes[0]["csi"]["volumeAttributes"]["bucketName"]
-        != sb.volumes[0]["csi"]["volumeAttributes"]["bucketName"]
+        pa.spec.volumes[0]["csi"]["volumeAttributes"]["bucketName"]
+        != pb.spec.volumes[0]["csi"]["volumeAttributes"]["bucketName"]
     )
     # And neither policy mentions the other's principal.
     for bucket, mine, theirs in ((a["bucket"], a, b), (b["bucket"], b, a)):

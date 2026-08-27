@@ -59,6 +59,32 @@ def annotations_in(path):
 
 
 @pytest.mark.parametrize("path", values_files(), ids=lambda p: p.name)
+def test_profile_volume_overrides_are_mappings_not_lists(path):
+    """A profile that overrides `volumes` as a LIST silently deletes the home PVC.
+
+    kubespawner's _apply_overrides merges an override into the existing trait only
+    when both are dicts (`recursive_update`); anything else is a plain setattr.
+    z2jh sets c.KubeSpawner.volumes to a dict keyed by volume name, so a list
+    override replaces the whole mapping -- home directory included. The notebook
+    still starts, and the user's files vanish when the pod is replaced.
+
+    Observed live on 2026-08-27: an 8-GPU spawn had only nvidia/aperture/shm
+    mounted and no claim-<user>.
+    """
+    values = yaml.safe_load(path.read_text()) or {}
+    for profile in (values.get("singleuser") or {}).get("profileList") or []:
+        override = profile.get("kubespawner_override") or {}
+        for key in ("volumes", "volume_mounts"):
+            if key in override:
+                assert isinstance(override[key], dict), (
+                    f"{path.name}: profile {profile.get('display_name')!r} sets "
+                    f"{key} as a {type(override[key]).__name__}; it must be a "
+                    "mapping keyed by volume name so it merges with the chart's "
+                    "home volume instead of replacing it"
+                )
+
+
+@pytest.mark.parametrize("path", values_files(), ids=lambda p: p.name)
 def test_every_profile_annotation_survives_str_format(path):
     for profile, key, value in annotations_in(path):
         try:

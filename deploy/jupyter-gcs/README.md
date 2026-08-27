@@ -81,7 +81,19 @@ On every spawn, `pre_spawn_hook` (idempotent, so the steady state is two reads):
    prevention enforced, `asia-southeast1`).
 4. Ensures a bucket-level `roles/storage.objectUser` binding for that KSA's
    direct Workload Identity principal, then waits until the binding reads back.
-5. Sets `spawner.service_account` and attaches the gcsfuse CSI volumes.
+5. Sets `spawner.service_account` and stashes the resolved names on the spawner.
+
+Then `modify_pod_hook` attaches the gcsfuse CSI volumes, the mounts and the
+`gke-gcsfuse/*` annotations to the finished pod manifest, and returns it.
+
+**Two hooks, and the split is load-bearing — do not fold the mounts back into
+`pre_spawn_hook`.** kubespawner applies a profile's `kubespawner_override` *after*
+`pre_spawn_hook`, and its `_apply_overrides` merges an override into the existing
+trait only when both sides are dicts; anything else is a plain `setattr`. A
+profile that supplies `volumes` therefore *replaces* whatever the hook appended.
+Tried live on 2026-08-27: provisioning logged success, the pod ran as the right
+KSA, and it had no `~/gcs` at all. `modify_pod_hook` runs on the final manifest,
+after every override, which is the only place this can be done safely.
 
 Identity is **direct Workload Identity federation** — a `principal://` member per
 KSA, no per-user GSA, so there is no service account key anywhere in this design.
@@ -191,3 +203,8 @@ isolation.
 | `~/gcs` empty but the bucket has objects | `implicit-dirs` missing from mount options, or you are looking at a different bucket |
 | Spawn works, `gcloud` missing | Profile is still on a stock image; check `singleuser.image` and the profile overrides |
 | Every GPU spawn dies with `KeyError` | The interfaces annotation braces got un-doubled |
+| **Spawn succeeds but there is no `~/gcs` at all**, and the hub logged provisioning success | `modify_pod_hook` is not registered, or the mounts were moved back into `pre_spawn_hook` where a profile override wipes them. `kubectl -n jupyter get pod jupyter-<user> -o jsonpath='{.spec.volumes[*].name}'` — believe the manifest, not the log |
+| **No `/home/jovyan` mount on a GPU profile** (files vanish when the pod is replaced) | That profile is overriding `volumes` as a *list*, which replaces the chart's dict and takes the home PVC with it. Use a map keyed by volume name; `pytest deploy/jupyter-gcs/` catches this |
+| Pod stuck Pending, `transport endpoint is not connected`, sidecar already Running | An invalid gcsfuse `mountOption`. Check the CSI event for `unknown flag: --…`. Read-only belongs in `csi.readOnly`, not in `mountOptions` |
+| Rebuilt an image but nothing changed | The tag was re-pushed. Notebook containers pull `IfNotPresent`, so nodes keep the cached layer — bump the tag in `build.sh` *and* in `03-jupyter-values-tcpxo.yaml` |
+| `ModuleNotFoundError: pandas` in a notebook | Profile is on an image older than `v2`, or on a stock `minimal-notebook` base |
