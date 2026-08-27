@@ -77,7 +77,11 @@
             border: 1px solid #dadce0;
             border-radius: 6px;
             padding: 12px;
-            font-family: 'Courier New', 'Consolas', monospace;
+            /* ONE font, deliberately: Docs' importer resolves a font-family list
+               to its LAST entry, and the generic `monospace` keyword lands on
+               Arial -- so a list ending in `monospace` silently renders code in
+               the body font. Verified 2026-08-27. */
+            font-family: 'Courier New';
             font-size: 9.5pt;
             white-space: pre-wrap;
             word-wrap: break-word;
@@ -88,7 +92,11 @@
         code {
             background-color: #f1f3f4;
             color: #d93025;
-            font-family: 'Courier New', 'Consolas', monospace;
+            /* ONE font, deliberately: Docs' importer resolves a font-family list
+               to its LAST entry, and the generic `monospace` keyword lands on
+               Arial -- so a list ending in `monospace` silently renders code in
+               the body font. Verified 2026-08-27. */
+            font-family: 'Courier New';
             font-size: 9.5pt;
             padding: 2px 4px;
             border-radius: 4px;
@@ -382,6 +390,9 @@
 
 <p><strong>Figure 1: Inference request flow.</strong> A user sends an HTTP request (curl or Python OpenAI client) to the internal load balancer. The request routes to the vLLM pod running on an A3 node with H100 GPUs. The pod processes the request using 2 GPUs in tensor-parallel mode and returns the generated text.</p>
 <h3 id="key-details">Key details</h3>
+<blockquote><strong>Nothing here changed in the 2026-08-05 migration.</strong> The service moved region (to</blockquote>
+<blockquote><code>asia-southeast1-c</code>, on A3 Mega GPUs) but the **URL, the model name, and your API key are</blockquote>
+<blockquote>all the same**. No action needed — your existing code keeps working.</blockquote>
 <ul>
 <li><strong>Model served:</strong> <code>Qwen/Qwen3-32B</code> (from Hugging Face, ungated)</li>
 <li><strong>Model name to use in API calls:</strong> <code>qwen3-32b</code></li>
@@ -402,213 +413,57 @@
 <h3 id="getting-your-api-key">Getting your API key</h3>
 <p>Every request needs an API key — you don&#x27;t create it yourself.</p>
 <p><strong>If you&#x27;re a team member:</strong> ask your cluster admin for the key, then set it as an environment variable so every example below works unchanged:</p>
-<pre><code class="language-bash">
-export VLLM_API_KEY=&quot;&lt;the key your admin gave you&gt;&quot;
-</code></pre>
+<pre><code class="language-bash">export VLLM_API_KEY=&quot;&lt;the key your admin gave you&gt;&quot;</code></pre>
 <p><strong>If you&#x27;re the admin:</strong> the key is stored in the <code>vllm-api-key</code> Kubernetes secret. Retrieve it (and share it with the team over a secure channel — a password manager, not chat/email) with:</p>
-<pre><code class="language-bash">
-kubectl -n inference get secret vllm-api-key -o jsonpath=&#x27;{.data.api-key}&#x27; | base64 -d; echo
-</code></pre>
+<pre><code class="language-bash">kubectl -n inference get secret vllm-api-key -o jsonpath=&#x27;{.data.api-key}&#x27; | base64 -d; echo</code></pre>
 <p>Treat the key like a password: don&#x27;t commit it to code or post it publicly. To rotate it, see <a href="05-remote-access-iap.html#security-notes--gotchas">Remote Access → Security notes</a>.</p>
 <h3 id="a-public-https-endpoint-recommended-for-the-team">(a) Public HTTPS endpoint (recommended, for the team)</h3>
 <p>From anywhere — no VPC access or <code>kubectl</code> needed. Use the HTTPS URL plus the API key:</p>
-<pre><code class="language-">
-https://infer.136.69.110.10.nip.io/v1
-</code></pre>
+<pre><code class="language-">https://infer.136.69.110.10.nip.io/v1</code></pre>
 <p>Every request must include <code>Authorization: Bearer &lt;API_KEY&gt;</code> (the OpenAI client sends this automatically when you set <code>api_key</code>). Get the key from your admin.</p>
 <h3 id="b-from-a-jupyter-notebook-in-cluster">(b) From a Jupyter notebook in-cluster</h3>
 <p>Notebooks running in the JupyterHub environment (namespace <code>jupyter</code>) can use the in-cluster DNS name:</p>
-<pre><code class="language-">
-http://qwen3-vllm.inference.svc.cluster.local:8000
-</code></pre>
+<pre><code class="language-">http://qwen3-vllm.inference.svc.cluster.local:8000</code></pre>
 <p>See <a href="#8-using-from-a-jupyter-notebook">Section 8</a> for a complete notebook example.</p>
 <h3 id="c-from-your-laptop-outside-the-vpc">(c) From your laptop (outside the VPC)</h3>
 <p>If you&#x27;re developing from your laptop and need to test the endpoint, use <code>kubectl port-forward</code>:</p>
-<pre><code class="language-bash">
-# Forward local port 8000 to the vLLM service in the cluster
-kubectl -n inference port-forward svc/qwen3-vllm 8000:8000
-</code></pre>
+<pre><code class="language-bash"># Forward local port 8000 to the vLLM service in the cluster<br>kubectl -n inference port-forward svc/qwen3-vllm 8000:8000</code></pre>
 <p>Leave this running in a terminal, then use <code>http://localhost:8000</code> in your code or curl commands.</p>
 <p><strong>Note:</strong> You&#x27;ll need cluster credentials configured:</p>
-<pre><code class="language-bash">
-gcloud container clusters get-credentials hypercomputer-a3-cluster \
-  --region us-central1 --project hdlab-elideng
-</code></pre>
+<pre><code class="language-bash">gcloud container clusters get-credentials hypercomputer-a3-tcpxo \<br>  --location asia-southeast1-c --project hdlab-elideng</code></pre>
 <hr>
 <h2 id="3-list-available-models">3. List Available Models</h2>
 <p>To see the model(s) served by the endpoint:</p>
-<pre><code class="language-bash">
-curl https://infer.136.69.110.10.nip.io/v1/models \
-  -H &quot;Authorization: Bearer $VLLM_API_KEY&quot;
-</code></pre>
+<pre><code class="language-bash">curl https://infer.136.69.110.10.nip.io/v1/models \<br>  -H &quot;Authorization: Bearer $VLLM_API_KEY&quot;</code></pre>
 <p><strong>Sample output:</strong></p>
-<pre><code class="language-json">
-{
-  &quot;object&quot;: &quot;list&quot;,
-  &quot;data&quot;: [
-    {
-      &quot;id&quot;: &quot;qwen3-32b&quot;,
-      &quot;object&quot;: &quot;model&quot;,
-      &quot;created&quot;: 1784284247,
-      &quot;owned_by&quot;: &quot;vllm&quot;,
-      &quot;root&quot;: &quot;Qwen/Qwen3-32B&quot;,
-      &quot;max_model_len&quot;: 32768
-    }
-  ]
-}
-</code></pre>
+<pre><code class="language-json">{<br>  &quot;object&quot;: &quot;list&quot;,<br>  &quot;data&quot;: [<br>    {<br>      &quot;id&quot;: &quot;qwen3-32b&quot;,<br>      &quot;object&quot;: &quot;model&quot;,<br>      &quot;created&quot;: 1784284247,<br>      &quot;owned_by&quot;: &quot;vllm&quot;,<br>      &quot;root&quot;: &quot;Qwen/Qwen3-32B&quot;,<br>      &quot;max_model_len&quot;: 32768<br>    }<br>  ]<br>}</code></pre>
 <p>The <code>id</code> field (<code>&quot;qwen3-32b&quot;</code>) is the model name you&#x27;ll use in chat completion requests.</p>
 <hr>
 <h2 id="4-chat-completion-with-curl">4. Chat Completion with curl</h2>
 <h3 id="basic-request">Basic request</h3>
-<pre><code class="language-bash">
-curl https://infer.136.69.110.10.nip.io/v1/chat/completions \
-  -H &quot;Authorization: Bearer $VLLM_API_KEY&quot; \
-  -H &#x27;Content-Type: application/json&#x27; \
-  -d &#x27;{
-    &quot;model&quot;: &quot;qwen3-32b&quot;,
-    &quot;messages&quot;: [
-      {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Explain tensor parallelism in one sentence.&quot;}
-    ],
-    &quot;max_tokens&quot;: 64
-  }&#x27;
-</code></pre>
+<pre><code class="language-bash">curl https://infer.136.69.110.10.nip.io/v1/chat/completions \<br>  -H &quot;Authorization: Bearer $VLLM_API_KEY&quot; \<br>  -H &#x27;Content-Type: application/json&#x27; \<br>  -d &#x27;{<br>    &quot;model&quot;: &quot;qwen3-32b&quot;,<br>    &quot;messages&quot;: [<br>      {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Explain tensor parallelism in one sentence.&quot;}<br>    ],<br>    &quot;max_tokens&quot;: 64<br>  }&#x27;</code></pre>
 <h3 id="sample-json-response">Sample JSON response</h3>
-<pre><code class="language-json">
-{
-  &quot;id&quot;: &quot;chatcmpl-971f5573976c4b7ca0aecc292c892e86&quot;,
-  &quot;object&quot;: &quot;chat.completion&quot;,
-  &quot;model&quot;: &quot;qwen3-32b&quot;,
-  &quot;choices&quot;: [
-    {
-      &quot;index&quot;: 0,
-      &quot;message&quot;: {
-        &quot;role&quot;: &quot;assistant&quot;,
-        &quot;content&quot;: &quot;&lt;think&gt;\nOkay, the user wants me to explain tensor parallelism in one sentence. Tensor parallelism is a technique where a large neural network model is split across multiple GPUs by dividing the weight matrices of each layer, allowing the GPUs to compute in parallel and exchange partial results over high-speed interconnects like NVLink.\n&lt;/think&gt;\n\nTensor parallelism is a technique that splits a model&#x27;s weight matrices across multiple GPUs so they compute in lockstep and exchange partial results, enabling faster inference for large models.&quot;
-      },
-      &quot;finish_reason&quot;: &quot;stop&quot;
-    }
-  ],
-  &quot;usage&quot;: {
-    &quot;prompt_tokens&quot;: 15,
-    &quot;total_tokens&quot;: 79,
-    &quot;completion_tokens&quot;: 64
-  }
-}
-</code></pre>
+<pre><code class="language-json">{<br>  &quot;id&quot;: &quot;chatcmpl-971f5573976c4b7ca0aecc292c892e86&quot;,<br>  &quot;object&quot;: &quot;chat.completion&quot;,<br>  &quot;model&quot;: &quot;qwen3-32b&quot;,<br>  &quot;choices&quot;: [<br>    {<br>      &quot;index&quot;: 0,<br>      &quot;message&quot;: {<br>        &quot;role&quot;: &quot;assistant&quot;,<br>        &quot;content&quot;: &quot;&lt;think&gt;\nOkay, the user wants me to explain tensor parallelism in one sentence. Tensor parallelism is a technique where a large neural network model is split across multiple GPUs by dividing the weight matrices of each layer, allowing the GPUs to compute in parallel and exchange partial results over high-speed interconnects like NVLink.\n&lt;/think&gt;\n\nTensor parallelism is a technique that splits a model&#x27;s weight matrices across multiple GPUs so they compute in lockstep and exchange partial results, enabling faster inference for large models.&quot;<br>      },<br>      &quot;finish_reason&quot;: &quot;stop&quot;<br>    }<br>  ],<br>  &quot;usage&quot;: {<br>    &quot;prompt_tokens&quot;: 15,<br>    &quot;total_tokens&quot;: 79,<br>    &quot;completion_tokens&quot;: 64<br>  }<br>}</code></pre>
 <p><strong>Note on Qwen3 <code>&lt;think&gt;</code> tags:</strong> Qwen3-32B often includes reasoning in <code>&lt;think&gt;</code> tags before the final answer. This is expected behavior. You can parse out the final answer or adjust your prompt to request concise responses.</p>
 <hr>
 <h2 id="5-chat-completion-with-python-openai-sdk">5. Chat Completion with Python OpenAI SDK</h2>
 <p>Install the OpenAI client if you haven&#x27;t already:</p>
-<pre><code class="language-bash">
-pip install openai
-</code></pre>
+<pre><code class="language-bash">pip install openai</code></pre>
 <h3 id="basic-example">Basic example</h3>
-<pre><code class="language-python">
-from openai import OpenAI
-
-# Public HTTPS endpoint + API key (ask your admin for the key)
-import os
-client = OpenAI(
-    base_url=&quot;https://infer.136.69.110.10.nip.io/v1&quot;,
-    api_key=os.environ[&quot;VLLM_API_KEY&quot;],   # or paste the key string directly
-)
-
-# Send a chat completion request
-response = client.chat.completions.create(
-    model=&quot;qwen3-32b&quot;,
-    messages=[
-        {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is 2+2?&quot;}
-    ],
-    max_tokens=20
-)
-
-# Print the assistant&#x27;s reply
-print(response.choices[0].message.content)
-</code></pre>
+<pre><code class="language-python">from openai import OpenAI<br><br># Public HTTPS endpoint + API key (ask your admin for the key)<br>import os<br>client = OpenAI(<br>    base_url=&quot;https://infer.136.69.110.10.nip.io/v1&quot;,<br>    api_key=os.environ[&quot;VLLM_API_KEY&quot;],   # or paste the key string directly<br>)<br><br># Send a chat completion request<br>response = client.chat.completions.create(<br>    model=&quot;qwen3-32b&quot;,<br>    messages=[<br>        {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is 2+2?&quot;}<br>    ],<br>    max_tokens=20<br>)<br><br># Print the assistant&#x27;s reply<br>print(response.choices[0].message.content)</code></pre>
 <p><strong>Sample output:</strong></p>
-<pre><code class="language-">
-&lt;think&gt;
-Okay, so I need to figure out what 2 plus 2 is. Let me
-</code></pre>
+<pre><code class="language-">&lt;think&gt;<br>Okay, so I need to figure out what 2 plus 2 is. Let me</code></pre>
 <p>(Truncated at <code>max_tokens=20</code>. Increase <code>max_tokens</code> for longer responses.)</p>
 <h3 id="adding-a-system-prompt">Adding a system prompt</h3>
-<pre><code class="language-python">
-response = client.chat.completions.create(
-    model=&quot;qwen3-32b&quot;,
-    messages=[
-        {&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: &quot;You are a helpful assistant. Be concise.&quot;},
-        {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is tensor parallelism?&quot;}
-    ],
-    max_tokens=128
-)
-
-print(response.choices[0].message.content)
-</code></pre>
+<pre><code class="language-python">response = client.chat.completions.create(<br>    model=&quot;qwen3-32b&quot;,<br>    messages=[<br>        {&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: &quot;You are a helpful assistant. Be concise.&quot;},<br>        {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is tensor parallelism?&quot;}<br>    ],<br>    max_tokens=128<br>)<br><br>print(response.choices[0].message.content)</code></pre>
 <h3 id="multi-turn-conversation">Multi-turn conversation</h3>
-<pre><code class="language-python">
-messages = [
-    {&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: &quot;You are a helpful assistant.&quot;},
-    {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is the capital of France?&quot;},
-]
-
-response = client.chat.completions.create(
-    model=&quot;qwen3-32b&quot;,
-    messages=messages,
-    max_tokens=64
-)
-
-# Add assistant&#x27;s reply to history
-messages.append({
-    &quot;role&quot;: &quot;assistant&quot;,
-    &quot;content&quot;: response.choices[0].message.content
-})
-
-# Continue the conversation
-messages.append({&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is its population?&quot;})
-
-response = client.chat.completions.create(
-    model=&quot;qwen3-32b&quot;,
-    messages=messages,
-    max_tokens=64
-)
-
-print(response.choices[0].message.content)
-</code></pre>
+<pre><code class="language-python">messages = [<br>    {&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: &quot;You are a helpful assistant.&quot;},<br>    {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is the capital of France?&quot;},<br>]<br><br>response = client.chat.completions.create(<br>    model=&quot;qwen3-32b&quot;,<br>    messages=messages,<br>    max_tokens=64<br>)<br><br># Add assistant&#x27;s reply to history<br>messages.append({<br>    &quot;role&quot;: &quot;assistant&quot;,<br>    &quot;content&quot;: response.choices[0].message.content<br>})<br><br># Continue the conversation<br>messages.append({&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is its population?&quot;})<br><br>response = client.chat.completions.create(<br>    model=&quot;qwen3-32b&quot;,<br>    messages=messages,<br>    max_tokens=64<br>)<br><br>print(response.choices[0].message.content)</code></pre>
 <hr>
 <h2 id="6-streaming-responses">6. Streaming Responses</h2>
 <p>For long responses, you can stream tokens as they&#x27;re generated instead of waiting for the complete response:</p>
-<pre><code class="language-python">
-from openai import OpenAI
-
-client = OpenAI(
-    base_url=&quot;https://infer.136.69.110.10.nip.io/v1&quot;,
-    api_key=os.environ[&quot;VLLM_API_KEY&quot;],
-)
-
-stream = client.chat.completions.create(
-    model=&quot;qwen3-32b&quot;,
-    messages=[
-        {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Write a short story about a robot learning to paint.&quot;}
-    ],
-    max_tokens=256,
-    stream=True  # Enable streaming
-)
-
-for chunk in stream:
-    if chunk.choices[0].delta.content is not None:
-        print(chunk.choices[0].delta.content, end=&quot;&quot;, flush=True)
-
-print()  # Newline at the end
-</code></pre>
+<pre><code class="language-python">from openai import OpenAI<br><br>client = OpenAI(<br>    base_url=&quot;https://infer.136.69.110.10.nip.io/v1&quot;,<br>    api_key=os.environ[&quot;VLLM_API_KEY&quot;],<br>)<br><br>stream = client.chat.completions.create(<br>    model=&quot;qwen3-32b&quot;,<br>    messages=[<br>        {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Write a short story about a robot learning to paint.&quot;}<br>    ],<br>    max_tokens=256,<br>    stream=True  # Enable streaming<br>)<br><br>for chunk in stream:<br>    if chunk.choices[0].delta.content is not None:<br>        print(chunk.choices[0].delta.content, end=&quot;&quot;, flush=True)<br><br>print()  # Newline at the end</code></pre>
 <p><strong>Sample output:</strong></p>
-<pre><code class="language-">
-&lt;think&gt;
-Okay, so I need to write a short story about a robot learning to paint...
-&lt;/think&gt;
-
-Once upon a time, in a quiet studio...
-</code></pre>
+<pre><code class="language-">&lt;think&gt;<br>Okay, so I need to write a short story about a robot learning to paint...<br>&lt;/think&gt;<br><br>Once upon a time, in a quiet studio...</code></pre>
 <p>Tokens appear as they&#x27;re generated, providing a better user experience for interactive applications.</p>
 <hr>
 <h2 id="7-common-parameters">7. Common Parameters</h2>
@@ -665,53 +520,21 @@ Once upon a time, in a quiet studio...
 </tr>
 </tbody></table>
 <h3 id="example-with-multiple-parameters">Example with multiple parameters</h3>
-<pre><code class="language-python">
-response = client.chat.completions.create(
-    model=&quot;qwen3-32b&quot;,
-    messages=[
-        {&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: &quot;You are a concise assistant.&quot;},
-        {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Explain GPUs.&quot;}
-    ],
-    max_tokens=100,
-    temperature=0.7,
-    top_p=0.9
-)
-
-print(response.choices[0].message.content)
-</code></pre>
+<pre><code class="language-python">response = client.chat.completions.create(<br>    model=&quot;qwen3-32b&quot;,<br>    messages=[<br>        {&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: &quot;You are a concise assistant.&quot;},<br>        {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Explain GPUs.&quot;}<br>    ],<br>    max_tokens=100,<br>    temperature=0.7,<br>    top_p=0.9<br>)<br><br>print(response.choices[0].message.content)</code></pre>
 <hr>
 <h2 id="8-using-from-a-jupyter-notebook">8. Using from a Jupyter Notebook</h2>
 <p>If you&#x27;re working in a Jupyter notebook spawned by the in-cluster JupyterHub (see the <a href="04-jupyter-notebook-user-guide.html">Jupyter Notebook User Guide</a>), you can call the inference endpoint using the in-cluster DNS name.</p>
 <p><strong>Example notebook:</strong> See <code>deploy/jupyter/examples/call_vllm.ipynb</code> for a working example.</p>
 <h3 id="in-a-notebook-cell">In a notebook cell</h3>
-<pre><code class="language-python">
-from openai import OpenAI
-
-client = OpenAI(
-    base_url=&quot;http://qwen3-vllm.inference.svc.cluster.local:8000/v1&quot;,
-    api_key=os.environ[&quot;VLLM_API_KEY&quot;]   # required now; ask your admin for the key
-)
-
-response = client.chat.completions.create(
-    model=&quot;qwen3-32b&quot;,
-    messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello, how are you?&quot;}],
-    max_tokens=64
-)
-
-print(response.choices[0].message.content)
-</code></pre>
+<pre><code class="language-python">from openai import OpenAI<br><br>client = OpenAI(<br>    base_url=&quot;http://qwen3-vllm.inference.svc.cluster.local:8000/v1&quot;,<br>    api_key=os.environ[&quot;VLLM_API_KEY&quot;]   # required now; ask your admin for the key<br>)<br><br>response = client.chat.completions.create(<br>    model=&quot;qwen3-32b&quot;,<br>    messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello, how are you?&quot;}],<br>    max_tokens=64<br>)<br><br>print(response.choices[0].message.content)</code></pre>
 <p><strong>Why use the DNS name instead of the IP?</strong> The DNS name (<code>qwen3-vllm.inference.svc.cluster.local</code>) works across Kubernetes namespaces and will continue to work even if the load balancer IP changes.</p>
 <hr>
 <h2 id="9-troubleshooting">9. Troubleshooting</h2>
 <h3 id="problem-connection-refused-or-timeout">Problem: Connection refused or timeout</h3>
 <p><strong>Symptoms:</strong></p>
-<pre><code class="language-">
-requests.exceptions.ConnectionError: (&#x27;Connection aborted.&#x27;, ConnectionRefusedError(111, &#x27;Connection refused&#x27;))
-</code></pre>
+<pre><code class="language-">requests.exceptions.ConnectionError: (&#x27;Connection aborted.&#x27;, ConnectionRefusedError(111, &#x27;Connection refused&#x27;))</code></pre>
 <p>or</p>
-<pre><code class="language-">
-curl: (7) Failed to connect to infer.136.69.110.10.nip.io port 443: Connection refused
-</code></pre>
+<pre><code class="language-">curl: (7) Failed to connect to infer.136.69.110.10.nip.io port 443: Connection refused</code></pre>
 <p><strong>Possible causes and fixes:</strong></p>
 <table>
 <thead><tr>
@@ -742,27 +565,17 @@ curl: (7) Failed to connect to infer.136.69.110.10.nip.io port 443: Connection r
 <p><strong>Fix:</strong> Send <code>Authorization: Bearer &lt;key&gt;</code> (OpenAI client: set <code>api_key</code>). Get the key from your admin (it lives in the <code>vllm-api-key</code> secret). Example: <code>export VLLM_API_KEY=&lt;key&gt;</code> then retry.</p>
 <h3 id="problem-model-not-found-or-404-error">Problem: &quot;Model not found&quot; or 404 error</h3>
 <p><strong>Symptoms:</strong></p>
-<pre><code class="language-json">
-{&quot;error&quot;: &quot;Model not found: qwen3-32B&quot;}
-</code></pre>
+<pre><code class="language-json">{&quot;error&quot;: &quot;Model not found: qwen3-32B&quot;}</code></pre>
 <p><strong>Cause:</strong> The model name is case-sensitive. The correct name is <code>qwen3-32b</code> (lowercase &quot;b&quot;).</p>
 <p><strong>Fix:</strong> Use <code>&quot;qwen3-32b&quot;</code> in the <code>model</code> field.</p>
-<pre><code class="language-python">
-# Wrong
-response = client.chat.completions.create(model=&quot;qwen3-32B&quot;, ...)
-
-# Correct
-response = client.chat.completions.create(model=&quot;qwen3-32b&quot;, ...)
-</code></pre>
+<pre><code class="language-python"># Wrong<br>response = client.chat.completions.create(model=&quot;qwen3-32B&quot;, ...)<br><br># Correct<br>response = client.chat.completions.create(model=&quot;qwen3-32b&quot;, ...)</code></pre>
 <h3 id="problem-slow-first-token-ttft">Problem: Slow first token (TTFT)</h3>
 <p><strong>Symptoms:</strong> First response from the model takes 5-10+ seconds, but subsequent requests are faster.</p>
 <p><strong>Cause:</strong> Cold start. The vLLM server may need to warm up the model or allocate GPU memory on the first request after a pod restart.</p>
 <p><strong>Fix:</strong> This is expected behavior. Subsequent requests will have much lower latency (typically &lt;1s for short prompts). For production, consider keeping the pod &quot;warm&quot; with periodic health checks or a low-rate background request.</p>
 <h3 id="problem-context-length-exceeded">Problem: Context length exceeded</h3>
 <p><strong>Symptoms:</strong></p>
-<pre><code class="language-json">
-{&quot;error&quot;: &quot;Input too long: ... tokens exceeds maximum context length of 32768&quot;}
-</code></pre>
+<pre><code class="language-json">{&quot;error&quot;: &quot;Input too long: ... tokens exceeds maximum context length of 32768&quot;}</code></pre>
 <p><strong>Cause:</strong> The sum of your prompt tokens and <code>max_tokens</code> exceeds the model&#x27;s maximum context length of <strong>32,768 tokens</strong>.</p>
 <p><strong>Fix:</strong></p>
 <ul>
@@ -775,30 +588,14 @@ response = client.chat.completions.create(model=&quot;qwen3-32b&quot;, ...)
 <p><strong>Symptoms:</strong> The response ends abruptly; <code>finish_reason</code> is <code>&quot;length&quot;</code> instead of <code>&quot;stop&quot;</code>.</p>
 <p><strong>Cause:</strong> The response hit the <code>max_tokens</code> limit before the model finished generating.</p>
 <p><strong>Fix:</strong> Increase <code>max_tokens</code> in your request:</p>
-<pre><code class="language-python">
-response = client.chat.completions.create(
-    model=&quot;qwen3-32b&quot;,
-    messages=[...],
-    max_tokens=512  # Increase from default
-)
-</code></pre>
+<pre><code class="language-python">response = client.chat.completions.create(<br>    model=&quot;qwen3-32b&quot;,<br>    messages=[...],<br>    max_tokens=512  # Increase from default<br>)</code></pre>
 <h3 id="problem-unexpected-think-tags-in-output">Problem: Unexpected <code>&lt;think&gt;</code> tags in output</h3>
 <p><strong>Symptoms:</strong> The model includes reasoning in <code>&lt;think&gt;...&lt;/think&gt;</code> tags before the final answer.</p>
 <p><strong>Cause:</strong> Qwen3-32B is trained to show its reasoning process. This is <strong>expected behavior</strong>, not a bug.</p>
 <p><strong>Fix (option 1):</strong> Parse out the content after <code>&lt;/think&gt;</code>:</p>
-<pre><code class="language-python">
-content = response.choices[0].message.content
-if &quot;&lt;/think&gt;&quot; in content:
-    content = content.split(&quot;&lt;/think&gt;&quot;, 1)[1].strip()
-print(content)
-</code></pre>
+<pre><code class="language-python">content = response.choices[0].message.content<br>if &quot;&lt;/think&gt;&quot; in content:<br>    content = content.split(&quot;&lt;/think&gt;&quot;, 1)[1].strip()<br>print(content)</code></pre>
 <p><strong>Fix (option 2):</strong> Add a system prompt requesting concise responses:</p>
-<pre><code class="language-python">
-messages = [
-    {&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: &quot;Answer directly without showing reasoning.&quot;},
-    {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is 2+2?&quot;}
-]
-</code></pre>
+<pre><code class="language-python">messages = [<br>    {&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: &quot;Answer directly without showing reasoning.&quot;},<br>    {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is 2+2?&quot;}<br>]</code></pre>
 <p><strong>Fix (option 3):</strong> Use <code>stop=[&quot;&lt;/think&gt;&quot;]</code> to stop generation immediately after reasoning (though you&#x27;ll lose the final answer).</p>
 <hr>
 <h2 id="related-guides">Related Guides</h2>
@@ -809,7 +606,7 @@ messages = [
 <li><strong><a href="appendix-glossary.html">Glossary appendix</a></strong> — Plain-language definitions of every term used in these guides</li>
 </ul>
 <hr>
-<p><strong>Document version:</strong> 2026-07-20</p>
+<p><strong>Document version:</strong> 2026-08-05 (migrated to <code>asia-southeast1-c</code> / A3 Mega; URL, model, and API key unchanged)</p>
 <p><strong>Endpoint details:</strong> vLLM v0.8.4 serving Qwen3-32B at <code>https://infer.136.69.110.10.nip.io/v1</code> (public HTTPS, API-key gated). In-cluster: <code>qwen3-vllm.inference.svc.cluster.local:8000</code>.</p>
 </body>
 </html>

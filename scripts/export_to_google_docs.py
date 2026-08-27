@@ -117,6 +117,7 @@ def convert_markdown_to_html(markdown_content):
     in_table = False
     table_headers = []
     code_lang = ''
+    code_buf = []
     slug_counts = {}
 
     i = 0
@@ -124,21 +125,42 @@ def convert_markdown_to_html(markdown_content):
         line = lines[i]
         stripped = line.strip()
 
-        # Code blocks
+        # Code blocks.
+        #
+        # Lines are joined with <br> rather than left as real newlines, and that is
+        # a correctness requirement for the Google Docs import, not formatting
+        # taste. Docs' HTML importer returns a bare `500 Internal Error` -- naming
+        # nothing -- for any <pre> containing two or more NEWLINE-separated lines
+        # that each have a `$` followed by a non-space character. A shell snippet
+        # like
+        #     export MY_BUCKET=$(findmnt -n -o SOURCE ~/gcs)
+        #     gcloud storage ls "gs://$MY_BUCKET/"
+        # is enough to make the whole guide unimportable. With <br> separators the
+        # same content imports fine and renders identically, because <pre> keeps
+        # its line breaks either way.
+        #
+        # Established by delta-debugging against a scratch doc on 2026-08-27; the
+        # minimal reproducer is 5 characters: <pre>$(\n"$</pre>. `$ ` with a space
+        # (a shell prompt) is harmless, which is why most blocks always worked.
         if stripped.startswith('```'):
             if in_code_block:
-                html_lines.append('</code></pre>')
+                html_lines.append(
+                    f'<pre><code class="language-{code_lang}">'
+                    + '<br>'.join(code_buf)
+                    + '</code></pre>'
+                )
                 in_code_block = False
                 code_lang = ''
+                code_buf = []
             else:
                 code_lang = stripped[3:].strip()
-                html_lines.append(f'<pre><code class="language-{code_lang}">')
+                code_buf = []
                 in_code_block = True
             i += 1
             continue
 
         if in_code_block:
-            html_lines.append(html.escape(line))
+            code_buf.append(html.escape(line))
             i += 1
             continue
 
@@ -442,7 +464,11 @@ def generate_full_html(html_parts, doc_title=None):
             border: 1px solid #dadce0;
             border-radius: 6px;
             padding: 12px;
-            font-family: 'Courier New', 'Consolas', monospace;
+            /* ONE font, deliberately: Docs' importer resolves a font-family list
+               to its LAST entry, and the generic `monospace` keyword lands on
+               Arial -- so a list ending in `monospace` silently renders code in
+               the body font. Verified 2026-08-27. */
+            font-family: 'Courier New';
             font-size: 9.5pt;
             white-space: pre-wrap;
             word-wrap: break-word;
@@ -453,7 +479,11 @@ def generate_full_html(html_parts, doc_title=None):
         code {{
             background-color: #f1f3f4;
             color: #d93025;
-            font-family: 'Courier New', 'Consolas', monospace;
+            /* ONE font, deliberately: Docs' importer resolves a font-family list
+               to its LAST entry, and the generic `monospace` keyword lands on
+               Arial -- so a list ending in `monospace` silently renders code in
+               the body font. Verified 2026-08-27. */
+            font-family: 'Courier New';
             font-size: 9.5pt;
             padding: 2px 4px;
             border-radius: 4px;

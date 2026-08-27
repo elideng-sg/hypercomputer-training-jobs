@@ -369,9 +369,27 @@ time you log in. **No one else can read it** — not other users, not by acciden
 Your notebook has its own cloud identity, so there are no keys to set up:
 
 ```bash
-gcloud auth list        # you, automatically
-gcloud storage ls       # your bucket
-ls -la ~/gcs
+ls -la ~/gcs                        # your workspace
+gcloud auth list                    # your pod's own identity -- see the note below
+findmnt -n -o SOURCE ~/gcs          # -> hdlab-elideng-jupyter-<you>: your bucket name
+```
+
+`gcloud auth list` shows `hdlab-elideng.svc.id.goog`, **not** your @google.com
+address. That is correct: the pod authenticates as itself via Workload Identity,
+which is why you never have to run `gcloud auth login` or handle a key.
+
+**`findmnt` is how you learn your bucket name — not `gcloud storage ls`.** A bare
+`gcloud storage ls` lists the *project's* buckets and needs
+`storage.buckets.list`, which you deliberately do not have; it fails with a 403.
+That denial is the isolation working (you cannot even enumerate other people's
+workspaces). `findmnt` reads the name straight off your own mount, so it needs no
+permission at all and stays right even if your username had to be sanitized.
+
+Worth putting in `~/.bashrc`, since the rest of this section uses it:
+
+```bash
+export MY_BUCKET="$(findmnt -n -o SOURCE ~/gcs)"
+gcloud storage ls "gs://$MY_BUCKET/"        # this works -- it names your bucket
 ```
 
 Download a dataset straight into it:
@@ -398,7 +416,7 @@ filesystem shim over object storage, not a transfer tool. Use `gcloud storage`,
 which is parallel and never stages data on this pod:
 
 ```bash
-gcloud storage rsync -r gs://some-public-dataset gs://<your-bucket>/datasets/foo
+gcloud storage rsync -r gs://some-public-dataset "gs://$MY_BUCKET/datasets/foo"
 ```
 
 Things that will surprise you about `~/gcs`:
