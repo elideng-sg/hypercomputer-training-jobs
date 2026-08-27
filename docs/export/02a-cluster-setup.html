@@ -77,7 +77,11 @@
             border: 1px solid #dadce0;
             border-radius: 6px;
             padding: 12px;
-            font-family: 'Courier New', 'Consolas', monospace;
+            /* ONE font, deliberately: Docs' importer resolves a font-family list
+               to its LAST entry, and the generic `monospace` keyword lands on
+               Arial -- so a list ending in `monospace` silently renders code in
+               the body font. Verified 2026-08-27. */
+            font-family: 'Courier New';
             font-size: 9.5pt;
             white-space: pre-wrap;
             word-wrap: break-word;
@@ -88,7 +92,11 @@
         code {
             background-color: #f1f3f4;
             color: #d93025;
-            font-family: 'Courier New', 'Consolas', monospace;
+            /* ONE font, deliberately: Docs' importer resolves a font-family list
+               to its LAST entry, and the generic `monospace` keyword lands on
+               Arial -- so a list ending in `monospace` silently renders code in
+               the body font. Verified 2026-08-27. */
+            font-family: 'Courier New';
             font-size: 9.5pt;
             padding: 2px 4px;
             border-radius: 4px;
@@ -176,6 +184,31 @@
 <h1 id="deployment-part-1--cluster-setup-project-quota-gke">Deployment Part 1 — Cluster Setup (Project, Quota, GKE)</h1>
 <p><strong>Deployment series:</strong> <strong>1. Cluster Setup</strong> → <a href="02b-gpu-nodepool-dws.html">2. GPU Node &amp; DWS</a> → <a href="02c-deploy-inference.html">3. Inference</a> → <a href="02d-deploy-jupyter.html">4. JupyterHub</a> → <a href="02e-verify-teardown.html">5. Verify &amp; Teardown</a></p>
 <hr>
+<blockquote>### ⚠️ This series describes the ORIGINAL <code>us-central1</code> build</blockquote>
+<blockquote></blockquote>
+<blockquote><strong>The live deployment moved on 2026-08-05</strong> to cluster <code>hypercomputer-a3-tcpxo</code> in</blockquote>
+<blockquote><strong><code>asia-southeast1-c</code></strong>, on <strong>A3 Mega</strong> nodes with the <strong>GPUDirect-TCPXO</strong> fabric. The</blockquote>
+<blockquote>original <code>us-central1</code> / <code>hypercomputer-a3-cluster</code> A3 High pool has been released.</blockquote>
+<blockquote></blockquote>
+<blockquote>This series is kept as-is because it is still the clearest end-to-end teaching path — the</blockquote>
+<blockquote>concepts (quota → cluster → GPU pool → workloads) are unchanged. But **the specific</blockquote>
+<blockquote>cluster name, region, machine type, and accelerator label in these commands no longer</blockquote>
+<blockquote>match production.** Translate as you read:</blockquote>
+<blockquote></blockquote>
+<blockquote>| This series says | Production is now |</blockquote>
+<blockquote>|---|---|</blockquote>
+<blockquote>| <code>--region us-central1</code> | <code>--location asia-southeast1-c</code> |</blockquote>
+<blockquote>| <code>hypercomputer-a3-cluster</code> | <code>hypercomputer-a3-tcpxo</code> |</blockquote>
+<blockquote>| <code>a3-h100-dws-pool</code> | <code>a3-mega-tcpxo-flex-pool</code> |</blockquote>
+<blockquote>| <code>a3-highgpu-8g</code> | <code>a3-megagpu-8g</code> |</blockquote>
+<blockquote>| <code>nvidia-h100-80gb</code> | <code>nvidia-h100-mega-80gb</code> |</blockquote>
+<blockquote>| 1 node / 8 GPUs | 3 nodes / 24 GPUs |</blockquote>
+<blockquote>| (no fabric) | 8 TCPXO node networks — see <a href="01-architecture.html#6-the-tcpxo-fabric">Architecture §6</a> |</blockquote>
+<blockquote></blockquote>
+<blockquote>**To reproduce production rather than this series, use the manifests in</blockquote>
+<blockquote><a href="../../deploy/tcpxo-migration/"><code>deploy/tcpxo-migration/</code></a>**, and read</blockquote>
+<blockquote><a href="01-architecture.html#6-the-tcpxo-fabric">Architecture §6</a> first — a TCPXO pool needs 8</blockquote>
+<blockquote>additional node networks at <em>creation</em> time and cannot be retrofitted.</blockquote>
 <p><strong>Audience:</strong> Technical engineers who are <strong>new to GPUs and Google Cloud</strong> but comfortable with the command line and basic Kubernetes concepts. This is <strong>Part 1</strong> of a five-part series that walks through deploying the complete stack from zero: GKE cluster, H100 GPUs via DWS, vLLM inference (Qwen3-32B), and JupyterHub with GPU notebooks.</p>
 <blockquote><strong>New to the terminology?</strong> Terms like GKE, DWS, node pool, and tensor parallelism are defined in the <strong><a href="appendix-glossary.html">Glossary appendix</a></strong>.</blockquote>
 <p><strong>What the full series deploys:</strong></p>
@@ -198,20 +231,7 @@
 <li>Budget alerts recommended (H100 nodes are ~$30/hour)</li>
 </ul>
 <p><strong>2. Local tools installed</strong></p>
-<pre><code class="language-bash">
-# Google Cloud SDK (gcloud)
-curl https://sdk.cloud.google.com | bash
-exec -l $SHELL
-gcloud --version
-
-# kubectl (Kubernetes CLI)
-gcloud components install kubectl
-kubectl version --client
-
-# Helm (Kubernetes package manager, for JupyterHub)
-curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-helm version
-</code></pre>
+<pre><code class="language-bash"># Google Cloud SDK (gcloud)<br>curl https://sdk.cloud.google.com | bash<br>exec -l $SHELL<br>gcloud --version<br><br># kubectl (Kubernetes CLI)<br>gcloud components install kubectl<br>kubectl version --client<br><br># Helm (Kubernetes package manager, for JupyterHub)<br>curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash<br>helm version</code></pre>
 <p><strong>3. IAM permissions</strong></p>
 <p>You need permission to:</p>
 <ul>
@@ -313,30 +333,12 @@ helm version
 <hr>
 <h2 id="step-0-set-up-your-project">Step 0: Set up your project</h2>
 <h3 id="01-configure-gcloud-cli">0.1 Configure gcloud CLI</h3>
-<pre><code class="language-bash">
-# Set your project ID (replace with your project)
-export PROJECT_ID=hdlab-elideng
-gcloud config set project $PROJECT_ID
-gcloud config set compute/region us-central1
-
-# Authenticate if needed
-gcloud auth login
-gcloud auth application-default login
-</code></pre>
+<pre><code class="language-bash"># Set your project ID (replace with your project)<br>export PROJECT_ID=hdlab-elideng<br>gcloud config set project $PROJECT_ID<br>gcloud config set compute/region us-central1<br><br># Authenticate if needed<br>gcloud auth login<br>gcloud auth application-default login</code></pre>
 <p><strong>What this does:</strong> Configures the <code>gcloud</code> command-line tool to use your project and default region. All subsequent commands will target this project.</p>
 <h3 id="02-enable-required-apis">0.2 Enable required APIs</h3>
-<pre><code class="language-bash">
-gcloud services enable \
-  compute.googleapis.com \
-  container.googleapis.com \
-  iam.googleapis.com \
-  cloudresourcemanager.googleapis.com \
-  --project $PROJECT_ID
-</code></pre>
+<pre><code class="language-bash">gcloud services enable \<br>  compute.googleapis.com \<br>  container.googleapis.com \<br>  iam.googleapis.com \<br>  cloudresourcemanager.googleapis.com \<br>  --project $PROJECT_ID</code></pre>
 <p><strong>Expected output:</strong></p>
-<pre><code class="language-">
-Operation &quot;operations/...&quot; finished successfully.
-</code></pre>
+<pre><code class="language-">Operation &quot;operations/...&quot; finished successfully.</code></pre>
 <p><strong>What this does:</strong> Activates the Google Cloud APIs needed to create VMs (Compute Engine), GKE clusters, and IAM resources. This is a prerequisite for any infrastructure work.</p>
 <p><strong>Why these APIs:</strong></p>
 <ul>
@@ -349,18 +351,9 @@ Operation &quot;operations/...&quot; finished successfully.
 <h2 id="step-1-request-gpu-quota">Step 1: Request GPU quota</h2>
 <p><strong>Critical:</strong> Default quotas are <strong>insufficient</strong> for H100 GPUs. You must request quota increases before creating the node pool.</p>
 <h3 id="11-check-current-quota">1.1 Check current quota</h3>
-<pre><code class="language-bash">
-gcloud compute regions describe us-central1 \
-  --project $PROJECT_ID \
-  --format=&quot;table(quotas.metric,quotas.limit)&quot; \
-  | grep -E &quot;NVIDIA_H100|CPUS&quot;
-</code></pre>
+<pre><code class="language-bash">gcloud compute regions describe us-central1 \<br>  --project $PROJECT_ID \<br>  --format=&quot;table(quotas.metric,quotas.limit)&quot; \<br>  | grep -E &quot;NVIDIA_H100|CPUS&quot;</code></pre>
 <p><strong>Expected output (before requesting):</strong></p>
-<pre><code class="language-">
-quotas.metric                  quotas.limit
-NVIDIA_H100_GPUS               0.0
-CPUS                           24.0
-</code></pre>
+<pre><code class="language-">quotas.metric                  quotas.limit<br>NVIDIA_H100_GPUS               0.0<br>CPUS                           24.0</code></pre>
 <h3 id="12-request-h100-quota-increase">1.2 Request H100 quota increase</h3>
 <p><strong>For DWS Flex-Start (our path):</strong></p>
 <ul>
@@ -381,27 +374,9 @@ CPUS                           24.0
 <hr>
 <h2 id="step-2-create-the-gke-cluster">Step 2: Create the GKE cluster</h2>
 <h3 id="21-create-a-regional-cluster">2.1 Create a regional cluster</h3>
-<pre><code class="language-bash">
-gcloud container clusters create hypercomputer-a3-cluster \
-  --region us-central1 \
-  --release-channel regular \
-  --machine-type e2-standard-4 \
-  --num-nodes 1 \
-  --enable-autoscaling \
-  --min-nodes 1 \
-  --max-nodes 3 \
-  --enable-stackdriver-kubernetes \
-  --scopes cloud-platform \
-  --project $PROJECT_ID
-</code></pre>
+<pre><code class="language-bash">gcloud container clusters create hypercomputer-a3-cluster \<br>  --region us-central1 \<br>  --release-channel regular \<br>  --machine-type e2-standard-4 \<br>  --num-nodes 1 \<br>  --enable-autoscaling \<br>  --min-nodes 1 \<br>  --max-nodes 3 \<br>  --enable-stackdriver-kubernetes \<br>  --scopes cloud-platform \<br>  --project $PROJECT_ID</code></pre>
 <p><strong>Expected output:</strong></p>
-<pre><code class="language-">
-Creating cluster hypercomputer-a3-cluster...done.
-Created [https://container.googleapis.com/v1/projects/hdlab-elideng/zones/us-central1/clusters/hypercomputer-a3-cluster].
-kubeconfig entry generated for hypercomputer-a3-cluster.
-NAME                        LOCATION       MASTER_VERSION  NUM_NODES  STATUS
-hypercomputer-a3-cluster    us-central1    1.30.x-gke.y    3          RUNNING
-</code></pre>
+<pre><code class="language-">Creating cluster hypercomputer-a3-cluster...done.<br>Created [https://container.googleapis.com/v1/projects/hdlab-elideng/zones/us-central1/clusters/hypercomputer-a3-cluster].<br>kubeconfig entry generated for hypercomputer-a3-cluster.<br>NAME                        LOCATION       MASTER_VERSION  NUM_NODES  STATUS<br>hypercomputer-a3-cluster    us-central1    1.30.x-gke.y    3          RUNNING</code></pre>
 <p><strong>Time:</strong> ~5-10 minutes.</p>
 <p><strong>What this does:</strong></p>
 <ul>
@@ -413,27 +388,13 @@ hypercomputer-a3-cluster    us-central1    1.30.x-gke.y    3          RUNNING
 </ul>
 <p><strong>Why regional:</strong> Higher availability (control plane and nodes span 3 zones). If one zone fails, workloads can move to others. GPU node pools can be zone-specific within the regional cluster.</p>
 <h3 id="22-get-cluster-credentials">2.2 Get cluster credentials</h3>
-<pre><code class="language-bash">
-gcloud container clusters get-credentials hypercomputer-a3-cluster \
-  --region us-central1 \
-  --project $PROJECT_ID
-</code></pre>
+<pre><code class="language-bash">gcloud container clusters get-credentials hypercomputer-a3-cluster \<br>  --region us-central1 \<br>  --project $PROJECT_ID</code></pre>
 <p><strong>Expected output:</strong></p>
-<pre><code class="language-">
-Fetching cluster endpoint and auth data.
-kubeconfig entry generated for hypercomputer-a3-cluster.
-</code></pre>
+<pre><code class="language-">Fetching cluster endpoint and auth data.<br>kubeconfig entry generated for hypercomputer-a3-cluster.</code></pre>
 <p><strong>Verify access:</strong></p>
-<pre><code class="language-bash">
-kubectl get nodes
-</code></pre>
+<pre><code class="language-bash">kubectl get nodes</code></pre>
 <p><strong>Expected output:</strong></p>
-<pre><code class="language-">
-NAME                                                  STATUS   ROLES    AGE   VERSION
-gke-hypercomputer-a3-default-pool-xxxx-yyyy           Ready    &lt;none&gt;   5m    v1.30.x-gke.y
-gke-hypercomputer-a3-default-pool-xxxx-zzzz           Ready    &lt;none&gt;   5m    v1.30.x-gke.y
-gke-hypercomputer-a3-default-pool-xxxx-aaaa           Ready    &lt;none&gt;   5m    v1.30.x-gke.y
-</code></pre>
+<pre><code class="language-">NAME                                                  STATUS   ROLES    AGE   VERSION<br>gke-hypercomputer-a3-default-pool-xxxx-yyyy           Ready    &lt;none&gt;   5m    v1.30.x-gke.y<br>gke-hypercomputer-a3-default-pool-xxxx-zzzz           Ready    &lt;none&gt;   5m    v1.30.x-gke.y<br>gke-hypercomputer-a3-default-pool-xxxx-aaaa           Ready    &lt;none&gt;   5m    v1.30.x-gke.y</code></pre>
 <p><strong>What this does:</strong> Downloads cluster credentials and configures <code>kubectl</code> to point at your new cluster. All subsequent <code>kubectl</code> commands will target this cluster.</p>
 <hr>
 <p>Next: <strong><a href="02b-gpu-nodepool-dws.html">Part 2 — GPU Node Pool &amp; DWS</a></strong> →</p>

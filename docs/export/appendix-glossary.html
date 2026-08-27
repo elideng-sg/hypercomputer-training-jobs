@@ -77,7 +77,11 @@
             border: 1px solid #dadce0;
             border-radius: 6px;
             padding: 12px;
-            font-family: 'Courier New', 'Consolas', monospace;
+            /* ONE font, deliberately: Docs' importer resolves a font-family list
+               to its LAST entry, and the generic `monospace` keyword lands on
+               Arial -- so a list ending in `monospace` silently renders code in
+               the body font. Verified 2026-08-27. */
+            font-family: 'Courier New';
             font-size: 9.5pt;
             white-space: pre-wrap;
             word-wrap: break-word;
@@ -88,7 +92,11 @@
         code {
             background-color: #f1f3f4;
             color: #d93025;
-            font-family: 'Courier New', 'Consolas', monospace;
+            /* ONE font, deliberately: Docs' importer resolves a font-family list
+               to its LAST entry, and the generic `monospace` keyword lands on
+               Arial -- so a list ending in `monospace` silently renders code in
+               the body font. Verified 2026-08-27. */
+            font-family: 'Courier New';
             font-size: 9.5pt;
             padding: 2px 4px;
             border-radius: 4px;
@@ -193,7 +201,11 @@
 <h4 id="nvlink-and-nvswitch">NVLink and NVSwitch</h4>
 <p>NVIDIA&#x27;s high-speed GPU-to-GPU interconnect technology. Inside a single 8-GPU machine, <strong>NVLink</strong> connects GPUs directly and <strong>NVSwitch</strong> is the crossbar switch that lets all 8 GPUs communicate with each other at full bandwidth. This makes splitting a model across multiple GPUs on the <em>same</em> machine very fast (see <a href="#tensor-parallelism">tensor parallelism</a>).</p>
 <h4 id="a3-machine">A3 machine</h4>
-<p>Google Cloud&#x27;s &quot;A3 High&quot; machine type (<code>a3-highgpu-8g</code>): one virtual machine (VM) with <strong>8× H100 80GB</strong> GPUs all wired together with <a href="#nvlink-and-nvswitch">NVLink and NVSwitch</a>. This is the single GPU machine at the center of this architecture.</p>
+<p>Google Cloud&#x27;s A3 GPU machine family: one virtual machine (VM) with <strong>8× H100 80GB</strong> GPUs all wired together with <a href="#nvlink-and-nvswitch">NVLink and NVSwitch</a>. Two variants matter here:</p>
+<ul>
+<li><strong>A3 High</strong> (<code>a3-highgpu-8g</code>) — the original deployment used this.</li>
+<li><strong>A3 Mega</strong> (<code>a3-megagpu-8g</code>) — <strong>what production runs on today.</strong> Same 8× H100 80GB, but with the extra NICs required for the <a href="#gpudirect-tcpxo">TCPXO fabric</a>, and it uses the accelerator label <code>nvidia-h100-mega-80gb</code>.</li>
+</ul>
 <h4 id="cuda">CUDA</h4>
 <p>NVIDIA&#x27;s software platform and driver stack that lets programs use GPUs. Software is compiled against a <strong>CUDA version</strong>; the GPU <strong>driver</strong> installed on the machine must support that CUDA version or newer. Version mismatches can cause crashes — this is a real issue in this deployment (see the CUDA-version constraint in the <a href="02c-deploy-inference.html">Inference deployment guide</a>).</p>
 <h4 id="dcgm">DCGM</h4>
@@ -209,15 +221,15 @@
 <h4 id="vpc">VPC</h4>
 <p>Virtual Private Cloud — the private network your cloud resources live in. Resources in a VPC can communicate privately using internal IP addresses (like <code>10.128.x.x</code> in our deployment). Internal load balancer IPs are only reachable from inside the VPC, not from the public internet.</p>
 <h4 id="region-and-zone">Region and zone</h4>
-<p>A <strong>region</strong> is a geographic area (like <code>us-central1</code> for Iowa, USA) containing multiple <strong>zones</strong> (independent data centers like <code>us-central1-a</code>, <code>us-central1-b</code>, etc.). Resources in the same zone can communicate with the lowest latency.</p>
+<p>A <strong>region</strong> is a geographic area (like <code>asia-southeast1</code> for Singapore) containing multiple <strong>zones</strong> (independent data centers like <code>asia-southeast1-a</code>, <code>asia-southeast1-c</code>, etc.). Resources in the same zone can communicate with the lowest latency. Production runs entirely in <strong><code>asia-southeast1-c</code></strong> — all GPU nodes must share one zone for the <a href="#gpudirect-tcpxo">TCPXO fabric</a> to be usable between them.</p>
 <h4 id="gke">GKE</h4>
 <p>Google Kubernetes Engine — Google&#x27;s managed <a href="#kubernetes">Kubernetes</a> service. Google runs the control plane (the master nodes that schedule everything); you declare what you want (pods, services, deployments) and GKE schedules it onto worker nodes.</p>
 <h4 id="kubernetes">Kubernetes</h4>
 <p>An open-source platform (often abbreviated <strong>K8s</strong>) for automating deployment, scaling, and management of containerized applications. Think of it as an operating system for the cluster: you tell it what to run, and it figures out where and how.</p>
 <h4 id="node">Node</h4>
-<p>One machine (virtual machine) that belongs to the cluster and runs workloads (<a href="#pod">pods</a>). Our GPU node is a single <a href="#a3-machine">A3 machine</a> with 8 H100 GPUs.</p>
+<p>One machine (virtual machine) that belongs to the cluster and runs workloads (<a href="#pod">pods</a>). Each of our GPU nodes is an <a href="#a3-machine">A3 Mega machine</a> with 8 H100 GPUs; there are three of them.</p>
 <h4 id="node-pool">Node pool</h4>
-<p>A group of identical <a href="#node">nodes</a> that GKE manages as a unit. A node pool can autoscale (add or remove nodes based on demand). Ours is <code>a3-h100-dws-pool</code>, which contains one A3 GPU node.</p>
+<p>A group of identical <a href="#node">nodes</a> that GKE manages as a unit. A node pool can autoscale (add or remove nodes based on demand). Ours is <code>a3-mega-tcpxo-flex-pool</code>, which contains <strong>three</strong> A3 Mega GPU nodes (24 GPUs total).</p>
 <h4 id="pod">Pod</h4>
 <p>The smallest deployable unit in Kubernetes: one or more <a href="#container">containers</a> that are scheduled together on a <a href="#node">node</a> and share networking and storage. The vLLM inference server runs as a pod; each user&#x27;s Jupyter notebook also runs as a separate pod.</p>
 <h4 id="container">Container</h4>
@@ -251,11 +263,31 @@
 <h4 id="provisioningrequest">ProvisioningRequest</h4>
 <p>The Kubernetes object that <a href="#dws-flex-start">DWS</a> uses to request capacity. A <a href="#pod">pod</a> must actively <strong>consume</strong> the request (via specific annotations) to claim the node once it arrives, or GKE will reclaim the node after about 10 minutes (see the reclaim-bug story in the <a href="01-architecture.html#3-how-gpus-are-obtained--dws-flex-start">DWS section of the Architecture Reference</a>).</p>
 <h4 id="capacity-holder">Capacity holder</h4>
-<p>A tiny placeholder pod (using the <code>pause</code> container, which does nothing but sleep) that occupies the GPU <a href="#node">node</a> to prevent GKE from scaling it away when no real workload is running. <strong>House rule:</strong> never leave the DWS GPU node idle and unheld — always re-arm the holder immediately after tearing down a workload, to avoid losing the scarce GPU node.</p>
+<p>A tiny placeholder pod (using the <code>pause</code> container, which does nothing but sleep) that occupies the GPU <a href="#node">node</a> to prevent GKE from scaling it away when no real workload is running. <strong>House rule:</strong> never leave the GPU node idle and unheld — always re-arm the holder immediately after tearing down a workload, to avoid losing the scarce GPU node.</p>
+<p>In the current deployment holders are not a fallback but the <strong>steady state</strong>: <code>gpu-holder-tcpxo</code></p>
+<p>(2 replicas × 8 GPUs) plus <code>gpu-holder-tcpxo-partial</code> (6 GPUs) keep **all 24 GPUs allocated</p>
+<p>around the clock**, because <a href="#dws-flex-start">Flex-Start</a> reclaims anything idle and scarce</p>
+<p>H100 Mega capacity is not guaranteed to come back. Handing GPUs to real work therefore means</p>
+<p><em>shrinking a holder&#x27;s GPU request</em> (which needs <code>strategy: Recreate</code> on the Deployment) —</p>
+<p><strong>never scaling it to zero</strong>, which would empty the node and invite reclamation.</p>
 <h4 id="taint-and-toleration">Taint and toleration</h4>
 <p>A <strong>taint</strong> marks a <a href="#node">node</a> so that ordinary <a href="#pod">pods</a> avoid it; a pod with a matching <strong>toleration</strong> is allowed to schedule there. GPU and DWS nodes are tainted so only GPU-aware pods (those that explicitly request GPUs) land on them. This prevents non-GPU pods from wasting the expensive GPU node.</p>
 <h4 id="nodeselector">nodeSelector</h4>
-<p>A rule in a <a href="#pod">pod</a> specification to pick <a href="#node">nodes</a> by label. For example, <code>cloud.google.com/gke-accelerator: nvidia-h100-80gb</code> targets the H100 node. Only nodes with that label will be considered for scheduling this pod.</p>
+<p>A rule in a <a href="#pod">pod</a> specification to pick <a href="#node">nodes</a> by label. For example, <code>cloud.google.com/gke-accelerator: nvidia-h100-mega-80gb</code> targets the A3 Mega GPU nodes. Only nodes with that label will be considered for scheduling this pod — so a <strong>stale label such as the old <code>nvidia-h100-80gb</code> matches nothing and leaves the pod <code>Pending</code> forever</strong>, with no error explaining why.</p>
+<h4 id="gpudirect-tcpxo">GPUDirect-TCPXO</h4>
+<p>Google Cloud&#x27;s high-speed GPU networking stack for A3 Mega. <a href="#nvlink-and-nvswitch">NVLink</a></p>
+<p>makes the 8 GPUs <em>inside</em> one machine fast; <strong>TCPXO</strong> makes GPUs in <em>different</em> machines</p>
+<p>fast, by letting a GPU send data straight to a network card and out to a peer GPU without</p>
+<p>going through host memory.</p>
+<p>It needs 8 dedicated network cards per node (so a node has 9 NICs: <code>eth0</code> for ordinary</p>
+<p>traffic, <code>eth1</code>–<code>eth8</code> for the fabric), a per-pod helper container (&quot;rxdm&quot;), and a specific</p>
+<p>set of NCCL environment variables. Measured on this cluster: <strong>317.84 GB/s</strong> all-reduce</p>
+<p>bandwidth across 16 GPUs.</p>
+<p>Two things to know: a pod must <strong>opt in</strong> to the fabric (it is not automatic), and the NCCL</p>
+<p>environment is <strong>validated, not merely suggested</strong> — 14 variables are policy-enforced and a</p>
+<p>mismatch makes NCCL hang or abort during startup rather than warn. Always</p>
+<p><code>source /usr/local/nvidia/lib64/nccl-env-profile.sh</code> first. See</p>
+<p><a href="01-architecture.html#6-the-tcpxo-fabric">Architecture §6</a>.</p>
 <hr>
 <h2 id="software-and-model-terms">Software and model terms</h2>
 <h4 id="vllm">vLLM</h4>

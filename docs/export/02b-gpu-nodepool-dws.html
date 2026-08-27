@@ -77,7 +77,11 @@
             border: 1px solid #dadce0;
             border-radius: 6px;
             padding: 12px;
-            font-family: 'Courier New', 'Consolas', monospace;
+            /* ONE font, deliberately: Docs' importer resolves a font-family list
+               to its LAST entry, and the generic `monospace` keyword lands on
+               Arial -- so a list ending in `monospace` silently renders code in
+               the body font. Verified 2026-08-27. */
+            font-family: 'Courier New';
             font-size: 9.5pt;
             white-space: pre-wrap;
             word-wrap: break-word;
@@ -88,7 +92,11 @@
         code {
             background-color: #f1f3f4;
             color: #d93025;
-            font-family: 'Courier New', 'Consolas', monospace;
+            /* ONE font, deliberately: Docs' importer resolves a font-family list
+               to its LAST entry, and the generic `monospace` keyword lands on
+               Arial -- so a list ending in `monospace` silently renders code in
+               the body font. Verified 2026-08-27. */
+            font-family: 'Courier New';
             font-size: 9.5pt;
             padding: 2px 4px;
             border-radius: 4px;
@@ -176,34 +184,22 @@
 <h1 id="deployment-part-2--gpu-node-pool--dws-provisioning">Deployment Part 2 — GPU Node Pool &amp; DWS Provisioning</h1>
 <p><strong>Deployment series:</strong> <a href="02a-cluster-setup.html">1. Cluster Setup</a> → <strong>2. GPU Node &amp; DWS</strong> → <a href="02c-deploy-inference.html">3. Inference</a> → <a href="02d-deploy-jupyter.html">4. JupyterHub</a> → <a href="02e-verify-teardown.html">5. Verify &amp; Teardown</a></p>
 <hr>
+<blockquote>### ⚠️ Historical: this describes the ORIGINAL <code>us-central1</code> build</blockquote>
+<blockquote></blockquote>
+<blockquote><strong>The live deployment moved on 2026-08-05</strong> to cluster <code>hypercomputer-a3-tcpxo</code> in</blockquote>
+<blockquote><strong><code>asia-southeast1-c</code></strong> on <strong>A3 Mega</strong> nodes with the <strong>GPUDirect-TCPXO</strong> fabric. Read</blockquote>
+<blockquote><a href="02a-cluster-setup.html">Part 1&#x27;s translation table</a> before copying any command here — the</blockquote>
+<blockquote>cluster name, region, machine type, and accelerator label have all changed, and</blockquote>
+<blockquote><code>nvidia-h100-80gb</code> now matches <strong>no node</strong> (pods using it sit in <code>Pending</code> forever).</blockquote>
+<blockquote>Current manifests: <a href="../../deploy/tcpxo-migration/"><code>deploy/tcpxo-migration/</code></a>.</blockquote>
 <p><strong>Part 2 of the <a href="01-architecture.html#7-where-to-go-next">deployment series</a>.</strong> You should have completed <a href="02a-cluster-setup.html">Part 1 — Cluster Setup</a> first (a running regional GKE cluster with <code>kubectl</code> access).</p>
 <p>This part creates the DWS-enabled A3 GPU node pool, provisions the 8× H100 node through Dynamic Workload Scheduler, and sets up the namespaces and model-cache storage the workloads need. This is the most involved part — DWS requires a <strong><a href="appendix-glossary.html#provisioningrequest">ProvisioningRequest</a></strong> and a <strong><a href="appendix-glossary.html#capacity-holder">capacity holder</a></strong> working together.</p>
 <hr>
 <h2 id="step-3-create-the-gpu-node-pool-dws-enabled">Step 3: Create the GPU node pool (DWS-enabled)</h2>
 <h3 id="31-create-the-a3-h100-node-pool">3.1 Create the A3 H100 node pool</h3>
-<pre><code class="language-bash">
-gcloud container node-pools create a3-h100-dws-pool \
-  --cluster hypercomputer-a3-cluster \
-  --region us-central1 \
-  --machine-type a3-highgpu-8g \
-  --accelerator type=nvidia-h100-80gb,count=8,gpu-driver-version=latest \
-  --num-nodes 0 \
-  --enable-autoscaling \
-  --min-nodes 0 \
-  --max-nodes 1 \
-  --node-labels cloud.google.com/gke-accelerator=nvidia-h100-80gb,gpu-cluster=a3-h100 \
-  --node-taints nvidia.com/gpu=present:NoSchedule \
-  --scopes cloud-platform \
-  --enable-queued-provisioning \
-  --project $PROJECT_ID
-</code></pre>
+<pre><code class="language-bash">gcloud container node-pools create a3-h100-dws-pool \<br>  --cluster hypercomputer-a3-cluster \<br>  --region us-central1 \<br>  --machine-type a3-highgpu-8g \<br>  --accelerator type=nvidia-h100-80gb,count=8,gpu-driver-version=latest \<br>  --num-nodes 0 \<br>  --enable-autoscaling \<br>  --min-nodes 0 \<br>  --max-nodes 1 \<br>  --node-labels cloud.google.com/gke-accelerator=nvidia-h100-80gb,gpu-cluster=a3-h100 \<br>  --node-taints nvidia.com/gpu=present:NoSchedule \<br>  --scopes cloud-platform \<br>  --enable-queued-provisioning \<br>  --project $PROJECT_ID</code></pre>
 <p><strong>Expected output:</strong></p>
-<pre><code class="language-">
-Creating node pool a3-h100-dws-pool...done.
-Created [https://container.googleapis.com/v1/projects/hdlab-elideng/zones/us-central1/nodePools/a3-h100-dws-pool].
-NAME               MACHINE_TYPE      DISK_SIZE_GB  NODE_VERSION
-a3-h100-dws-pool   a3-highgpu-8g     100           1.30.x-gke.y
-</code></pre>
+<pre><code class="language-">Creating node pool a3-h100-dws-pool...done.<br>Created [https://container.googleapis.com/v1/projects/hdlab-elideng/zones/us-central1/nodePools/a3-h100-dws-pool].<br>NAME               MACHINE_TYPE      DISK_SIZE_GB  NODE_VERSION<br>a3-h100-dws-pool   a3-highgpu-8g     100           1.30.x-gke.y</code></pre>
 <p><strong>Time:</strong> ~2 minutes to create the pool configuration (no node is provisioned yet).</p>
 <p><strong>What this does:</strong></p>
 <ul>
@@ -222,18 +218,9 @@ a3-h100-dws-pool   a3-highgpu-8g     100           1.30.x-gke.y
 <li><code>--node-taints</code> — keeps non-GPU pods off this expensive node</li>
 </ul>
 <p><strong>Check the pool:</strong></p>
-<pre><code class="language-bash">
-gcloud container node-pools list \
-  --cluster hypercomputer-a3-cluster \
-  --region us-central1 \
-  --project $PROJECT_ID
-</code></pre>
+<pre><code class="language-bash">gcloud container node-pools list \<br>  --cluster hypercomputer-a3-cluster \<br>  --region us-central1 \<br>  --project $PROJECT_ID</code></pre>
 <p><strong>Expected output:</strong></p>
-<pre><code class="language-">
-NAME               MACHINE_TYPE      DISK_SIZE_GB  NODE_VERSION
-default-pool       e2-standard-4     100           1.30.x-gke.y
-a3-h100-dws-pool   a3-highgpu-8g     100           1.30.x-gke.y
-</code></pre>
+<pre><code class="language-">NAME               MACHINE_TYPE      DISK_SIZE_GB  NODE_VERSION<br>default-pool       e2-standard-4     100           1.30.x-gke.y<br>a3-h100-dws-pool   a3-highgpu-8g     100           1.30.x-gke.y</code></pre>
 <hr>
 <h2 id="step-4-provision-the-gpu-node-via-dws">Step 4: Provision the GPU node via DWS</h2>
 <p>This is the most complex step. DWS requires a <strong>ProvisioningRequest</strong> and a <strong>consumer holder</strong> to keep the node from being reclaimed.</p>
@@ -410,61 +397,9 @@ a3-h100-dws-pool   a3-highgpu-8g     100           1.30.x-gke.y
 <p><strong>Figure 2: DWS lifecycle.</strong> (1) Submit ProvisioningRequest + consumer holder. (2) DWS searches for capacity (may take minutes to hours). (3) Node provisions and holder binds within the 10-minute booking window. (4) Node stays up for 7 days (holder keeps it occupied). (5) Real workload can take over by scaling holder to 0. See <code>bugfixes/0002-dws-a3-node-reclaimed-after-10min.md</code> for why the consumer pattern is required.</p>
 <h3 id="41-submit-the-dws-provisioningrequest">4.1 Submit the DWS ProvisioningRequest</h3>
 <p>Save this manifest as <code>dws-request.yaml</code>:</p>
-<pre><code class="language-yaml">
-apiVersion: autoscaling.x-k8s.io/v1
-kind: ProvisioningRequest
-metadata:
-  name: a3-h100-req-zone-a
-  namespace: default
-spec:
-  provisioningClassName: queued-provisioning.gke.io
-  parameters:
-    maxRunDurationSeconds: &quot;604800&quot;  # 7 days (max allowed)
-  podSets:
-  - count: 1
-    podTemplateRef:
-      name: a3-h100-pod-template-zone-a
----
-apiVersion: v1
-kind: PodTemplate
-metadata:
-  name: a3-h100-pod-template-zone-a
-  namespace: default
-template:
-  metadata:
-    labels:
-      app: gpu-workload
-      dws-zone: us-central1-a
-  spec:
-    restartPolicy: Never
-    nodeSelector:
-      node.kubernetes.io/instance-type: a3-highgpu-8g
-      gpu-cluster: a3-h100
-      topology.kubernetes.io/zone: us-central1-a  # Pin to zone a
-    tolerations:
-    - key: &quot;nvidia.com/gpu&quot;
-      operator: &quot;Exists&quot;
-      effect: &quot;NoSchedule&quot;
-    - key: &quot;cloud.google.com/gke-queued&quot;
-      operator: &quot;Exists&quot;
-      effect: &quot;NoSchedule&quot;
-    containers:
-    - name: placeholder
-      image: nvcr.io/nvidia/pytorch:24.03-py3
-      resources:
-        limits:
-          nvidia.com/gpu: &quot;8&quot;
-          cpu: &quot;64&quot;
-          memory: &quot;384Gi&quot;
-        requests:
-          nvidia.com/gpu: &quot;8&quot;
-          cpu: &quot;64&quot;
-          memory: &quot;384Gi&quot;
-</code></pre>
+<pre><code class="language-yaml">apiVersion: autoscaling.x-k8s.io/v1<br>kind: ProvisioningRequest<br>metadata:<br>  name: a3-h100-req-zone-a<br>  namespace: default<br>spec:<br>  provisioningClassName: queued-provisioning.gke.io<br>  parameters:<br>    maxRunDurationSeconds: &quot;604800&quot;  # 7 days (max allowed)<br>  podSets:<br>  - count: 1<br>    podTemplateRef:<br>      name: a3-h100-pod-template-zone-a<br>---<br>apiVersion: v1<br>kind: PodTemplate<br>metadata:<br>  name: a3-h100-pod-template-zone-a<br>  namespace: default<br>template:<br>  metadata:<br>    labels:<br>      app: gpu-workload<br>      dws-zone: us-central1-a<br>  spec:<br>    restartPolicy: Never<br>    nodeSelector:<br>      node.kubernetes.io/instance-type: a3-highgpu-8g<br>      gpu-cluster: a3-h100<br>      topology.kubernetes.io/zone: us-central1-a  # Pin to zone a<br>    tolerations:<br>    - key: &quot;nvidia.com/gpu&quot;<br>      operator: &quot;Exists&quot;<br>      effect: &quot;NoSchedule&quot;<br>    - key: &quot;cloud.google.com/gke-queued&quot;<br>      operator: &quot;Exists&quot;<br>      effect: &quot;NoSchedule&quot;<br>    containers:<br>    - name: placeholder<br>      image: nvcr.io/nvidia/pytorch:24.03-py3<br>      resources:<br>        limits:<br>          nvidia.com/gpu: &quot;8&quot;<br>          cpu: &quot;64&quot;<br>          memory: &quot;384Gi&quot;<br>        requests:<br>          nvidia.com/gpu: &quot;8&quot;<br>          cpu: &quot;64&quot;<br>          memory: &quot;384Gi&quot;</code></pre>
 <p><strong>Apply it:</strong></p>
-<pre><code class="language-bash">
-kubectl apply -f dws-request.yaml
-</code></pre>
+<pre><code class="language-bash">kubectl apply -f dws-request.yaml</code></pre>
 <p><strong>What this does:</strong></p>
 <ul>
 <li>Submits a request for <strong>1× a3-highgpu-8g</strong> in zone <code>us-central1-a</code></li>
@@ -472,72 +407,17 @@ kubectl apply -f dws-request.yaml
 <li>The pod template describes the shape DWS should provision (8 GPUs, full node resources)</li>
 </ul>
 <p><strong>Check status:</strong></p>
-<pre><code class="language-bash">
-kubectl get provisioningrequests -A
-</code></pre>
+<pre><code class="language-bash">kubectl get provisioningrequests -A</code></pre>
 <p><strong>Expected output (immediately after submission):</strong></p>
-<pre><code class="language-">
-NAMESPACE   NAME                   AGE   ACCEPTED   PROVISIONED
-default     a3-h100-req-zone-a     10s   True       False
-</code></pre>
+<pre><code class="language-">NAMESPACE   NAME                   AGE   ACCEPTED   PROVISIONED<br>default     a3-h100-req-zone-a     10s   True       False</code></pre>
 <p><strong>What <code>ACCEPTED=True</code> means:</strong> GKE accepted the request and is searching for capacity. <strong>This can take anywhere from 5 minutes to several hours</strong> depending on regional H100 availability. You will see <code>PROVISIONED=True</code> when a node is assigned.</p>
 <p><strong>Why zone-pinned:</strong> The <code>topology.kubernetes.io/zone: us-central1-a</code> selector ensures this request targets zone <code>a</code> specifically. Without this, multiple per-zone requests are identical and GKE may place them all in one zone. See <code>bugfixes/0001-dws-zone-requests-not-zone-pinned.md</code> for the full story.</p>
 <h3 id="42-deploy-the-capacity-holder-consumer">4.2 Deploy the capacity holder (consumer)</h3>
 <p><strong>Critical:</strong> Without a <strong>consumer holder</strong>, the provisioned node will be <strong>reclaimed ~10-15 minutes after boot</strong>. DWS holds a fresh node for only ~10 minutes; a pod must land on it inside that window or the autoscaler removes it as &quot;not needed.&quot; See <code>bugfixes/0002-dws-a3-node-reclaimed-after-10min.md</code> for the full diagnosis.</p>
 <p>Save this manifest as <code>dws-holder.yaml</code>:</p>
-<pre><code class="language-yaml">
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: a3-holder-zone-a
-  namespace: default
-  labels:
-    app: a3-holder
-    dws-zone: us-central1-a
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: a3-holder-zone-a
-  template:
-    metadata:
-      labels:
-        app: a3-holder-zone-a
-      annotations:
-        # These two annotations are REQUIRED to consume the ProvisioningRequest
-        autoscaling.x-k8s.io/consume-provisioning-request: a3-h100-req-zone-a
-        autoscaling.x-k8s.io/provisioning-class-name: &quot;queued-provisioning.gke.io&quot;
-        cluster-autoscaler.kubernetes.io/safe-to-evict: &quot;false&quot;
-    spec:
-      restartPolicy: Always
-      nodeSelector:
-        node.kubernetes.io/instance-type: a3-highgpu-8g
-        gpu-cluster: a3-h100
-        topology.kubernetes.io/zone: us-central1-a
-      tolerations:
-      - key: &quot;nvidia.com/gpu&quot;
-        operator: &quot;Exists&quot;
-        effect: &quot;NoSchedule&quot;
-      - key: &quot;cloud.google.com/gke-queued&quot;
-        operator: &quot;Exists&quot;
-        effect: &quot;NoSchedule&quot;
-      containers:
-      - name: pause
-        image: registry.k8s.io/pause:3.9  # Tiny placeholder container
-        resources:
-          limits:
-            nvidia.com/gpu: &quot;8&quot;
-            cpu: &quot;64&quot;
-            memory: &quot;384Gi&quot;
-          requests:
-            nvidia.com/gpu: &quot;8&quot;
-            cpu: &quot;64&quot;
-            memory: &quot;384Gi&quot;
-</code></pre>
+<pre><code class="language-yaml">apiVersion: apps/v1<br>kind: Deployment<br>metadata:<br>  name: a3-holder-zone-a<br>  namespace: default<br>  labels:<br>    app: a3-holder<br>    dws-zone: us-central1-a<br>spec:<br>  replicas: 1<br>  selector:<br>    matchLabels:<br>      app: a3-holder-zone-a<br>  template:<br>    metadata:<br>      labels:<br>        app: a3-holder-zone-a<br>      annotations:<br>        # These two annotations are REQUIRED to consume the ProvisioningRequest<br>        autoscaling.x-k8s.io/consume-provisioning-request: a3-h100-req-zone-a<br>        autoscaling.x-k8s.io/provisioning-class-name: &quot;queued-provisioning.gke.io&quot;<br>        cluster-autoscaler.kubernetes.io/safe-to-evict: &quot;false&quot;<br>    spec:<br>      restartPolicy: Always<br>      nodeSelector:<br>        node.kubernetes.io/instance-type: a3-highgpu-8g<br>        gpu-cluster: a3-h100<br>        topology.kubernetes.io/zone: us-central1-a<br>      tolerations:<br>      - key: &quot;nvidia.com/gpu&quot;<br>        operator: &quot;Exists&quot;<br>        effect: &quot;NoSchedule&quot;<br>      - key: &quot;cloud.google.com/gke-queued&quot;<br>        operator: &quot;Exists&quot;<br>        effect: &quot;NoSchedule&quot;<br>      containers:<br>      - name: pause<br>        image: registry.k8s.io/pause:3.9  # Tiny placeholder container<br>        resources:<br>          limits:<br>            nvidia.com/gpu: &quot;8&quot;<br>            cpu: &quot;64&quot;<br>            memory: &quot;384Gi&quot;<br>          requests:<br>            nvidia.com/gpu: &quot;8&quot;<br>            cpu: &quot;64&quot;<br>            memory: &quot;384Gi&quot;</code></pre>
 <p><strong>Apply it:</strong></p>
-<pre><code class="language-bash">
-kubectl apply -f dws-holder.yaml
-</code></pre>
+<pre><code class="language-bash">kubectl apply -f dws-holder.yaml</code></pre>
 <p><strong>What this does:</strong></p>
 <ul>
 <li>Deploys a <strong>consumer holder</strong> — a tiny <code>pause</code> container that requests the full 8-GPU shape</li>
@@ -548,107 +428,48 @@ kubectl apply -f dws-holder.yaml
 <li><strong>Starts immediately as <code>Pending</code></strong> and binds the instant the node provisions (inside the 10-min window)</li>
 </ul>
 <p><strong>Check holder status:</strong></p>
-<pre><code class="language-bash">
-kubectl get pods -n default -l app=a3-holder-zone-a
-</code></pre>
+<pre><code class="language-bash">kubectl get pods -n default -l app=a3-holder-zone-a</code></pre>
 <p><strong>Expected output (while waiting for capacity):</strong></p>
-<pre><code class="language-">
-NAME                                  READY   STATUS    RESTARTS   AGE
-a3-holder-zone-a-xxxxxxxxxx-yyyyy     0/1     Pending   0          30s
-</code></pre>
+<pre><code class="language-">NAME                                  READY   STATUS    RESTARTS   AGE<br>a3-holder-zone-a-xxxxxxxxxx-yyyyy     0/1     Pending   0          30s</code></pre>
 <p><strong>Healthy signal (from events):</strong></p>
-<pre><code class="language-bash">
-kubectl describe pod -n default -l app=a3-holder-zone-a | grep IgnoredInScaleUp
-</code></pre>
+<pre><code class="language-bash">kubectl describe pod -n default -l app=a3-holder-zone-a | grep IgnoredInScaleUp</code></pre>
 <p><strong>Expected output:</strong></p>
-<pre><code class="language-">
-IgnoredInScaleUp: Unschedulable pod ignored in scale-up loop, because it&#x27;s consuming
-ProvisioningRequest default/a3-h100-req-zone-a that is in Accepted state.
-</code></pre>
+<pre><code class="language-">IgnoredInScaleUp: Unschedulable pod ignored in scale-up loop, because it&#x27;s consuming<br>ProvisioningRequest default/a3-h100-req-zone-a that is in Accepted state.</code></pre>
 <p><strong>What this means:</strong> The autoscaler recognizes the holder as a request consumer and won&#x27;t try to provision via other mechanisms. It&#x27;s waiting for DWS to deliver the node.</p>
 <p><strong>Broken signal (old, incorrect holder):</strong></p>
-<pre><code class="language-">
-no.scale.up.nap.pod.gpu.no.limit.defined
-</code></pre>
+<pre><code class="language-">no.scale.up.nap.pod.gpu.no.limit.defined</code></pre>
 <p>If you see this, the holder is missing the consume annotations and <strong>will not hold the node</strong> — the node will be reclaimed. Verify the YAML has both <code>autoscaling.x-k8s.io/*</code> annotations (not the old <code>cluster-autoscaler.kubernetes.io/</code> prefix).</p>
 <h3 id="43-wait-for-provisioning-5-minutes-to-hours">4.3 Wait for provisioning (5 minutes to hours)</h3>
 <p><strong>Monitor the request:</strong></p>
-<pre><code class="language-bash">
-watch kubectl get provisioningrequests -A
-</code></pre>
+<pre><code class="language-bash">watch kubectl get provisioningrequests -A</code></pre>
 <p><strong>When capacity is found, you&#x27;ll see:</strong></p>
-<pre><code class="language-">
-NAMESPACE   NAME                   AGE   ACCEPTED   PROVISIONED
-default     a3-h100-req-zone-a     15m   True       True
-</code></pre>
+<pre><code class="language-">NAMESPACE   NAME                   AGE   ACCEPTED   PROVISIONED<br>default     a3-h100-req-zone-a     15m   True       True</code></pre>
 <p><strong>Check the node appeared:</strong></p>
-<pre><code class="language-bash">
-kubectl get nodes -L cloud.google.com/gke-accelerator
-</code></pre>
+<pre><code class="language-bash">kubectl get nodes -L cloud.google.com/gke-accelerator</code></pre>
 <p><strong>Expected output:</strong></p>
-<pre><code class="language-">
-NAME                                                  STATUS   ROLES    AGE   ACCELERATOR
-gke-hypercomputer-a3-default-pool-xxxx-yyyy           Ready    &lt;none&gt;   20m   &lt;none&gt;
-gke-hypercomputer-a3-a3-h100-dws-pool-16664d9c-hhp6   Ready    &lt;none&gt;   2m    nvidia-h100-80gb
-</code></pre>
+<pre><code class="language-">NAME                                                  STATUS   ROLES    AGE   ACCELERATOR<br>gke-hypercomputer-a3-default-pool-xxxx-yyyy           Ready    &lt;none&gt;   20m   &lt;none&gt;<br>gke-hypercomputer-a3-a3-h100-dws-pool-16664d9c-hhp6   Ready    &lt;none&gt;   2m    nvidia-h100-80gb</code></pre>
 <p><strong>Verify holder bound:</strong></p>
-<pre><code class="language-bash">
-kubectl get pods -n default -l app=a3-holder-zone-a -o wide
-</code></pre>
+<pre><code class="language-bash">kubectl get pods -n default -l app=a3-holder-zone-a -o wide</code></pre>
 <p><strong>Expected output:</strong></p>
-<pre><code class="language-">
-NAME                                  READY   STATUS    RESTARTS   AGE   NODE
-a3-holder-zone-a-xxxxxxxxxx-yyyyy     1/1     Running   0          5m    gke-hypercomputer-a3-a3-h100-dws-pool-16664d9c-hhp6
-</code></pre>
+<pre><code class="language-">NAME                                  READY   STATUS    RESTARTS   AGE   NODE<br>a3-holder-zone-a-xxxxxxxxxx-yyyyy     1/1     Running   0          5m    gke-hypercomputer-a3-a3-h100-dws-pool-16664d9c-hhp6</code></pre>
 <p><strong>Success signal:</strong> The holder is <strong><code>Running</code></strong> on the GPU node. The node will now stay up for <strong>7 days</strong> (until <code>maxRunDurationSeconds</code> expires or you delete the request).</p>
 <p><strong>If the node vanishes ~15 minutes after boot:</strong> You hit the reclaim bug. Check that the holder pod has <strong>both</strong> <code>autoscaling.x-k8s.io/consume-provisioning-request</code> and <code>autoscaling.x-k8s.io/provisioning-class-name</code> annotations in its pod spec (not just the Deployment). Re-apply the corrected holder and request.</p>
 <hr>
 <h2 id="step-5-deploy-namespaces-and-storage">Step 5: Deploy namespaces and storage</h2>
 <h3 id="51-create-namespaces">5.1 Create namespaces</h3>
-<pre><code class="language-bash">
-kubectl apply -f - &lt;&lt;EOF
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: inference
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: jupyter
-EOF
-</code></pre>
+<pre><code class="language-bash">kubectl apply -f - &lt;&lt;EOF<br>apiVersion: v1<br>kind: Namespace<br>metadata:<br>  name: inference<br>---<br>apiVersion: v1<br>kind: Namespace<br>metadata:<br>  name: jupyter<br>EOF</code></pre>
 <p><strong>What this does:</strong> Creates two namespaces to organize workloads:</p>
 <ul>
 <li><code>inference</code> — for the vLLM inference service</li>
 <li><code>jupyter</code> — for JupyterHub and notebook pods</li>
 </ul>
 <h3 id="52-create-the-model-cache-pvc">5.2 Create the model cache PVC</h3>
-<pre><code class="language-bash">
-kubectl apply -f - &lt;&lt;EOF
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: hf-cache
-  namespace: inference
-spec:
-  accessModes: [&quot;ReadWriteOnce&quot;]
-  storageClassName: premium-rwo  # GKE pd-ssd dynamic class
-  resources:
-    requests:
-      storage: 150Gi
-EOF
-</code></pre>
+<pre><code class="language-bash">kubectl apply -f - &lt;&lt;EOF<br>apiVersion: v1<br>kind: PersistentVolumeClaim<br>metadata:<br>  name: hf-cache<br>  namespace: inference<br>spec:<br>  accessModes: [&quot;ReadWriteOnce&quot;]<br>  storageClassName: premium-rwo  # GKE pd-ssd dynamic class<br>  resources:<br>    requests:<br>      storage: 150Gi<br>EOF</code></pre>
 <p><strong>What this does:</strong> Creates a <strong>150Gi SSD-backed Persistent Volume</strong> to cache the Qwen3-32B model weights (~60GB). Without this, every pod restart re-downloads the model from Hugging Face (slow and wasteful). The PVC is <code>ReadWriteOnce</code> (single-node attachment), which is fine since the inference pod runs on one node.</p>
 <p><strong>Verify:</strong></p>
-<pre><code class="language-bash">
-kubectl get pvc -n inference
-</code></pre>
+<pre><code class="language-bash">kubectl get pvc -n inference</code></pre>
 <p><strong>Expected output:</strong></p>
-<pre><code class="language-">
-NAME       STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   AGE
-hf-cache   Bound    pvc-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx   150Gi      RWO            premium-rwo    10s
-</code></pre>
+<pre><code class="language-">NAME       STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   AGE<br>hf-cache   Bound    pvc-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx   150Gi      RWO            premium-rwo    10s</code></pre>
 <hr>
 <p>← Previous: <strong><a href="02a-cluster-setup.html">Part 1 — Cluster Setup</a></strong>  |  Next: <strong><a href="02c-deploy-inference.html">Part 3 — Deploy Inference</a></strong> →</p>
 <p><strong>Deployment series:</strong> <a href="02a-cluster-setup.html">1. Cluster Setup</a> → <strong>2. GPU Node &amp; DWS</strong> → <a href="02c-deploy-inference.html">3. Inference</a> → <a href="02d-deploy-jupyter.html">4. JupyterHub</a> → <a href="02e-verify-teardown.html">5. Verify &amp; Teardown</a></p>

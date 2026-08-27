@@ -77,7 +77,11 @@
             border: 1px solid #dadce0;
             border-radius: 6px;
             padding: 12px;
-            font-family: 'Courier New', 'Consolas', monospace;
+            /* ONE font, deliberately: Docs' importer resolves a font-family list
+               to its LAST entry, and the generic `monospace` keyword lands on
+               Arial -- so a list ending in `monospace` silently renders code in
+               the body font. Verified 2026-08-27. */
+            font-family: 'Courier New';
             font-size: 9.5pt;
             white-space: pre-wrap;
             word-wrap: break-word;
@@ -88,7 +92,11 @@
         code {
             background-color: #f1f3f4;
             color: #d93025;
-            font-family: 'Courier New', 'Consolas', monospace;
+            /* ONE font, deliberately: Docs' importer resolves a font-family list
+               to its LAST entry, and the generic `monospace` keyword lands on
+               Arial -- so a list ending in `monospace` silently renders code in
+               the body font. Verified 2026-08-27. */
+            font-family: 'Courier New';
             font-size: 9.5pt;
             padding: 2px 4px;
             border-radius: 4px;
@@ -176,56 +184,24 @@
 <h1 id="deployment-part-4--deploy-jupyterhub-gpu-notebooks">Deployment Part 4 — Deploy JupyterHub (GPU Notebooks)</h1>
 <p><strong>Deployment series:</strong> <a href="02a-cluster-setup.html">1. Cluster Setup</a> → <a href="02b-gpu-nodepool-dws.html">2. GPU Node &amp; DWS</a> → <a href="02c-deploy-inference.html">3. Inference</a> → <strong>4. JupyterHub</strong> → <a href="02e-verify-teardown.html">5. Verify &amp; Teardown</a></p>
 <hr>
+<blockquote>### ⚠️ Historical: this describes the ORIGINAL <code>us-central1</code> build</blockquote>
+<blockquote></blockquote>
+<blockquote><strong>The live deployment moved on 2026-08-05</strong> to cluster <code>hypercomputer-a3-tcpxo</code> in</blockquote>
+<blockquote><strong><code>asia-southeast1-c</code></strong> on <strong>A3 Mega</strong> nodes with the <strong>GPUDirect-TCPXO</strong> fabric. Read</blockquote>
+<blockquote><a href="02a-cluster-setup.html">Part 1&#x27;s translation table</a> before copying any command here — the</blockquote>
+<blockquote>cluster name, region, machine type, and accelerator label have all changed, and</blockquote>
+<blockquote><code>nvidia-h100-80gb</code> now matches <strong>no node</strong> (pods using it sit in <code>Pending</code> forever).</blockquote>
+<blockquote>Current manifests: <a href="../../deploy/tcpxo-migration/"><code>deploy/tcpxo-migration/</code></a>.</blockquote>
 <p><strong>Part 4 of the deployment series.</strong> Assumes the GPU node from <a href="02b-gpu-nodepool-dws.html">Part 2</a> is running (the inference service from <a href="02c-deploy-inference.html">Part 3</a> is recommended but not strictly required for this part).</p>
 <p>This part installs <strong><a href="appendix-glossary.html#jupyterhub">JupyterHub</a></strong> via Helm with a CPU profile and a GPU profile, so users can launch notebooks that land on the A3 node and request an H100. It uses <code>DummyAuthenticator</code> (demo password) on an internal LB as the base.</p>
 <blockquote>For team access — public HTTPS + <strong>Google sign-in</strong> instead of the demo password — do this base install first, then follow <strong><a href="05-remote-access-iap.html">Remote Access</a></strong>, which swaps in <code>GoogleOAuthenticator</code> and a public Ingress.</blockquote>
 <hr>
 <h2 id="step-7-deploy-jupyterhub">Step 7: Deploy JupyterHub</h2>
 <h3 id="71-add-the-jupyterhub-helm-repo">7.1 Add the JupyterHub Helm repo</h3>
-<pre><code class="language-bash">
-helm repo add jupyterhub https://hub.jupyter.org/helm-chart/
-helm repo update
-</code></pre>
+<pre><code class="language-bash">helm repo add jupyterhub https://hub.jupyter.org/helm-chart/<br>helm repo update</code></pre>
 <h3 id="72-create-jupyterhub-values-file">7.2 Create JupyterHub values file</h3>
 <p>Save this as <code>jupyter-values.yaml</code>:</p>
-<pre><code class="language-yaml">
-hub:
-  config:
-    JupyterHub:
-      authenticator_class: dummy
-    DummyAuthenticator:
-      password: &quot;demo2026&quot;
-proxy:
-  service:
-    type: LoadBalancer
-    annotations:
-      networking.gke.io/load-balancer-type: &quot;Internal&quot;
-singleuser:
-  storage:
-    dynamic:
-      storageClass: premium-rwo
-    capacity: 20Gi
-  profileList:
-  - display_name: &quot;CPU (no GPU)&quot;
-    default: true
-    kubespawner_override:
-      cpu_limit: 4
-      mem_limit: &quot;16G&quot;
-  - display_name: &quot;GPU (1x H100)&quot;
-    kubespawner_override:
-      image: quay.io/jupyter/pytorch-notebook:cuda12-latest
-      extra_resource_limits:
-        nvidia.com/gpu: &quot;1&quot;
-      node_selector:
-        cloud.google.com/gke-accelerator: nvidia-h100-80gb
-      tolerations:
-      - key: &quot;nvidia.com/gpu&quot;
-        operator: &quot;Exists&quot;
-        effect: &quot;NoSchedule&quot;
-      - key: &quot;cloud.google.com/gke-queued&quot;
-        operator: &quot;Exists&quot;
-        effect: &quot;NoSchedule&quot;
-</code></pre>
+<pre><code class="language-yaml">hub:<br>  config:<br>    JupyterHub:<br>      authenticator_class: dummy<br>    DummyAuthenticator:<br>      password: &quot;demo2026&quot;<br>proxy:<br>  service:<br>    type: LoadBalancer<br>    annotations:<br>      networking.gke.io/load-balancer-type: &quot;Internal&quot;<br>singleuser:<br>  storage:<br>    dynamic:<br>      storageClass: premium-rwo<br>    capacity: 20Gi<br>  profileList:<br>  - display_name: &quot;CPU (no GPU)&quot;<br>    default: true<br>    kubespawner_override:<br>      cpu_limit: 4<br>      mem_limit: &quot;16G&quot;<br>  - display_name: &quot;GPU (1x H100)&quot;<br>    kubespawner_override:<br>      image: quay.io/jupyter/pytorch-notebook:cuda12-latest<br>      extra_resource_limits:<br>        nvidia.com/gpu: &quot;1&quot;<br>      node_selector:<br>        cloud.google.com/gke-accelerator: nvidia-h100-80gb<br>      tolerations:<br>      - key: &quot;nvidia.com/gpu&quot;<br>        operator: &quot;Exists&quot;<br>        effect: &quot;NoSchedule&quot;<br>      - key: &quot;cloud.google.com/gke-queued&quot;<br>        operator: &quot;Exists&quot;<br>        effect: &quot;NoSchedule&quot;</code></pre>
 <p><strong>What this does:</strong></p>
 <ul>
 <li><strong>DummyAuthenticator</strong> — any username, password <code>demo2026</code> (demo only; replace with Google OAuth for production)</li>
@@ -236,42 +212,18 @@ singleuser:
 <li><strong>20Gi persistent home</strong> per user</li>
 </ul>
 <h3 id="73-install-jupyterhub">7.3 Install JupyterHub</h3>
-<pre><code class="language-bash">
-helm upgrade --install jhub jupyterhub/jupyterhub \
-  --namespace jupyter \
-  --version 4.4.0 \
-  --values jupyter-values.yaml \
-  --timeout 10m
-</code></pre>
+<pre><code class="language-bash">helm upgrade --install jhub jupyterhub/jupyterhub \<br>  --namespace jupyter \<br>  --version 4.4.0 \<br>  --values jupyter-values.yaml \<br>  --timeout 10m</code></pre>
 <p><strong>Expected output:</strong></p>
-<pre><code class="language-">
-Release &quot;jhub&quot; does not exist. Installing it now.
-NAME: jhub
-LAST DEPLOYED: ...
-NAMESPACE: jupyter
-STATUS: deployed
-</code></pre>
+<pre><code class="language-">Release &quot;jhub&quot; does not exist. Installing it now.<br>NAME: jhub<br>LAST DEPLOYED: ...<br>NAMESPACE: jupyter<br>STATUS: deployed</code></pre>
 <p><strong>Time:</strong> ~3-5 minutes.</p>
 <p><strong>Verify pods:</strong></p>
-<pre><code class="language-bash">
-kubectl get pods -n jupyter
-</code></pre>
+<pre><code class="language-bash">kubectl get pods -n jupyter</code></pre>
 <p><strong>Expected output:</strong></p>
-<pre><code class="language-">
-NAME                              READY   STATUS    RESTARTS   AGE
-hub-xxxxxxxxxx-yyyyy              1/1     Running   0          2m
-proxy-xxxxxxxxxx-zzzzz            1/1     Running   0          2m
-user-scheduler-xxxxxxxxxx-aaaaa   1/1     Running   0          2m
-</code></pre>
+<pre><code class="language-">NAME                              READY   STATUS    RESTARTS   AGE<br>hub-xxxxxxxxxx-yyyyy              1/1     Running   0          2m<br>proxy-xxxxxxxxxx-zzzzz            1/1     Running   0          2m<br>user-scheduler-xxxxxxxxxx-aaaaa   1/1     Running   0          2m</code></pre>
 <h3 id="74-get-the-jupyterhub-url">7.4 Get the JupyterHub URL</h3>
-<pre><code class="language-bash">
-kubectl get svc -n jupyter proxy-public
-</code></pre>
+<pre><code class="language-bash">kubectl get svc -n jupyter proxy-public</code></pre>
 <p><strong>Expected output:</strong></p>
-<pre><code class="language-">
-NAME           TYPE           CLUSTER-IP       EXTERNAL-IP       PORT(S)        AGE
-proxy-public   LoadBalancer   10.108.yy.yy     10.128.15.234     80:xxxxx/TCP   3m
-</code></pre>
+<pre><code class="language-">NAME           TYPE           CLUSTER-IP       EXTERNAL-IP       PORT(S)        AGE<br>proxy-public   LoadBalancer   10.108.yy.yy     10.128.15.234     80:xxxxx/TCP   3m</code></pre>
 <p><strong>JupyterHub URL:</strong> <code>http://10.128.15.234</code> (internal IP, VPC-only).</p>
 <h3 id="75-log-in-and-launch-a-gpu-notebook">7.5 Log in and launch a GPU notebook</h3>
 <p><strong>From a machine inside the VPC</strong> (e.g., a GCP VM, or port-forward via a bastion):</p>
@@ -283,40 +235,37 @@ proxy-public   LoadBalancer   10.108.yy.yy     10.128.15.234     80:xxxxx/TCP   
 <li>First launch takes 2-3 minutes (pulling the PyTorch CUDA image)</li>
 </ol>
 <p><strong>Verify GPU access (in the notebook):</strong></p>
-<pre><code class="language-python">
-import torch
-print(f&quot;CUDA available: {torch.cuda.is_available()}&quot;)
-print(f&quot;Device: {torch.cuda.get_device_name(0)}&quot;)
-</code></pre>
+<pre><code class="language-python">import torch<br>print(f&quot;CUDA available: {torch.cuda.is_available()}&quot;)<br>print(f&quot;Device: {torch.cuda.get_device_name(0)}&quot;)</code></pre>
 <p><strong>Expected output:</strong></p>
-<pre><code class="language-">
-CUDA available: True
-Device: NVIDIA H100 80GB HBM3
-</code></pre>
+<pre><code class="language-">CUDA available: True<br>Device: NVIDIA H100 80GB HBM3</code></pre>
 <h3 id="76-call-vllm-from-a-notebook">7.6 Call vLLM from a notebook</h3>
 <p><strong>Example notebook cell:</strong></p>
-<pre><code class="language-python">
-from openai import OpenAI
-
-client = OpenAI(
-    base_url=&#x27;http://qwen3-vllm.inference.svc.cluster.local:8000/v1&#x27;,
-    api_key=&#x27;none&#x27;  # vLLM ignores this
-)
-
-response = client.chat.completions.create(
-    model=&#x27;qwen3-32b&#x27;,
-    messages=[{&#x27;role&#x27;: &#x27;user&#x27;, &#x27;content&#x27;: &#x27;Explain GPUs in one sentence.&#x27;}],
-    max_tokens=128
-)
-
-print(response.choices[0].message.content)
-</code></pre>
+<pre><code class="language-python">from openai import OpenAI<br><br>client = OpenAI(<br>    base_url=&#x27;http://qwen3-vllm.inference.svc.cluster.local:8000/v1&#x27;,<br>    api_key=&#x27;none&#x27;  # vLLM ignores this<br>)<br><br>response = client.chat.completions.create(<br>    model=&#x27;qwen3-32b&#x27;,<br>    messages=[{&#x27;role&#x27;: &#x27;user&#x27;, &#x27;content&#x27;: &#x27;Explain GPUs in one sentence.&#x27;}],<br>    max_tokens=128<br>)<br><br>print(response.choices[0].message.content)</code></pre>
 <p><strong>Expected output:</strong></p>
-<pre><code class="language-">
-A GPU (Graphics Processing Unit) is a specialized processor designed to accelerate
-graphics rendering and parallel computations, making it ideal for AI and machine learning tasks.
-</code></pre>
+<pre><code class="language-">A GPU (Graphics Processing Unit) is a specialized processor designed to accelerate<br>graphics rendering and parallel computations, making it ideal for AI and machine learning tasks.</code></pre>
 <p><strong>Success:</strong> Notebooks can reach the inference service via in-cluster DNS.</p>
+<h3 id="77-optional-per-user-gcs-workspaces">7.7 Optional: per-user GCS workspaces</h3>
+<p>To give each user a private Cloud Storage bucket mounted at <code>~/gcs</code> — so datasets</p>
+<p>and artifacts live in GCS instead of a 20 GB disk — deploy the add-on in</p>
+<p><a href="../../deploy/jupyter-gcs/README.md"><code>deploy/jupyter-gcs/</code></a>.</p>
+<p>It layers a Helm overlay on top of the values above and provisions a bucket, a</p>
+<p>per-user Kubernetes ServiceAccount, and a Workload Identity binding on first</p>
+<p>login. Three things to know before you start:</p>
+<ol>
+<li><strong>The order is not optional.</strong> <code>setup-iam.sh</code> must run before <code>install.sh</code>.</li>
+</ol>
+<p>The overlay re-exposes the cloud metadata server to user pods, which is only</p>
+<p>safe once each pod runs as its own ServiceAccount rather than the shared</p>
+<p><code>default</code> one. <code>install.sh</code> preflights this and refuses to proceed otherwise.</p>
+<ol>
+<li><strong>It needs the GCS FUSE CSI driver addon</strong> on the cluster.</li>
+<li><strong>It replaces the notebook images</strong> with builds that carry <code>gcloud</code>, <code>gcsfs</code></li>
+</ol>
+<p>and <code>google-cloud-storage</code>; the stock images have none of them.</p>
+<pre><code class="language-bash">deploy/jupyter-gcs/setup-iam.sh<br>deploy/jupyter-gcs/image/build.sh<br>deploy/jupyter-gcs/install.sh</code></pre>
+<p>The design rationale — including why this is a bucket per user rather than a</p>
+<p>folder per user — is in</p>
+<p><a href="../superpowers/specs/2026-08-26-jupyter-gcs-workspaces-design.md">the design spec</a>.</p>
 <hr>
 <p>← Previous: <strong><a href="02c-deploy-inference.html">Part 3 — Deploy Inference</a></strong>  |  Next: <strong><a href="02e-verify-teardown.html">Part 5 — Verify &amp; Teardown</a></strong> →</p>
 <p><strong>Deployment series:</strong> <a href="02a-cluster-setup.html">1. Cluster Setup</a> → <a href="02b-gpu-nodepool-dws.html">2. GPU Node &amp; DWS</a> → <a href="02c-deploy-inference.html">3. Inference</a> → <strong>4. JupyterHub</strong> → <a href="02e-verify-teardown.html">5. Verify &amp; Teardown</a></p>

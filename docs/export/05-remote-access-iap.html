@@ -77,7 +77,11 @@
             border: 1px solid #dadce0;
             border-radius: 6px;
             padding: 12px;
-            font-family: 'Courier New', 'Consolas', monospace;
+            /* ONE font, deliberately: Docs' importer resolves a font-family list
+               to its LAST entry, and the generic `monospace` keyword lands on
+               Arial -- so a list ending in `monospace` silently renders code in
+               the body font. Verified 2026-08-27. */
+            font-family: 'Courier New';
             font-size: 9.5pt;
             white-space: pre-wrap;
             word-wrap: break-word;
@@ -88,7 +92,11 @@
         code {
             background-color: #f1f3f4;
             color: #d93025;
-            font-family: 'Courier New', 'Consolas', monospace;
+            /* ONE font, deliberately: Docs' importer resolves a font-family list
+               to its LAST entry, and the generic `monospace` keyword lands on
+               Arial -- so a list ending in `monospace` silently renders code in
+               the body font. Verified 2026-08-27. */
+            font-family: 'Courier New';
             font-size: 9.5pt;
             padding: 2px 4px;
             border-radius: 4px;
@@ -200,17 +208,31 @@
 <li><strong>vLLM</strong> is gated by a <strong>vLLM API key</strong> so the OpenAI client works unchanged.</li>
 <li><strong>JupyterHub</strong> is gated by <strong>GoogleOAuthenticator</strong> (Google sign-in restricted to your Workspace domain), replacing the demo <code>DummyAuthenticator</code>. Each user gets a real identity and their own home directory.</li>
 </ul>
-<p><strong>Why not IAP?</strong> The IAP OAuth Admin APIs were shut down in early 2026, so the &quot;bring-your-own OAuth client for IAP&quot; path is no longer usable. GoogleOAuthenticator uses a <em>standard</em> OAuth 2.0 client (unaffected) and gives equivalent domain-restricted access control. If you later want IAP as an extra edge layer, enable it via Google-managed OAuth in the console.</p>
+<p><strong>Why not IAP for the web UIs?</strong> The IAP OAuth Admin APIs were shut down in early 2026, so the &quot;bring-your-own OAuth client for IAP&quot; path is no longer usable for <em>web</em> access. GoogleOAuthenticator uses a <em>standard</em> OAuth 2.0 client (unaffected) and gives equivalent domain-restricted access control. If you later want IAP as an extra edge layer, enable it via Google-managed OAuth in the console.</p>
+<blockquote><strong>IAP is still used — for SSH.</strong> That shutdown affected IAP&#x27;s <em>web/HTTPS</em> OAuth path only.</blockquote>
+<blockquote><strong>IAP TCP forwarding</strong>, which is how admins get a shell on the GPU nodes without public</blockquote>
+<blockquote>IPs or a VPN, is unaffected and is how node access works today. See</blockquote>
+<blockquote><strong><a href="#part-c--ssh-to-the-gpu-nodes-over-iap">Part C — SSH to the GPU nodes over IAP</a></strong>.</blockquote>
 <p><strong>Why nip.io:</strong> Google-managed certs need a publicly-resolvable domain. <code>nip.io</code> resolves <code>anything.&lt;IP&gt;.nip.io</code> → <code>&lt;IP&gt;</code>, giving valid managed TLS with no domain registration. Swap in a real domain later by editing the <code>ManagedCertificate</code>, <code>Ingress</code>, and <code>oauth_callback_url</code>.</p>
 <p>Manifests live in <a href="../../deploy/expose"><code>deploy/expose/</code></a>.</p>
-<blockquote><strong>Current live deployment (project <code>hdlab-elideng</code>, region <code>us-central1</code>):</strong></blockquote>
-<blockquote>- vLLM: <strong><code>https://infer.136.69.110.10.nip.io</code></strong> (Part A below — already provisioned)</blockquote>
-<blockquote>- JupyterHub: <strong><code>https://jupyter.34.54.187.199.nip.io</code></strong> (Part B — awaiting the OAuth client step)</blockquote>
+<blockquote><strong>Current live deployment (project <code>hdlab-elideng</code>, cluster <code>hypercomputer-a3-tcpxo</code>, zone <code>asia-southeast1-c</code>):</strong></blockquote>
+<blockquote>- vLLM: <strong><code>https://infer.136.69.110.10.nip.io</code></strong></blockquote>
+<blockquote>- JupyterHub: <strong><code>https://jupyter.34.54.187.199.nip.io</code></strong></blockquote>
+<blockquote>- Admin SSH to GPU nodes: <strong>IAP TCP forwarding</strong> (<a href="#part-c--ssh-to-the-gpu-nodes-over-iap">Part C</a>)</blockquote>
 <blockquote>- The vLLM API key lives in the <code>vllm-api-key</code> secret; retrieve it with:</blockquote>
 <blockquote>```bash</blockquote>
 <blockquote>kubectl -n inference get secret vllm-api-key -o jsonpath=&#x27;{.data.api-key}&#x27; | base64 -d; echo</blockquote>
 <blockquote>```</blockquote>
 <blockquote>Certs can take 10–60 min to go <strong>Active</strong> after first provisioning.</blockquote>
+<blockquote></blockquote>
+<blockquote><strong>Migrated 2026-08-05 (<code>us-central1</code> → <code>asia-southeast1-c</code>).</strong> Both URLs and the API key</blockquote>
+<blockquote>are <strong>unchanged</strong> — the same reserved global IPs were reused and the key secret was copied</blockquote>
+<blockquote>rather than regenerated, so no teammate has to update a <code>base_url</code> or re-fetch a key.</blockquote>
+<blockquote>First get credentials for the new cluster before running any <code>kubectl</code> below:</blockquote>
+<blockquote>```bash</blockquote>
+<blockquote>gcloud container clusters get-credentials hypercomputer-a3-tcpxo \</blockquote>
+<blockquote>--location asia-southeast1-c --project hdlab-elideng</blockquote>
+<blockquote>```</blockquote>
 <hr>
 <h2 id="prerequisites">Prerequisites</h2>
 <ul>
@@ -220,43 +242,12 @@
 <li>Roles to enable APIs, reserve IPs, configure OAuth, and run Helm.</li>
 </ul>
 <h2 id="one-time-setup-both-services">One-time setup (both services)</h2>
-<pre><code class="language-bash">
-gcloud services enable compute.googleapis.com container.googleapis.com --project hdlab-elideng
-
-# Reserve one global static IP per service, then read the addresses:
-gcloud compute addresses create vllm-lb-ip    --global --project hdlab-elideng
-gcloud compute addresses create jupyter-lb-ip --global --project hdlab-elideng
-VLLM_IP=$(gcloud compute addresses describe vllm-lb-ip    --global --format=&#x27;value(address)&#x27; --project hdlab-elideng)
-JUP_IP=$(gcloud compute addresses describe jupyter-lb-ip  --global --format=&#x27;value(address)&#x27; --project hdlab-elideng)
-echo &quot;vLLM host:  infer.${VLLM_IP}.nip.io&quot;
-echo &quot;Jupyter host: jupyter.${JUP_IP}.nip.io&quot;
-</code></pre>
+<pre><code class="language-bash">gcloud services enable compute.googleapis.com container.googleapis.com --project hdlab-elideng<br><br># Reserve one global static IP per service, then read the addresses:<br>gcloud compute addresses create vllm-lb-ip    --global --project hdlab-elideng<br>gcloud compute addresses create jupyter-lb-ip --global --project hdlab-elideng<br>VLLM_IP=$(gcloud compute addresses describe vllm-lb-ip    --global --format=&#x27;value(address)&#x27; --project hdlab-elideng)<br>JUP_IP=$(gcloud compute addresses describe jupyter-lb-ip  --global --format=&#x27;value(address)&#x27; --project hdlab-elideng)<br>echo &quot;vLLM host:  infer.${VLLM_IP}.nip.io&quot;<br>echo &quot;Jupyter host: jupyter.${JUP_IP}.nip.io&quot;</code></pre>
 <hr>
 <h2 id="part-a--vllm-public-endpoint-api-key-gated">Part A — vLLM public endpoint (API-key gated)</h2>
-<pre><code class="language-bash">
-# 1. Create a strong API key secret
-kubectl -n inference create secret generic vllm-api-key \
-  --from-literal=api-key=&quot;$(openssl rand -hex 24)&quot;
-
-# 2. Add the key to the running deployment (vLLM then requires it on EVERY request,
-#    in-cluster and external). Re-apply the manifest, or patch in place:
-kubectl -n inference patch deploy qwen3-vllm --type=json \
-  -p=&#x27;[{&quot;op&quot;:&quot;add&quot;,&quot;path&quot;:&quot;/spec/template/spec/containers/0/env/-&quot;,&quot;value&quot;:{&quot;name&quot;:&quot;VLLM_API_KEY&quot;,&quot;valueFrom&quot;:{&quot;secretKeyRef&quot;:{&quot;name&quot;:&quot;vllm-api-key&quot;,&quot;key&quot;:&quot;api-key&quot;}}}}]&#x27;
-kubectl -n inference rollout status deploy/qwen3-vllm
-
-# 3. Swap the internal LB for a ClusterIP+NEG Service and add the HTTPS Ingress
-kubectl apply -f deploy/expose/vllm-service.yaml          # replaces vllm-service-internal
-kubectl apply -f deploy/expose/vllm-backendconfig.yaml
-kubectl apply -f deploy/expose/vllm-frontendconfig.yaml
-sed &quot;s/&lt;INFER_LB_IP&gt;/${VLLM_IP}/g&quot; deploy/expose/vllm-managedcert.yaml | kubectl apply -f -
-kubectl apply -f deploy/expose/vllm-ingress.yaml
-</code></pre>
+<pre><code class="language-bash"># 1. Create a strong API key secret<br>kubectl -n inference create secret generic vllm-api-key \<br>  --from-literal=api-key=&quot;$(openssl rand -hex 24)&quot;<br><br># 2. Add the key to the running deployment (vLLM then requires it on EVERY request,<br>#    in-cluster and external). Re-apply the manifest, or patch in place:<br>kubectl -n inference patch deploy qwen3-vllm --type=json \<br>  -p=&#x27;[{&quot;op&quot;:&quot;add&quot;,&quot;path&quot;:&quot;/spec/template/spec/containers/0/env/-&quot;,&quot;value&quot;:{&quot;name&quot;:&quot;VLLM_API_KEY&quot;,&quot;valueFrom&quot;:{&quot;secretKeyRef&quot;:{&quot;name&quot;:&quot;vllm-api-key&quot;,&quot;key&quot;:&quot;api-key&quot;}}}}]&#x27;<br>kubectl -n inference rollout status deploy/qwen3-vllm<br><br># 3. Swap the internal LB for a ClusterIP+NEG Service and add the HTTPS Ingress<br>kubectl apply -f deploy/expose/vllm-service.yaml          # replaces vllm-service-internal<br>kubectl apply -f deploy/expose/vllm-backendconfig.yaml<br>kubectl apply -f deploy/expose/vllm-frontendconfig.yaml<br>sed &quot;s/&lt;INFER_LB_IP&gt;/${VLLM_IP}/g&quot; deploy/expose/vllm-managedcert.yaml | kubectl apply -f -<br>kubectl apply -f deploy/expose/vllm-ingress.yaml</code></pre>
 <p><strong>Verify</strong> (once the cert is Active):</p>
-<pre><code class="language-bash">
-kubectl -n inference get managedcertificate vllm-cert -o jsonpath=&#x27;{.status.certificateStatus}&#x27;; echo
-KEY=$(kubectl -n inference get secret vllm-api-key -o jsonpath=&#x27;{.data.api-key}&#x27; | base64 -d)
-curl -s https://infer.${VLLM_IP}.nip.io/v1/models -H &quot;Authorization: Bearer $KEY&quot;
-</code></pre>
+<pre><code class="language-bash">kubectl -n inference get managedcertificate vllm-cert -o jsonpath=&#x27;{.status.certificateStatus}&#x27;; echo<br>KEY=$(kubectl -n inference get secret vllm-api-key -o jsonpath=&#x27;{.data.api-key}&#x27; | base64 -d)<br>curl -s https://infer.${VLLM_IP}.nip.io/v1/models -H &quot;Authorization: Bearer $KEY&quot;</code></pre>
 <p><strong>Share the key with the team</strong> over a secure channel (a password manager — not chat or email). Team members then set <code>export VLLM_API_KEY=&lt;key&gt;</code> and use it as shown in the <a href="03-inference-endpoint-user-guide.html#getting-your-api-key">Inference Endpoint User Guide → Getting your API key</a>.</p>
 <blockquote>⚠️ <strong>Enabling the key changes existing behavior:</strong> in-cluster callers (JupyterHub notebooks) that previously used <code>api_key=&quot;none&quot;</code> now get <strong>401</strong> and must send the real key. The user guides have been updated accordingly.</blockquote>
 <hr>
@@ -265,59 +256,219 @@ curl -s https://infer.${VLLM_IP}.nip.io/v1/models -H &quot;Authorization: Bearer
 <p>Console → <strong>APIs &amp; Services → OAuth consent screen</strong> → User type <strong>Internal</strong> (your Workspace org) → set app name + support email → Save.</p>
 <h3 id="b2-create-an-oauth-20-web-client-console">B2. Create an OAuth 2.0 Web client (console)</h3>
 <p>Console → <strong>APIs &amp; Services → Credentials → Create credentials → OAuth client ID → Web application</strong>. Add this <strong>Authorized redirect URI</strong> (use your reserved Jupyter IP):</p>
-<pre><code class="language-">
-https://jupyter.&lt;JUPYTER_LB_IP&gt;.nip.io/hub/oauth_callback
-</code></pre>
+<pre><code class="language-">https://jupyter.&lt;JUPYTER_LB_IP&gt;.nip.io/hub/oauth_callback</code></pre>
 <p>Note the generated <strong>Client ID</strong> and <strong>Client secret</strong>.</p>
 <h3 id="b3-fill-in-the-values-overlay">B3. Fill in the values overlay</h3>
-<pre><code class="language-bash">
-export WORKSPACE_DOMAIN=yourco.com     # your Workspace domain
-sed -i \
-  -e &quot;s/&lt;JUPYTER_LB_IP&gt;/${JUP_IP}/g&quot; \
-  -e &quot;s/&lt;WORKSPACE_DOMAIN&gt;/${WORKSPACE_DOMAIN}/g&quot; \
-  deploy/expose/jupyter-values-public.yaml deploy/expose/jupyter-managedcert.yaml
-</code></pre>
+<pre><code class="language-bash">export WORKSPACE_DOMAIN=yourco.com     # your Workspace domain<br>sed -i \<br>  -e &quot;s/&lt;JUPYTER_LB_IP&gt;/${JUP_IP}/g&quot; \<br>  -e &quot;s/&lt;WORKSPACE_DOMAIN&gt;/${WORKSPACE_DOMAIN}/g&quot; \<br>  deploy/expose/jupyter-values-public.yaml deploy/expose/jupyter-managedcert.yaml</code></pre>
 <p>Then edit <code>deploy/expose/jupyter-values-public.yaml</code> and paste the <strong>Client ID / Client secret</strong> from B2 into the <code>GoogleOAuthenticator</code> block. (For real deployments, prefer a Kubernetes secret / <code>--set</code> over committing them.)</p>
 <h3 id="b4-apply">B4. Apply</h3>
-<pre><code class="language-bash">
-kubectl apply -f deploy/expose/jupyter-backendconfig.yaml
-kubectl apply -f deploy/expose/jupyter-frontendconfig.yaml
-kubectl apply -f deploy/expose/jupyter-managedcert.yaml
-
-# Reconfigure JupyterHub: ClusterIP proxy + GoogleOAuthenticator (overlay on base values)
-helm upgrade jhub jupyterhub/jupyterhub --namespace jupyter --version 4.4.0 \
-  -f deploy/jupyter/values.yaml \
-  -f deploy/expose/jupyter-values-public.yaml \
-  --timeout 10m
-
-kubectl apply -f deploy/expose/jupyter-ingress.yaml
-</code></pre>
+<pre><code class="language-bash">kubectl apply -f deploy/expose/jupyter-backendconfig.yaml<br>kubectl apply -f deploy/expose/jupyter-frontendconfig.yaml<br>kubectl apply -f deploy/expose/jupyter-managedcert.yaml<br><br># Reconfigure JupyterHub: ClusterIP proxy + GoogleOAuthenticator (overlay on base values)<br>helm upgrade jhub jupyterhub/jupyterhub --namespace jupyter --version 4.4.0 \<br>  -f deploy/jupyter/values.yaml \<br>  -f deploy/expose/jupyter-values-public.yaml \<br>  --timeout 10m<br><br>kubectl apply -f deploy/expose/jupyter-ingress.yaml</code></pre>
+<blockquote><strong>For the current TCPXO deployment, this whole overlay is already merged into one file.</strong></blockquote>
+<blockquote>Use it instead of the two-file overlay above — it carries the OAuth config, the Mega</blockquote>
+<blockquote>accelerator label, and the TCPXO-armed 8-GPU profile together:</blockquote>
+<blockquote></blockquote>
+<blockquote>```bash</blockquote>
+<blockquote>helm upgrade --install jhub jupyterhub/jupyterhub --namespace jupyter --version 4.4.0 \</blockquote>
+<blockquote>-f deploy/tcpxo-migration/03-jupyter-values-tcpxo.yaml --timeout 15m</blockquote>
+<blockquote>kubectl apply -f deploy/tcpxo-migration/04-jupyter-ingress.yaml</blockquote>
+<blockquote>```</blockquote>
+<blockquote></blockquote>
+<blockquote><strong>The static IP can only serve one Ingress at a time.</strong> A global static IP binds to exactly</blockquote>
+<blockquote>one forwarding rule, so if an Ingress in another cluster still holds <code>jupyter-lb-ip</code>, the</blockquote>
+<blockquote>new one stays <code>ADDRESS</code>-less until the old one is deleted. That delete-then-create window</blockquote>
+<blockquote>is an unavoidable brief outage on the team URL — it is why the URL is preserved rather than</blockquote>
+<blockquote>reissued.</blockquote>
 <h3 id="b5-verify">B5. Verify</h3>
-<pre><code class="language-bash">
-kubectl -n jupyter get managedcertificate jupyter-cert -o jsonpath=&#x27;{.status.certificateStatus}&#x27;; echo
-kubectl -n jupyter get ingress jupyter-ingress
-</code></pre>
+<pre><code class="language-bash">kubectl -n jupyter get managedcertificate jupyter-cert -o jsonpath=&#x27;{.status.certificateStatus}&#x27;; echo<br>kubectl -n jupyter get ingress jupyter-ingress</code></pre>
 <p>Browse to <code>https://jupyter.&lt;JUPYTER_LB_IP&gt;.nip.io</code> → &quot;Sign in with Google&quot; → only <code>@&lt;WORKSPACE_DOMAIN&gt;</code> accounts are allowed → profile page.</p>
 <h3 id="managing-who-has-access">Managing who has access</h3>
 <p>Access is anyone in <code>hosted_domain</code>. To restrict further, set <code>allow_all: false</code> and list <code>allowed_users</code> in <code>jupyter-values-public.yaml</code>, then re-run the <code>helm upgrade</code>.</p>
+<hr>
+<h2 id="part-c--ssh-to-the-gpu-nodes-over-iap">Part C — SSH to the GPU nodes over IAP</h2>
+<p><strong>Audience:</strong> admins and ML engineers who need a real shell <em>on the node</em> — to run</p>
+<p><code>nvidia-smi</code>, inspect <code>/dev/aperture_devices</code>, read rxdm logs, or debug the fabric.</p>
+<p>Notebook and inference users do <strong>not</strong> need this.</p>
+<p>The GPU nodes have <strong>no external IP</strong>. Access goes through <strong>IAP TCP forwarding</strong>: <code>gcloud</code></p>
+<p>opens a tunnel from Google&#x27;s IAP range (<code>35.235.240.0/20</code>) to port 22 on the node, so</p>
+<p>nothing is exposed to the internet and no VPN is required.</p>
+<h3 id="connecting">Connecting</h3>
+<pre><code class="language-bash"># List the current GPU nodes (names change on every rotation — never hard-code one)<br>gcloud compute instances list --project hdlab-elideng \<br>  --filter=&quot;labels.goog-k8s-node-pool-name=a3-mega-tcpxo-flex-pool&quot; \<br>  --format=&quot;table(name,status,creationTimestamp)&quot;<br><br># SSH via the IAP tunnel<br>gcloud compute ssh &lt;node-name&gt; \<br>  --zone asia-southeast1-c \<br>  --project hdlab-elideng \<br>  --tunnel-through-iap</code></pre>
+<p>Useful once you are on a node:</p>
+<pre><code class="language-bash">nvidia-smi                       # GPU health and who is using what<br>ls /sys/class/net                # expect eth0..eth8 — 9 NICs means the fabric is plumbed<br>ls /dev/aperture_devices         # expect 8 GPU-NIC BDFs</code></pre>
+<h3 id="granting-a-teammate-access">Granting a teammate access</h3>
+<p>Access is <strong>instance-level</strong> IAM, so it must be re-applied after every node rotation:</p>
+<pre><code class="language-bash">deploy/ops/grant-node-ssh.sh                          # defaults to the TCPXO pool<br>CLUSTER=... ZONE=... POOL=... deploy/ops/grant-node-ssh.sh   # any other pool</code></pre>
+<p>It applies, per node:</p>
+<table>
+<thead><tr>
+<th>What</th>
+<th>Attached to</th>
+<th>Why</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>enable-oslogin=TRUE</code> (<strong>metadata</strong>)</td>
+<td>the instance</td>
+<td>makes <code>osAdminLogin</code> effective at all — without it guests fail on <code>setMetadata</code></td>
+</tr>
+<tr>
+<td><code>roles/compute.osAdminLogin</code></td>
+<td>the instance</td>
+<td>login <strong>+ sudo</strong> on the node</td>
+</tr>
+<tr>
+<td><code>roles/compute.viewer</code></td>
+<td>the instance</td>
+<td>lets <code>gcloud compute ssh</code> resolve the instance name (skipped for the project owner, who already has it)</td>
+</tr>
+<tr>
+<td><code>roles/iap.tunnelResourceAccessor</code></td>
+<td>the instance&#x27;s <strong>IAP tunnel</strong> resource</td>
+<td>lets the tunnel open at all</td>
+</tr>
+</tbody></table>
+<p>Those are the four <strong>instance-scoped</strong> things — the ones a rotation destroys. The other two of</p>
+<p>the <a href="#the-five-bindings-a-guest-actually-needs">six a guest needs</a> are project- or</p>
+<p>service-account-scoped, already in place for this team, and survive rotation, so the script</p>
+<p>deliberately leaves them alone.</p>
+<blockquote>⚠️ <strong>Instance-level IAM and metadata do not survive node replacement.</strong> Flex-Start nodes are</blockquote>
+<blockquote>replaced at the 7-day boundary, on preemption, and on every pool recreate the</blockquote>
+<blockquote><a href="01-architecture.html#6b-capacity-watchdog">capacity watchdog</a> performs. A new node is a new</blockquote>
+<blockquote>IAM resource with an <strong>empty</strong> policy and no <code>enable-oslogin</code> key, so the team silently</blockquote>
+<blockquote>loses SSH with no error anywhere until someone tries to connect.</blockquote>
+<blockquote><strong>Re-run <code>grant-node-ssh.sh</code> after any rotation</strong> — and remember the owner will not notice</blockquote>
+<blockquote>the breakage, because an owner can write metadata and so still gets in.</blockquote>
+<p><strong>Why not just grant at project level?</strong> <code>roles/compute.osAdminLogin</code> project-wide would</p>
+<p>survive rotation, but it grants root-equivalent login on <em>every</em> VM in the project. The</p>
+<p>instance-level grant plus a re-arm script keeps the blast radius at the GPU nodes the team</p>
+<p>is meant to be using. That is a deliberate trade of convenience for scope — if you would</p>
+<p>rather have durability, the project-level grant is one command and the script becomes</p>
+<p>unnecessary.</p>
+<h3 id="the-five-bindings-a-guest-actually-needs">The five bindings a guest actually needs</h3>
+<p>...plus one metadata key, so <strong>six</strong> things in total. The original five are IAM; #6 is not,</p>
+<p>which is exactly why it was missed.</p>
+<p>A <strong>project owner</strong> needs none of them: <code>roles/owner</code> satisfies all six. That asymmetry is</p>
+<p>the whole reason this is fiddly — <em>your</em> working SSH tells you nothing about whether a</p>
+<p>teammate can connect, and it is how #6 stayed hidden until Alex hit it on 2026-08-05. Listed</p>
+<p>in the order <code>gcloud compute ssh</code> evaluates them, because each failure masks the ones after</p>
+<p>it:</p>
+<table>
+<thead><tr>
+<th>#</th>
+<th>Binding</th>
+<th>Attach to</th>
+<th>Error if missing</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>custom <code>sshResolveMinimal</code> (<code>compute.projects.get</code> only)</td>
+<td><strong>project</strong></td>
+<td><code>Required &#x27;compute.projects.get&#x27; permission</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>roles/compute.viewer</code></td>
+<td>the instance</td>
+<td><code>Required &#x27;compute.instances.get&#x27; permission</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>roles/iap.tunnelResourceAccessor</code></td>
+<td><strong>the IAP tunnel resource</strong> for that zone+instance</td>
+<td><code>Error while connecting [4033: &#x27;not authorized&#x27;]</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>roles/compute.osAdminLogin</code></td>
+<td>the instance</td>
+<td><code>Permission denied (publickey)</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>roles/iam.serviceAccountUser</code></td>
+<td>the node&#x27;s attached SA (<code>151935633952-compute@developer.gserviceaccount.com</code>)</td>
+<td><code>Permission denied (publickey)</code> — identical to #4</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>enable-oslogin=TRUE</code> — <strong>metadata, not IAM</strong></td>
+<td>the instance</td>
+<td><code>Required &#x27;compute.instances.setMetadata&#x27; permission</code></td>
+</tr>
+</tbody></table>
+<p><code>grant-node-ssh.sh</code> applies <strong>#2, #3, #4 and #6</strong> — everything a rotation destroys. #1 and #5</p>
+<p>are project- and service-account-scoped, are already in place for the team, and survive</p>
+<p>rotation.</p>
+<p>#6 is not an IAM binding at all, which is why it is easy to miss and why it is listed last</p>
+<p>despite being checked first in practice — see <a href="#binding-6-enable-oslogintrue-metadata-not-iam">below</a>.</p>
+<blockquote>⚠️ **The tunnel grant must be per-instance, and <code>gcloud</code> has no convenient command for</blockquote>
+<blockquote>it.<strong> IAP tunnel permissions live in a </strong>separate resource hierarchy** from Compute, so a</blockquote>
+<blockquote><em>project-level</em> grant of <code>roles/iap.tunnelResourceAccessor</code> is **never consulted and</blockquote>
+<blockquote>silently does nothing**. This also means checking project IAM proves nothing:</blockquote>
+<blockquote><code>gcloud projects get-iam-policy … --filter=&#x27;bindings.role=roles/iap.tunnelResourceAccessor&#x27;</code></blockquote>
+<blockquote>returns empty even when tunnels work. Use the REST API:</blockquote>
+<pre><code class="language-bash">PN=151935633952; Z=asia-southeast1-c; TOKEN=$(gcloud auth print-access-token)<br><br># Read (an empty policy comes back as just {&quot;etag&quot;:&quot;ACAB&quot;})<br>curl -sS -X POST -H &quot;Authorization: Bearer $TOKEN&quot; -H &quot;Content-Type: application/json&quot; \<br>  &quot;https://iap.googleapis.com/v1/projects/$PN/iap_tunnel/zones/$Z/instances/&lt;NODE&gt;:getIamPolicy&quot; -d &#x27;{}&#x27;<br><br># Grant (replaces the policy — include every member you want to keep)<br>curl -sS -X POST -H &quot;Authorization: Bearer $TOKEN&quot; -H &quot;Content-Type: application/json&quot; \<br>  &quot;https://iap.googleapis.com/v1/projects/$PN/iap_tunnel/zones/$Z/instances/&lt;NODE&gt;:setIamPolicy&quot; \<br>  -d &#x27;{&quot;policy&quot;:{&quot;bindings&quot;:[{&quot;role&quot;:&quot;roles/iap.tunnelResourceAccessor&quot;,<br>       &quot;members&quot;:[&quot;user:someone@google.com&quot;]}]}}&#x27;</code></pre>
+<p>Trap on #1: it <strong>must</strong> be project-level. IAM flows downward only (project → zone →</p>
+<p>instance), so an instance binding can never satisfy a project-level check even when the role</p>
+<p>contains the permission. <code>roles/browser</code> is the wrong fix — it carries</p>
+<p><code>resourcemanager.projects.get</code>, a <em>different</em> permission.</p>
+<h3 id="binding-6-enable-oslogintrue-metadata-not-iam">Binding #6: <code>enable-oslogin=TRUE</code> (metadata, not IAM)</h3>
+<p><code>roles/compute.osAdminLogin</code> is an <strong>OS Login</strong> role. If OS Login is not switched on for the</p>
+<p>node, the role has nothing to act on and <code>gcloud</code> silently falls back to **writing an SSH key</p>
+<p>into instance/project metadata** — which needs <code>compute.instances.setMetadata</code>, a permission</p>
+<p>guests do not and should not have. A teammate gets:</p>
+<pre><code class="language-">Updating project ssh metadata...failed.<br>Updating instance ssh metadata...failed.<br>ERROR: (gcloud.compute.ssh) Could not add SSH key to instance metadata ...<br> - Required &#x27;compute.instances.setMetadata&#x27; permission for &#x27;...instances/&lt;node&gt;&#x27;</code></pre>
+<p><strong>COS does not enable OS Login by itself</strong> — an earlier version of this guide claimed it did,</p>
+<p>which was wrong. The key was absent from project metadata and from every node, and</p>
+<p><code>constraints/compute.requireOsLogin</code> is not enforced. The reason it looked enabled is a trap</p>
+<p>worth knowing: the owner&#x27;s node username, <code>ext_elideng_google_com</code>, is just this</p>
+<p>workstation&#x27;s <strong>local</strong> username, and there was a **metadata SSH key under exactly that</p>
+<p>name** — so the owner had been using the metadata path all along while appearing to use OS</p>
+<p>Login. Testing as an owner exercises the fallback, not the path the team uses.</p>
+<p>Set it <strong>per instance</strong> — <code>grant-node-ssh.sh</code> now does this automatically:</p>
+<pre><code class="language-bash">gcloud compute instances add-metadata &lt;node&gt; \<br>  --project hdlab-elideng --zone asia-southeast1-c \<br>  --metadata enable-oslogin=TRUE</code></pre>
+<p>Two things <strong>not</strong> to do:</p>
+<ul>
+<li><strong>Not project-wide.</strong> It changes SSH authentication on every VM in the project (including</li>
+</ul>
+<p><code>ubuntu-secure-desktop</code>), and this project <em>does</em> have project-level <code>ssh-keys</code> metadata in</p>
+<p>use — anyone depending on it elsewhere could lose access.</p>
+<ul>
+<li><strong>Not via node-pool metadata.</strong> Changing a pool&#x27;s metadata recreates its nodes, and these</li>
+</ul>
+<p>are scarce Flex-Start A3 Mega nodes that may not come back at all.</p>
+<p>Setting it on a running instance needs no reboot and does not disturb workloads (verified:</p>
+<p>all pods stayed <code>Running</code>, all nodes <code>Ready</code>). Because it is instance metadata, it **dies</p>
+<p>with the node** — same rotation problem as bindings #2–#4.</p>
+<p><strong>Verified with a non-owner.</strong> A throwaway service account holding exactly the five bindings</p>
+<p>and <strong>no</strong> <code>setMetadata</code> permission connected successfully, landing as a real OS Login</p>
+<p>account (<code>sa_1042826306…</code>, uid <code>2779788392</code>) with no metadata write attempted. The probe and</p>
+<p>all of its bindings were removed afterwards.</p>
+<p><strong>Also satisfied:</strong> the firewall rule <code>allow-ssh-from-iap</code></p>
+<p>(<code>35.235.240.0/20</code> → <code>tcp:22</code>, network <code>default</code>, enabled) covers the nodes — their <code>eth0</code></p>
+<p>is on <code>default</code>. The 8 fabric NICs are on separate VPCs and carry no SSH.</p>
+<h3 id="team-facing-runbook">Team-facing runbook</h3>
+<p>The team&#x27;s copy-paste instructions live in a Google Doc, **GPU Node Access — A3 Mega H100</p>
+<p>with TCPXO fabric**, shared to named individuals (not the Cloud audience). Because it names</p>
+<p>specific instances, <strong>it goes stale on every node rotation</strong> — a teammate&#x27;s old command then</p>
+<p>fails with <code>The resource ... was not found</code>, which reads like a permissions problem but means</p>
+<p>the machine is gone. Update it whenever nodes rotate.</p>
 <hr>
 <h2 id="security-notes--gotchas">Security notes &amp; gotchas</h2>
 <ul>
 <li><strong>Managed-cert provisioning isn&#x27;t instant</strong> (10–60 min). It needs the Ingress live with the static IP attached; nip.io resolves immediately. If stuck <code>Provisioning</code> &gt;1 hour, confirm the Ingress has the reserved IP.</li>
 <li><strong>vLLM is public with only an API key.</strong> Rotate it if it leaks (<code>kubectl create secret ... --dry-run=client -o yaml | kubectl apply -f -</code>, then <code>kubectl rollout restart deploy/qwen3-vllm</code>). For stronger protection add <strong><a href="https://cloud.google.com/armor">Cloud Armor</a></strong> (IP allowlist / rate limiting) to <code>vllm-backendconfig.yaml</code> via a <code>securityPolicy</code>.</li>
 <li><strong>JupyterHub has no IAP layer</strong> — the gate is GoogleOAuthenticator&#x27;s <code>hosted_domain</code>. That is real, domain-restricted auth; just be sure <code>hosted_domain</code> is set so it&#x27;s not open to any Google account.</li>
-<li><strong>The GPU node is DWS Flex-Start (7-day cap).</strong> LBs and certs stay up across node rotation, but the vLLM/notebook <strong>backends</strong> go unavailable while the node is replaced (see <a href="02e-verify-teardown.html#step-10-node-rotation-and-the-7-day-expiry">Part 5 — node rotation</a>) — expect 502s during that window.</li>
+<li><strong>The GPU nodes are Flex-Start (7-day cap).</strong> LBs and certs stay up across node rotation, but the vLLM/notebook <strong>backends</strong> go unavailable while a node is replaced (see <a href="02e-verify-teardown.html#step-10-node-rotation-and-the-7-day-expiry">Part 5 — node rotation</a>) — expect 502s during that window. The <a href="01-architecture.html#6b-capacity-watchdog">capacity watchdog</a> re-grabs the pool automatically, but <strong>SSH access must be re-granted by hand</strong> (<a href="#part-c--ssh-to-the-gpu-nodes-over-iap">Part C</a>).</li>
+<li><strong>The OAuth client secret is not in this repo — keep it that way.</strong> <strong>This repository is public.</strong> <code>deploy/tcpxo-migration/03-jupyter-values-tcpxo.yaml</code> ships <code>client_secret: &quot;&quot;</code> and the real value is passed at install time with <code>--set-string hub.config.GoogleOAuthenticator.client_secret=...</code>. The live value is readable from the cluster (note it sits inside the <code>values.yaml</code> key of <code>secret/hub</code>, not as a flat key):</li>
+<pre><code class="language-bash">  kubectl get secret hub -n jupyter -o jsonpath=&#x27;{.data.values\.yaml}&#x27; \<br>    | base64 -d | awk &#x27;/client_secret:/ &amp;&amp; !seen {v=$2; seen=1} END{print v}&#x27;</code></pre>
 </ul>
+<p>It did sit in a plaintext working file during the migration, so <strong>rotating the client secret is still the safe call.</strong></p>
 <h2 id="revert-to-internal-only">Revert to internal-only</h2>
-<pre><code class="language-bash">
-kubectl delete -f deploy/expose/jupyter-ingress.yaml -f deploy/expose/vllm-ingress.yaml
-kubectl delete -f deploy/expose/jupyter-managedcert.yaml
-kubectl delete managedcertificate vllm-cert -n inference
-kubectl apply  -f deploy/inference/vllm-service-internal.yaml
-helm upgrade jhub jupyterhub/jupyterhub -n jupyter --version 4.4.0 -f deploy/jupyter/values.yaml --timeout 10m
-gcloud compute addresses delete jupyter-lb-ip vllm-lb-ip --global --project hdlab-elideng
-</code></pre>
+<pre><code class="language-bash">kubectl delete -f deploy/expose/jupyter-ingress.yaml -f deploy/expose/vllm-ingress.yaml<br>kubectl delete -f deploy/expose/jupyter-managedcert.yaml<br>kubectl delete managedcertificate vllm-cert -n inference<br>kubectl apply  -f deploy/inference/vllm-service-internal.yaml<br>helm upgrade jhub jupyterhub/jupyterhub -n jupyter --version 4.4.0 -f deploy/jupyter/values.yaml --timeout 10m<br>gcloud compute addresses delete jupyter-lb-ip vllm-lb-ip --global --project hdlab-elideng</code></pre>
 <hr>
+<p><strong>Document version:</strong> 2026-08-05 — added Part C (SSH over IAP) and migrated all cluster/zone references to <code>hypercomputer-a3-tcpxo</code> / <code>asia-southeast1-c</code>.</p>
 <p><strong>Related:</strong> <a href="01-architecture.html">Architecture Reference</a> · <a href="02a-cluster-setup.html">Deployment series</a> · <a href="03-inference-endpoint-user-guide.html">Inference User Guide</a> · <a href="04-jupyter-notebook-user-guide.html">Jupyter User Guide</a> · <a href="appendix-glossary.html">Glossary</a></p>
 </body>
 </html>
