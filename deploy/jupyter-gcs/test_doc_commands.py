@@ -223,10 +223,17 @@ def test_worked_notebook_defines_my_bucket_before_it_is_used():
 
 
 # `gcloud storage rsync [-flags] <source>`, capturing the source only when it is a
-# LOCAL path (`~/...`, `/...`, `./...`). A `gs://` source is someone else's data
-# being pulled in, which says nothing about whether this cell wrote anything.
+# LOCAL path (`~/...`, `/...`, `./...`), quoted or not. A `gs://` source is someone
+# else's data being pulled in, which says nothing about whether this cell wrote
+# anything.
+#
+# The optional quote matters: without it `rsync -r "~/scratch/ckpt"` does not match
+# and the cell is skipped silently -- the same kind of hole that let an unfixed 403
+# sit behind a green suite in #22. A source spelled with a variable (`$HOME/...`)
+# still escapes this; write paths literally in the notebook.
 RSYNC_SOURCE = re.compile(
-    r"gcloud storage rsync\s+(?:-\S+\s+)*(?P<src>(?:~|\.{0,2}/)[\w./-]*)\s"
+    r"""gcloud storage rsync\s+(?:-\S+\s+)*["']?"""
+    r"""(?P<src>(?:~|\.{0,2}/)[\w./-]*)(?=["'\s])"""
 )
 
 
