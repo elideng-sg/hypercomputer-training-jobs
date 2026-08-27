@@ -149,6 +149,32 @@ def test_no_doc_invokes_an_entrypoint_that_no_longer_works():
     )
 
 
+# RFC 2606 reserves these names precisely so they never resolve to content. A
+# download command aimed at one cannot succeed for anybody, ever.
+PLACEHOLDER_HOSTS = ("example.com", "example.org", "example.net", "example.edu")
+FETCHERS = ("curl", "wget", "gcloud storage", "gsutil", "hf download", "kaggle")
+
+
+def test_no_doc_fetches_from_a_placeholder_url():
+    """A step-by-step guide is copy-pasted, so a placeholder in a runnable command
+    is a defect, not a convention -- and with ``curl -fsSL`` it is a *silent* one:
+    no output, quiet exit, empty file, and the failure surfaces later somewhere
+    that looks unrelated. Reported by a user reading Step 4 on 2026-08-27, where
+    ``https://example.com/dataset.tar.gz`` had stood since the guide was written.
+    Name a real public URL, so the block can be run as a rehearsal.
+    """
+    offenders = [
+        f"{path.relative_to(REPO_ROOT)}:{where}: {line.strip()}"
+        for path, where, line in doc_lines()
+        if any(h in line for h in PLACEHOLDER_HOSTS)
+        and any(f in line for f in FETCHERS)
+    ]
+    assert not offenders, (
+        "These lines fetch from a reserved placeholder domain, which cannot ever "
+        "serve content. Use a real public URL:\n  " + "\n  ".join(offenders)
+    )
+
+
 def test_the_hand_authored_google_doc_source_stays_in_step():
     """docs/export/jupyter-gcs-workspace-user-guide.html has no Markdown source --
     it is written by hand and uploaded to the internal Doc -- so the checks above
@@ -174,7 +200,14 @@ def test_the_hand_authored_google_doc_source_stays_in_step():
         b for b in blocks if "ERROR" not in b and "DENIED" not in b
     )
 
-    for bad in ("huggingface-cli", '"gcloud", "storage", "ls"'):
+    for bad in (
+        "huggingface-cli",
+        '"gcloud", "storage", "ls"',
+        # Both stood in Step 4 until a user pointed at them on 2026-08-27: neither
+        # exists, so the block produced nothing -- silently, in curl's case.
+        "example.com",
+        "gs://some-public-dataset",
+    ):
         assert bad not in commands, (
             f"{doc.relative_to(REPO_ROOT)} runs `{bad}` in a code block, which does "
             "not work. Fix it here AND re-upload the Doc -- this file is the Doc's "

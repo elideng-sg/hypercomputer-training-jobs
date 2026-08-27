@@ -46,6 +46,10 @@ hostnames and bucket names. Do not share outside google.com.</p>
 
 <p><i>Audience: anyone using the HDLab JupyterHub on the A3-Mega TCPXO cluster.<br>
 Last verified end-to-end on the live cluster: 27 Aug 2026.<br>
+Rev 4, 27 Aug 2026 — Step 4 now downloads from real URLs. It previously used
+<span style="font-family:'Courier New'">https://example.com/dataset.tar.gz</span> and
+<span style="font-family:'Courier New'">gs://some-public-dataset</span>, neither of which exists, so
+copy-pasting the block produced nothing — silently, in curl's case.<br>
 Rev 3, 27 Aug 2026 — the Hugging Face download command is
 <span style="font-family:'Courier New'">hf download</span>, not
 <span style="font-family:'Courier New'">huggingface-cli download</span>, which in this image
@@ -225,10 +229,19 @@ around it. See §8.</p>
 <p><b>(a) Straight off the internet — <span style="font-family:'Courier New'">curl</span> or <span style="font-family:'Courier New'">wget</span></b></p>
 
 <pre style="font-family:'Courier New';font-size:10pt">mkdir -p ~/gcs/datasets
-curl -fsSL https://example.com/dataset.tar.gz -o ~/gcs/datasets/dataset.tar.gz</pre>
+curl -fsSL https://storage.googleapis.com/download.tensorflow.org/example_images/flower_photos.tgz \
+  -o ~/gcs/datasets/flower_photos.tgz
+ls -lh ~/gcs/datasets/</pre>
 
-<p>Note the <span style="font-family:'Courier New'">-f</span>: without it, curl happily writes an HTML error page into your
-bucket and you discover it much later.</p>
+<p>That URL is real — a 218 MB public tarball — so you can run the block as it
+stands and see it work before pointing it at your own data.</p>
+
+<p><b>Always check the <span style="font-family:'Courier New'">ls</span> afterwards.</b> Those flags make curl silent in both
+directions: <span style="font-family:'Courier New'">-s</span> suppresses progress, and <span style="font-family:'Courier New'">-f</span> suppresses the error body — which
+is what you want, because without <span style="font-family:'Courier New'">-f</span> curl happily writes an HTML error page
+into your bucket and you discover it much later. The cost is that a wrong URL
+prints nothing at all, exits quietly, and leaves you with a missing or empty
+file; the failure then surfaces later, somewhere that looks unrelated.</p>
 
 <p><b>(b) Hugging Face</b> — and this one has a trap worth calling out:</p>
 
@@ -257,7 +270,10 @@ token (<span style="font-family:'Courier New'">~/.kaggle/kaggle.json</span>, fro
 <p><b>(d) From another GCS bucket, or anything above a few GB — use
 <span style="font-family:'Courier New'">gcloud storage</span>, not the mount</b></p>
 
-<pre style="font-family:'Courier New';font-size:10pt">gcloud storage rsync -r gs://some-public-dataset "gs://$MY_BUCKET/datasets/foo"</pre>
+<pre style="font-family:'Courier New';font-size:10pt">gcloud storage rsync -r gs://cloud-samples-data/ai-platform/iris "gs://$MY_BUCKET/datasets/iris"</pre>
+
+<p>That source bucket is real and public too, and small, so the command is safe to
+run as a rehearsal before you aim it at a dataset that takes an hour.</p>
 
 <p>This is the single biggest performance lever in this guide. <span style="font-family:'Courier New'">gcloud storage</span>
 transfers in parallel, server-to-server, and never stages the data on your pod.

@@ -20,7 +20,7 @@ Design rationale and the live evidence behind it:
 
 ```bash
 # in a notebook terminal
-gcloud storage rsync -r gs://some-public-dataset ~/gcs/datasets/foo   # bulk: fast
+gcloud storage rsync -r gs://cloud-samples-data/ai-platform/iris ~/gcs/datasets/iris  # bulk: fast
 hf download org/model --local-dir ~/gcs/models/thing                  # also fine
 ```
 
