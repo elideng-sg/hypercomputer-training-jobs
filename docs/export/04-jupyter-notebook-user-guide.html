@@ -643,7 +643,7 @@
 <p>Worth putting in <code>~/.bashrc</code>, since the rest of this section uses it:</p>
 <pre><code class="language-bash">export MY_BUCKET=&quot;$(findmnt -n -o SOURCE ~/gcs)&quot;<br>gcloud storage ls &quot;gs://$MY_BUCKET/&quot;        # this works -- it names your bucket</code></pre>
 <p>Download a dataset straight into it:</p>
-<pre><code class="language-bash">mkdir -p ~/gcs/datasets<br>curl -fsSL https://example.com/big.tar.gz -o ~/gcs/datasets/big.tar.gz<br><br># Hugging Face — point the cache at GCS too, or it fills your 20 GB home disk<br>export HF_HOME=~/gcs/.cache/huggingface<br>hf download --repo-type dataset stanfordnlp/imdb --local-dir ~/gcs/datasets/imdb</code></pre>
+<pre><code class="language-bash">mkdir -p ~/gcs/datasets<br># A real 218 MB public tarball, so you can run this as-is before using your own URL<br>curl -fsSL https://storage.googleapis.com/download.tensorflow.org/example_images/flower_photos.tgz \<br>  -o ~/gcs/datasets/flower_photos.tgz<br>ls -lh ~/gcs/datasets/    # check it: -fsSL is silent, so a wrong URL writes nothing<br><br># Hugging Face — point the cache at GCS too, or it fills your 20 GB home disk<br>export HF_HOME=~/gcs/.cache/huggingface<br>hf download --repo-type dataset stanfordnlp/imdb --local-dir ~/gcs/datasets/imdb</code></pre>
 <p>The command is <code>hf</code>, <strong>not</strong> <code>huggingface-cli</code>. This image ships</p>
 <p><code>huggingface_hub</code> 1.x, where the old name is a stub that prints</p>
 <p><code>huggingface-cli is deprecated and no longer works</code> and downloads nothing —</p>
@@ -653,7 +653,7 @@
 <p><strong>For anything above a few GB, don&#x27;t copy through the mount.</strong> <code>~/gcs</code> is a</p>
 <p>filesystem shim over object storage, not a transfer tool. Use <code>gcloud storage</code>,</p>
 <p>which is parallel and never stages data on this pod:</p>
-<pre><code class="language-bash">gcloud storage rsync -r gs://some-public-dataset &quot;gs://$MY_BUCKET/datasets/foo&quot;</code></pre>
+<pre><code class="language-bash">gcloud storage rsync -r gs://cloud-samples-data/ai-platform/iris &quot;gs://$MY_BUCKET/datasets/iris&quot;</code></pre>
 <p>Things that will surprise you about <code>~/gcs</code>:</p>
 <ul>
 <li><strong>It is not a POSIX filesystem.</strong> No hard links, no atomic directory rename,</li>

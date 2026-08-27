@@ -396,7 +396,10 @@ Download a dataset straight into it:
 
 ```bash
 mkdir -p ~/gcs/datasets
-curl -fsSL https://example.com/big.tar.gz -o ~/gcs/datasets/big.tar.gz
+# A real 218 MB public tarball, so you can run this as-is before using your own URL
+curl -fsSL https://storage.googleapis.com/download.tensorflow.org/example_images/flower_photos.tgz \
+  -o ~/gcs/datasets/flower_photos.tgz
+ls -lh ~/gcs/datasets/    # check it: -fsSL is silent, so a wrong URL writes nothing
 
 # Hugging Face — point the cache at GCS too, or it fills your 20 GB home disk
 export HF_HOME=~/gcs/.cache/huggingface
@@ -421,7 +424,7 @@ filesystem shim over object storage, not a transfer tool. Use `gcloud storage`,
 which is parallel and never stages data on this pod:
 
 ```bash
-gcloud storage rsync -r gs://some-public-dataset "gs://$MY_BUCKET/datasets/foo"
+gcloud storage rsync -r gs://cloud-samples-data/ai-platform/iris "gs://$MY_BUCKET/datasets/iris"
 ```
 
 Things that will surprise you about `~/gcs`:
