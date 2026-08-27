@@ -23,7 +23,7 @@ to be sanitized:
     findmnt -n -o SOURCE ~/gcs      # -> hdlab-elideng-jupyter-<user>
 
 A second end-to-end run on 2026-08-27, after the fix above had been merged, found
-two more commands in the same documents that cannot work:
+three more things in the same documents that cannot work:
 
 * Cell 13 of the worked notebook still called the bare list -- as
   ``subprocess.check_output(["gcloud", "storage", "ls"])``. The first version of
@@ -32,6 +32,11 @@ two more commands in the same documents that cannot work:
 * ``huggingface-cli download`` prints "deprecated and no longer works" and
   downloads nothing under huggingface_hub 1.x, which this image ships. The
   replacement is ``hf download``. Hence ``DEAD_ENTRYPOINTS``.
+* The dataset URL in cell 6 404s, and ``curl -fsSL`` fails silently, so the two
+  read-back cells broke for a reason that looked unrelated. No test here: whether
+  a URL resolves is a fact about the network, and this suite runs offline. The
+  guard for that one is running the notebook, which is now part of the release
+  check rather than something to assert.
 
 The lesson each time is the same: a command in a document is only as good as the
 last time somebody ran it on the live cluster.
@@ -175,11 +180,11 @@ def test_the_hand_authored_google_doc_source_stays_in_step():
             "not work. Fix it here AND re-upload the Doc -- this file is the Doc's "
             "source, so the two drift apart silently."
         )
-    for bare in BARE_LIST.finditer(commands):
-        raise AssertionError(
-            f"{doc.relative_to(REPO_ROOT)} runs a bare `{bare.group(0)}` in a code "
-            "block; it 403s. Use `findmnt -n -o SOURCE ~/gcs`."
-        )
+    bare = BARE_LIST.search(commands)
+    assert not bare, (
+        f"{doc.relative_to(REPO_ROOT)} runs a bare `{bare.group(0) if bare else ''}` "
+        "in a code block; it 403s. Use `findmnt -n -o SOURCE ~/gcs`."
+    )
     assert "hf download" in commands, "the Doc source no longer shows how to download"
 
 
